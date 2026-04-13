@@ -1,0 +1,90 @@
+diff --git a/ventus/src/pipeline/LSU.scala b/ventus/src/pipeline/LSU.scala
+index 7d4174f..43c70fd 100644
+--- a/ventus/src/pipeline/LSU.scala
++++ b/ventus/src/pipeline/LSU.scala
+@@ -126,12 +126,15 @@ class AddrCalculate(val sharedmemory_maxsize: UInt = 4096.U(32.W)) extends Modul
+     val to_shared = DecoupledIO(new ShareMemCoreReq_np)
+   })
+   val s_idle :: s_save :: s_shared :: s_dcache ::s_dcache_1::s_dcache_2:: Nil = Enum(6)
+-  val cnt = new Counter(n = num_thread)
+-  val state = RegInit(init = s_idle)
+-
+-  val reg_save = Reg(new vExeData)
+-  val is_flush = RegInit(false.B)
+-  io.csr_wid:=reg_save.ctrl.wid
++  val cnt = new Counter(n = num_thread)
++  val state = RegInit(init = s_idle)
++  val localCycle = RegInit(0.U(64.W))
++  localCycle := localCycle + 1.U
++
++  val reg_save = Reg(new vExeData)
++  val is_flush = RegInit(false.B)
++  val bugTriggerPrinted = RegInit(false.B)
++  io.csr_wid:=reg_save.ctrl.wid
+   //val rdy_fromFIFO = Reg(Bool())
+   io.from_fifo.ready := state===s_idle && !io.flush_dcache.valid
+   io.flush_dcache.ready := state === s_idle
+@@ -142,29 +145,39 @@ class AddrCalculate(val sharedmemory_maxsize: UInt = 4096.U(32.W)) extends Modul
+   val all_shared = Wire(Bool())
+ 
+ 
+-  // Address Calculate & Analyze, Comb Logic @reg_save
+-  (0 until num_thread).foreach( x => {
+-    addr(x) :=  Mux(reg_save.ctrl.isvec & reg_save.ctrl.disable_mask,
+-                  Mux(reg_save.ctrl.is_vls12,
+-                    reg_save.in1(x)+reg_save.in2(x),
+-                    (reg_save.in1(x) + reg_save.in2(x))(1,0) + (Cat((io.csr_tid + x.asUInt),0.U(2.W) ) ) + io.csr_pds + (((Cat((reg_save.in1(x)+reg_save.in2(x))(31,2),0.U(2.W)))*io.csr_numw)<<depth_thread) 
+-                  ),
+-                  Mux(reg_save.ctrl.isvec,
+-                    reg_save.in1(x) + Mux(reg_save.ctrl.mop===0.U,
+-                      x.asUInt<<2,
++  // Address Calculate & Analyze, Comb Logic @reg_save
++  (0 until num_thread).foreach( x => {
++    addr(x) :=  Mux(reg_save.ctrl.isvec & reg_save.ctrl.disable_mask,
++                  (reg_save.in1(x) + reg_save.in2(x))(1,0) + (Cat((io.csr_tid + x.asUInt),0.U(2.W) ) ) + io.csr_pds + (((Cat((reg_save.in1(x)+reg_save.in2(x))(31,2),0.U(2.W)))*io.csr_numw)<<depth_thread),
++                  Mux(reg_save.ctrl.isvec,
++                    reg_save.in1(x) + Mux(reg_save.ctrl.mop===0.U,
++                      x.asUInt<<2,
+                       Mux(reg_save.ctrl.mop===3.U,
+                         reg_save.in2(x),
+                         x.asUInt*reg_save.in2(x))
+                     ),
+                     reg_save.in1(0) + reg_save.in2(0)
+                   )
+-                )
+-    is_shared(x) := !reg_save.mask(x) || ( addr(x) >= LDS_BASE.U(32.W) && addr(x) < (LDS_BASE.U(32.W) + sharedmemory_maxsize) )
+-  })
+-  all_shared := Mux(reg_save.ctrl.isvec,
+-    is_shared.asUInt.andR, // "AND" Reduce
+-    is_shared(0)
+-  )
++                )
++    is_shared(x) := !reg_save.mask(x) || ( addr(x) >= LDS_BASE.U(32.W) && addr(x) < (LDS_BASE.U(32.W) + sharedmemory_maxsize) )
++  })
++  when(
++    state === s_save &&
++    reg_save.ctrl.mem_cmd.orR &&
++    reg_save.ctrl.isvec &&
++    reg_save.ctrl.disable_mask &&
++    reg_save.ctrl.is_vls12 &&
++    !bugTriggerPrinted
++  ) {
++    printf(
++      p"BUG_TRIGGER[000211][vls12_old_generic_addr] cycle=${Decimal(localCycle)} wid=${Decimal(reg_save.ctrl.wid)} pc=0x${Hexadecimal(reg_save.ctrl.pc)} inst=0x${Hexadecimal(reg_save.ctrl.inst)} lane0_direct=0x${Hexadecimal(reg_save.in1(0) + reg_save.in2(0))} lane0_generic=0x${Hexadecimal(((reg_save.in1(0) + reg_save.in2(0))(1,0) + Cat(io.csr_tid, 0.U(2.W)) + io.csr_pds + (((Cat((reg_save.in1(0) + reg_save.in2(0))(31,2), 0.U(2.W))) * io.csr_numw) << depth_thread)))} mask=0x${Hexadecimal(reg_save.mask.asUInt)}\n"
++    )
++    bugTriggerPrinted := true.B
++  }
++  all_shared := Mux(reg_save.ctrl.isvec,
++    is_shared.asUInt.andR, // "AND" Reduce
++    is_shared(0)
++  )
+   val addr_wire=Wire(UInt(xLen.W))
+   addr_wire:=addr(PriorityEncoder(reg_save.mask.asUInt))
+   val tag = Mux(reg_save.mask.asUInt=/=0.U, addr_wire(xLen-1, xLen-1-dcache_TagBits+1), 0.U(dcache_TagBits.W))
+@@ -602,4 +615,4 @@ class ShiftBoard(val depth:Int) extends Module{
+   }
+   io.full:= taps(depth-1)//Mux(left_move^right_move,Mux(left_move,taps(depth-2),false.B),taps(depth-1))
+   io.empty:= !Mux(left_move^right_move,Mux(left_move,true.B,taps(1)),taps(0))
+-}
+\ No newline at end of file
++}

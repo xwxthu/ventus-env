@@ -1,0 +1,129 @@
+diff --git a/ventus/src/pipeline/operandCollector.scala b/ventus/src/pipeline/operandCollector.scala
+index dcad972..d2be27b 100644
+--- a/ventus/src/pipeline/operandCollector.scala
++++ b/ventus/src/pipeline/operandCollector.scala
+@@ -595,38 +595,61 @@ class operandCollector extends Module{
+     (x -> (io.vgpr_base(x) >> log2Ceil(num_bank)).asUInt)
+   }.map { x => (x._1.U -> x._2) }
+ 
+-  val wbVecBankId = Wire(UInt(2.W))
+-  val wbScaBankId = Wire(UInt(2.W))
+-  val wbVecBankAddr = Wire(UInt(depth_regBank.W))
+-  val wbScaBankAddr = Wire(UInt(depth_regBank.W))
+-
+-  val sgprW = Wire(UInt(depth_regBank.W))
+-  sgprW := io.sgpr_base(io.writeScalarCtrl.bits.warp_id) >> log2Ceil(num_bank).U
+-  val regW = Wire(UInt(7.W))
+-  regW := io.writeScalarCtrl.bits.reg_idxw >> log2Ceil(num_bank).U
++  val wbVecBankId = Wire(UInt(2.W))
++  val wbScaBankId = Wire(UInt(2.W))
++  val wbVecBankAddr = Wire(UInt(depth_regBank.W))
++  val wbScaBankAddr = Wire(UInt(depth_regBank.W))
++  val bug000199Cycle = RegInit(0.U(64.W))
++  val bug000199TriggerPrinted = RegInit(false.B)
++  bug000199Cycle := bug000199Cycle + 1.U
++
++  val sgprW = Wire(UInt(depth_regBank.W))
++  sgprW := io.sgpr_base(io.writeScalarCtrl.bits.warp_id) >> log2Ceil(num_bank).U
++  val regW = Wire(UInt(7.W))
++  regW := io.writeScalarCtrl.bits.reg_idxw >> log2Ceil(num_bank).U
+ 
+   wbVecBankId := io.writeVecCtrl.bits.reg_idxw(log2Ceil(num_bank)-1,0)+io.writeVecCtrl.bits.warp_id(widSliceHigh,0)
+   wbVecBankAddr := (io.vgpr_base(io.writeVecCtrl.bits.warp_id) >> log2Ceil(num_bank).U).asUInt + (io.writeVecCtrl.bits.reg_idxw >> log2Ceil(num_bank).U)
+   wbScaBankId := io.writeScalarCtrl.bits.reg_idxw(log2Ceil(num_bank)-1,0)+io.writeScalarCtrl.bits.warp_id(widSliceHigh,0)
+-  wbScaBankAddr := (io.sgpr_base(io.writeScalarCtrl.bits.warp_id) >> log2Ceil(num_bank).U).asUInt + (io.writeScalarCtrl.bits.reg_idxw >> log2Ceil(num_bank).U)
+-  val wbScaBankAddrtest = Wire(UInt(depth_regBank.W))
+-  wbScaBankAddrtest := sgprW + regW
+-
+-  vectorBank.foreach(x=>{
+-    x.rdidx := wbVecBankAddr
+-    x.rd := io.writeVecCtrl.bits.wb_wvd_rd
++  wbScaBankAddr := (io.sgpr_base(io.writeScalarCtrl.bits.warp_id) >> log2Ceil(num_bank).U).asUInt + (io.writeScalarCtrl.bits.reg_idxw >> log2Ceil(num_bank).U)
++  val wbScaBankAddrtest = Wire(UInt(depth_regBank.W))
++  wbScaBankAddrtest := sgprW + regW
++  val bug000199ScalarRow0Write =
++    io.writeScalarCtrl.valid &&
++    io.writeScalarCtrl.bits.wxd &&
++    io.writeScalarCtrl.bits.reg_idxw.orR &&
++    (wbScaBankAddr === 0.U)
++
++  vectorBank.foreach(x=>{
++    x.rdidx := wbVecBankAddr
++    x.rd := io.writeVecCtrl.bits.wb_wvd_rd
+     x.rdwen := false.B
+     x.rdwmask := io.writeVecCtrl.bits.wvd_mask
+   })
+-  scalarBank.foreach(x=>{
+-    x.rdidx := wbScaBankAddr
+-    x.rd := io.writeScalarCtrl.bits.wb_wxd_rd
+-    x.rdwen := false.B
+-  })
+-  vectorBank(wbVecBankId).rdwen := io.writeVecCtrl.bits.wvd & io.writeVecCtrl.valid
+-  scalarBank(wbScaBankId).rdwen := io.writeScalarCtrl.bits.wxd & io.writeScalarCtrl.valid & io.writeScalarCtrl.bits.reg_idxw.orR
+-  io.writeScalarCtrl.ready := true.B
+-  io.writeVecCtrl.ready := true.B
++  scalarBank.foreach(x=>{
++    x.rdidx := wbScaBankAddr
++    x.rd := io.writeScalarCtrl.bits.wb_wxd_rd
++    x.rdwen := false.B
++  })
++  vectorBank(wbVecBankId).rdwen := io.writeVecCtrl.bits.wvd & io.writeVecCtrl.valid
++  scalarBank(wbScaBankId).rdwen := io.writeScalarCtrl.bits.wxd & io.writeScalarCtrl.valid
++  if (SPIKE_OUTPUT) {
++    when(bug000199ScalarRow0Write && !bug000199TriggerPrinted) {
++      bug000199TriggerPrinted := true.B
++      printf(
++        p"[BUG_TRIGGER][000199][regfile_bank_local_x0] cycle=${bug000199Cycle} " +
++        p"sm=${io.writeScalarCtrl.bits.spike_info.get.sm_id} " +
++        p"warp=${io.writeScalarCtrl.bits.warp_id} " +
++        p"pc=0x${Hexadecimal(io.writeScalarCtrl.bits.spike_info.get.pc)} " +
++        p"inst=0x${Hexadecimal(io.writeScalarCtrl.bits.spike_info.get.inst)} " +
++        p"arch_reg=x${io.writeScalarCtrl.bits.reg_idxw} " +
++        p"bank=${wbScaBankId} bank_row=${wbScaBankAddr} " +
++        p"data=0x${Hexadecimal(io.writeScalarCtrl.bits.wb_wxd_rd)}\n"
++      )
++    }
++  }
++  io.writeScalarCtrl.ready := true.B
++  io.writeVecCtrl.ready := true.B
+ 
+   // when all operands of an instruction has prepared, issue it.
+   class DualIssueIO(num_CU: Int) extends Module {
+diff --git a/ventus/src/pipeline/regfile.scala b/ventus/src/pipeline/regfile.scala
+index 11e10b2..5b9010f 100644
+--- a/ventus/src/pipeline/regfile.scala
++++ b/ventus/src/pipeline/regfile.scala
+@@ -21,21 +21,21 @@ class RegFileBank extends Module  {
+   bypassSignal := RegNext((io.rsidx===io.rdidx)&io.rdwen)
+   if (!GVM_ENABLED) {
+     val regs = SyncReadMem(NUMBER_SGPR_SLOTS/num_bank, UInt(xLen.W))
+-    io.rs := Mux(bypassSignal,RegNext(io.rd), regs.read(io.rsidx))
++    io.rs := Mux(!io.rsidx.orR, 0.U, Mux(bypassSignal, RegNext(io.rd), regs.read(io.rsidx)))
+     //io.ready := true.B
+-    when (io.rdwen) {
++    when (io.rdwen && io.rdidx.orR) {
+       regs.write(io.rdidx, io.rd)
+     }
+-  }
+-  else {
+-    val regs_gvm = RegInit(VecInit(Seq.fill(NUMBER_SGPR_SLOTS / num_bank)(0.U(xLen.W)))) // gvm DUT
+-    io.rs := Mux(bypassSignal, RegNext(io.rd), RegNext(regs_gvm(io.rsidx)))
+-    when(io.rdwen) {
+-      regs_gvm(io.rdidx) := io.rd
+-    }
+-    io.all_regs.get := regs_gvm
+-  }
+-}
++  }
++  else {
++    val regs_gvm = RegInit(VecInit(Seq.fill(NUMBER_SGPR_SLOTS / num_bank)(0.U(xLen.W)))) // gvm DUT
++    io.rs := Mux(!io.rsidx.orR, 0.U, Mux(bypassSignal, RegNext(io.rd), RegNext(regs_gvm(io.rsidx))))
++    when(io.rdwen && io.rdidx.orR) {
++      regs_gvm(io.rdidx) := io.rd
++    }
++    io.all_regs.get := regs_gvm
++  }
++}
+ 
+ class FloatRegFileBankIO(val unified: Boolean) extends Bundle  {
+   val v0     = Output(Vec(num_thread,UInt((xLen).W)))//mask v0

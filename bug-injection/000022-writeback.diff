@@ -1,0 +1,84 @@
+diff --git a/ventus/src/pipeline/execution.scala b/ventus/src/pipeline/execution.scala
+index e009639..3e4a6a5 100644
+--- a/ventus/src/pipeline/execution.scala
++++ b/ventus/src/pipeline/execution.scala
+@@ -23,17 +23,20 @@ class BranchCtrl extends Bundle{
+   val new_pc=UInt(32.W)
+   val spike_info = if (SPIKE_OUTPUT) Some(new InstWriteBack) else None
+ }
+-class ALUexe extends Module{
+-  val io = IO(new Bundle() {
+-    val in = Flipped(DecoupledIO(new sExeData()))
+-    val out = DecoupledIO(new WriteScalarCtrl())
+-    val out2br = DecoupledIO(new BranchCtrl())
+-  })
+-  val alu=Module(new ScalarALU())
+-  alu.io.in1:=io.in.bits.in1
+-  alu.io.in2:=io.in.bits.in2
+-  alu.io.in3:=io.in.bits.in3
+-  alu.io.func:=io.in.bits.ctrl.alu_fn(4,0)
++class ALUexe extends Module{
++  val io = IO(new Bundle() {
++    val in = Flipped(DecoupledIO(new sExeData()))
++    val out = DecoupledIO(new WriteScalarCtrl())
++    val out2br = DecoupledIO(new BranchCtrl())
++  })
++  val cycleCounter = RegInit(0.U(64.W))
++  cycleCounter := cycleCounter + 1.U
++  val bugTriggerPrinted = RegInit(false.B)
++  val alu=Module(new ScalarALU())
++  alu.io.in1:=io.in.bits.in1
++  alu.io.in2:=io.in.bits.in2
++  alu.io.in3:=io.in.bits.in3
++  alu.io.func:=io.in.bits.ctrl.alu_fn(4,0)
+   val result=Module(new Queue(new WriteScalarCtrl,1,pipe=true))
+   val result_br=Module(new Queue(new BranchCtrl,1,pipe=true))
+   result.io.deq<>io.out
+@@ -51,18 +54,35 @@ class ALUexe extends Module{
+     B_B->result_br.io.enq.ready,
+     B_N->result.io.enq.ready
+   ))
+-
+-  result_br.io.enq.bits.wid:=io.in.bits.ctrl.wid
+-  result_br.io.enq.bits.new_pc:=io.in.bits.in3
+-  result_br.io.enq.bits.jump:=MuxLookup(io.in.bits.ctrl.branch,false.B)(Seq(B_B->alu.io.cmp_out,B_J->true.B,B_R->true.B))
+-
+-  result_br.io.enq.valid := io.in.valid && MuxLookup(io.in.bits.ctrl.branch, result.io.enq.ready)(Seq(
+-    B_B -> true.B, B_N -> false.B,
+-  ))
+-  result.io.enq.valid := io.in.valid && io.in.bits.ctrl.wxd && MuxLookup(io.in.bits.ctrl.branch, result_br.io.enq.ready)(Seq(
+-    B_B -> false.B, B_N -> true.B,
+-  ))
+-}
++
++  result_br.io.enq.bits.wid:=io.in.bits.ctrl.wid
++  result_br.io.enq.bits.new_pc:=io.in.bits.in3
++  result_br.io.enq.bits.jump:=MuxLookup(io.in.bits.ctrl.branch,false.B)(Seq(B_B->alu.io.cmp_out,B_J->true.B,B_R->true.B))
++
++  val bugTrigger = io.in.valid && io.in.bits.ctrl.wxd &&
++    (io.in.bits.ctrl.branch === B_J || io.in.bits.ctrl.branch === B_R) &&
++    (result_br.io.enq.ready =/= result.io.enq.ready)
++  when(bugTrigger && !bugTriggerPrinted){
++    bugTriggerPrinted := true.B
++    if(SPIKE_OUTPUT){
++      printf(p"BUG_TRIGGER[000022][jal_jalr_writeback_twice] cycle=${Decimal(cycleCounter)} " +
++        p"wid=${Decimal(io.in.bits.ctrl.wid)} pc=0x${Hexadecimal(io.in.bits.ctrl.spike_info.get.pc)} " +
++        p"inst=0x${Hexadecimal(io.in.bits.ctrl.spike_info.get.inst)} br_ready=${Decimal(result_br.io.enq.ready.asUInt)} " +
++        p"x_ready=${Decimal(result.io.enq.ready.asUInt)}\n")
++    } else {
++      printf(p"BUG_TRIGGER[000022][jal_jalr_writeback_twice] cycle=${Decimal(cycleCounter)} " +
++        p"wid=${Decimal(io.in.bits.ctrl.wid)} br_ready=${Decimal(result_br.io.enq.ready.asUInt)} " +
++        p"x_ready=${Decimal(result.io.enq.ready.asUInt)}\n")
++    }
++  }
++
++  result_br.io.enq.valid := io.in.valid && MuxLookup(io.in.bits.ctrl.branch, true.B)(Seq(
++    B_B -> true.B, B_N -> false.B,
++  ))
++  result.io.enq.valid := io.in.valid && io.in.bits.ctrl.wxd && MuxLookup(io.in.bits.ctrl.branch, true.B)(Seq(
++    B_B -> false.B, B_N -> true.B,
++  ))
++}
+ class vMULexe extends Module{
+   val io = IO(new Bundle {
+     val in = Flipped(DecoupledIO(new vExeData()))
