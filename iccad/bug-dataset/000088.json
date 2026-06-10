@@ -1,0 +1,143 @@
+{
+  "dataset_id": 88,
+  "original_review_id": 111,
+  "meta": {
+    "id": 111,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "3e2966fb5be5f00fe8af3e8c7696ff0831880cb6",
+    "subject": "Fix bugs when flush L2cache"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "flush_control",
+    "summary": "This commit fixes L2 flush/invalidate result propagation so internally generated flush results keep the original requester source, bypass normal miss-allocation paths, and still forward the terminal last_flush event.",
+    "why_it_counts": [
+      "The commit message explicitly states it fixes L2 cache flush bugs.",
+      "The changed modules are active RTL blocks in the L2 directory and scheduler path despite one file being named Directory_test.scala.",
+      "The patch corrects control metadata propagation and result buffering for real flush/invalidate operations."
+    ],
+    "disqualifiers": [
+      "The fix spans two cooperating modules and combines source-ID preservation with special handling for terminal flush events."
+    ],
+    "evidence": [
+      "Directory_test.scala adds flush_invalidate_src, stores it in flush_source_reg, and uses it for io.result.bits.source during flush results instead of 0.U.",
+      "Scheduler.scala passes request.bits.source into directory.io.flush_invalidate_src.",
+      "requests.io.push.valid now excludes directory results marked as flush so flush scans do not enter the normal miss request queue.",
+      "dir_result_buffer.io.enq.valid is widened to include directory.io.result.bits.last_flush so the final flush event is not dropped."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala",
+      "ventus/src/L2cache/Scheduler.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Directory-driven cache flushes often synthesize internal per-line operations rather than reusing the original request directly. Even so, the control metadata of the maintenance request, especially its requester ID and terminal-completion marker, must survive through the internal pipeline. If a flush result zeros the requester source, is filtered using ordinary miss criteria, or drops the final sentinel because it is neither hit nor dirty, the architectural acknowledgment will be misrouted or lost.",
+      "portable_injection_spec": {
+        "affected_mechanism": "flush metadata propagation and terminal event buffering",
+        "trigger_condition": "A cache flush or invalidate is expanded into internal line-by-line directory results, especially on lines that are clean or on the final line that should generate completion.",
+        "injection_action": "Discard or overwrite the original requester/source metadata for internally generated flush results, or gate those results with normal hit/dirty buffering rules so the terminal flush event can be dropped.",
+        "implementation_pattern": "drop control-operation metadata or filter terminal flush result as a normal miss path",
+        "portability_notes": [
+          "Apply this to the handoff between a directory sweep and the downstream response/writeback scheduler.",
+          "The most portable variant is to lose the requester ID or the final flush sentinel while leaving ordinary misses unaffected.",
+          "If the target design uses a dedicated last-flush bit or end-of-scan token, keep that token generation and only break its propagation."
+        ],
+        "concrete_injection_steps": [
+          "Locate where a high-level flush or invalidate request is converted into internal per-line results.",
+          "Force those internally generated results to use a constant or stale requester ID instead of the original request source.",
+          "Additionally gate the downstream flush-result buffer on ordinary hit or dirty conditions only, so a terminal clean flush event is dropped.",
+          "Prevent those internal flush results from using a special maintenance path and let them fall into the normal miss queue if that path exists."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala",
+          "ventus/src/L2cache/Scheduler.scala"
+        ],
+        "target_module_or_logic": "Directory flush result source preservation and scheduler handling of flush-specific results",
+        "commit_fix_summary": "The fix carries request.bits.source into flush directory results, stops flush results from being pushed into the normal request queue, and ensures the last_flush result is still buffered toward SourceD.",
+        "mutation_strategy": "drop_flush_metadata_or_terminal_event",
+        "source_level_edit_anchor": "Commit 3e2966fb adds flush_invalidate_src in Directory_test.scala and changes Scheduler.scala to exclude flush from requests.io.push while including last_flush in dir_result_buffer.io.enq.valid."
+      },
+      "expected_failure_mode": "Flush or invalidate completion can be sent to the wrong requester or never reach the response path at all, causing stuck maintenance operations, missing acknowledgments, or incorrectly retained lines.",
+      "evidence_for_injection": [
+        "The directory module previously hardwired flush result source to zero, which is incompatible with returning an acknowledgment to the original issuer.",
+        "The scheduler explicitly stops treating flush results as ordinary miss-allocation traffic.",
+        "The commit adds last_flush to the buffer-enqueue condition, showing that the final flush token was otherwise being lost."
+      ],
+      "notes": [
+        "Directory_test.scala is an RTL directory implementation despite its name; this is not a test-only change.",
+        "For a reusable dataset entry, losing source ID or dropping the terminal flush token is the clearest reinjection pattern."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "flush_control",
+    "summary": "该提交修复了 L2 flush/invalidate 结果的传播路径：内部生成的 flush 结果会保留原始请求者 source，绕过普通 miss 分配路径，并继续向下游传递最终的 last_flush 事件。",
+    "why_it_counts": [
+      "提交信息明确表示修复的是 L2 cache flush bug。",
+      "虽然一个文件名叫 Directory_test.scala，但被修改的两个模块都是真实参与 L2 目录与调度路径的 RTL。",
+      "补丁修正了真实 flush/invalidate 操作中的控制元数据传播与结果缓冲。"
+    ],
+    "disqualifiers": [
+      "该修复跨越两个配合模块，同时处理了 source-ID 保留和最后一次 flush 事件的特殊转发。"
+    ],
+    "evidence": [
+      "Directory_test.scala 新增 flush_invalidate_src，把它存入 flush_source_reg，并在 flush 结果上用它驱动 io.result.bits.source，而不再是 0.U。",
+      "Scheduler.scala 把 request.bits.source 传给 directory.io.flush_invalidate_src。",
+      "requests.io.push.valid 现在会排除标记为 flush 的目录结果，因此 flush 扫描不会误入普通 miss 请求队列。",
+      "dir_result_buffer.io.enq.valid 被扩展为包含 directory.io.result.bits.last_flush，避免最后一次 flush 事件被丢弃。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala",
+      "ventus/src/L2cache/Scheduler.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "目录驱动的 cache flush 往往会把一次高层维护请求展开为多个内部逐行操作。即便如此，这些内部结果仍然必须保留原始维护请求的控制元数据，尤其是请求者 ID 和最终完成标记。如果 flush 结果把 requester source 清零、仍按普通 miss 规则过滤，或者因为既不 hit 也不 dirty 而丢掉最后一个终止标记，那么架构可见的确认就会被错误路由或直接丢失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "flush metadata propagation and terminal event buffering",
+        "trigger_condition": "某次 cache flush/invalidate 被展开为逐行目录结果，尤其是命中干净行，或者来到应该产生最终完成的最后一行时。",
+        "injection_action": "丢弃或覆盖内部生成的 flush 结果上的原始 requester/source 元数据，或者仍按普通 hit/dirty 缓冲条件筛选这些结果，从而丢掉最后一次 flush 事件。",
+        "implementation_pattern": "drop control-operation metadata or filter terminal flush result as a normal miss path",
+        "portability_notes": [
+          "把它映射到目录扫描结果与下游响应/写回调度器之间的交接处。",
+          "最容易复用的变体，是丢掉 requester ID 或最后一次 flush 标记，同时保持普通 miss 路径不变。",
+          "如果目标设计使用专门的 last-flush 位或 end-of-scan token，应保留其生成，仅破坏其传递。"
+        ],
+        "concrete_injection_steps": [
+          "找到把高层 flush/invalidate 请求转换成内部逐行结果的逻辑。",
+          "让这些内部结果使用常量或过期的 requester ID，而不是原始请求 source。",
+          "另外把下游 flush 结果缓冲改成只在普通 hit/dirty 条件满足时才入队，从而丢掉最终的干净 flush 事件。",
+          "如果存在维护操作专用路径，也可以让这些内部 flush 结果误入普通 miss 队列。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala",
+          "ventus/src/L2cache/Scheduler.scala"
+        ],
+        "target_module_or_logic": "目录 flush 结果的 source 保留，以及调度器对 flush 特殊结果的处理逻辑",
+        "commit_fix_summary": "修复把 request.bits.source 贯穿到 flush 目录结果中，阻止 flush 结果进入普通请求队列，并确保 last_flush 结果仍会被缓冲到 SourceD。",
+        "mutation_strategy": "drop_flush_metadata_or_terminal_event",
+        "source_level_edit_anchor": "提交 3e2966fb 在 Directory_test.scala 中加入 flush_invalidate_src，并在 Scheduler.scala 中把 flush 从 requests.io.push 中排除，同时把 last_flush 纳入 dir_result_buffer.io.enq.valid。"
+      },
+      "expected_failure_mode": "flush/invalidate 的完成响应可能发给错误请求者，或者根本到不了响应路径，表现为维护操作卡死、确认丢失，或 cache line 未被正确清理。",
+      "evidence_for_injection": [
+        "目录模块此前把 flush 结果 source 硬编码为 0，这与向原始请求者返回确认的需求相矛盾。",
+        "调度器显式停止把 flush 结果当作普通 miss 分配流量处理。",
+        "提交把 last_flush 加入缓冲入队条件，说明最终 flush token 之前确实可能被丢掉。"
+      ],
+      "notes": [
+        "Directory_test.scala 虽然名字像测试，但这里实现的是 RTL directory 逻辑，不是 test-only 修改。",
+        "对可复用数据集来说，最清晰的重新注入模式是丢失 source ID 或丢掉最终 flush token。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

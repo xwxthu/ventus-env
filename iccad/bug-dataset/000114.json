@@ -1,0 +1,133 @@
+{
+  "dataset_id": 114,
+  "original_review_id": 143,
+  "meta": {
+    "id": 143,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "b3035534b24d348168b217bc8875d4052998f34f",
+    "subject": "hardware: fix interrupt bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "interrupt_privilege",
+    "summary": "Trap entry saved and forced supervisor mode using the wrong thread selector, so one thread taking an interrupt or exception could overwrite another thread's supervisor-related state.",
+    "why_it_counts": [
+      "The patch changes trap-entry privilege-state RTL in the core control register file.",
+      "The commit message describes a concrete cross-thread interrupt failure.",
+      "The changed indices directly control which thread's supervisor state is saved and updated."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only modified DUT file is hardware/core/control_registers.sv.",
+      "supervisor_en_saved[0][wb_trap_thread_idx] is changed from cr_supervisor_en[ix_thread_idx] to cr_supervisor_en[wb_trap_thread_idx].",
+      "cr_supervisor_en is forced on for wb_trap_thread_idx instead of ix_thread_idx during trap entry.",
+      "Nearby logic already uses wb_trap_thread_idx for the corresponding interrupt_en and mmu_en save/disable operations."
+    ],
+    "touched_dut_files": [
+      "hardware/core/control_registers.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a trap-origin thread misassociation in privilege-state handling. When an interrupt or exception is taken, the machine must save privilege bits and enter supervisor mode for the thread that actually trapped. The broken behavior uses some other in-flight thread identifier for part of that update, so trap entry on one thread corrupts another thread's saved or live privilege state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "trap-entry per-thread privilege-state capture",
+        "trigger_condition": "A multithreaded core takes a trap on one thread while a different thread identifier is present in another pipeline stage or control path.",
+        "injection_action": "Use a non-trap thread selector when saving or forcing supervisor/privilege state at trap entry.",
+        "implementation_pattern": "swap trap-thread index with another pipeline thread index",
+        "portability_notes": [
+          "Map this to any design where trap entry updates per-thread privilege state or exception CSRs.",
+          "The minimal mutation is to misindex only one privilege field, which preserves the overall trap flow while corrupting state ownership.",
+          "Single-threaded designs can emulate the same class by sourcing trap-state updates from the wrong context record or pipeline slot."
+        ],
+        "concrete_injection_steps": [
+          "Find the trap-entry logic that saves current privilege bits and then forces supervisor or exception mode.",
+          "Replace the trap-origin selector with another available thread/context selector for one or more of those assignments.",
+          "Keep the rest of trap dispatch unchanged so the failure appears as wrong privilege restoration rather than no trap at all."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/control_registers.sv"
+        ],
+        "target_module_or_logic": "trap-entry supervisor save and force path",
+        "commit_fix_summary": "The fix changes two copy-paste mistakes so supervisor_en_saved and cr_supervisor_en are indexed by wb_trap_thread_idx instead of ix_thread_idx during trap entry.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In the wb_trap block, change the two wb_trap_thread_idx references in the supervisor save/enter-supervisor assignments back to ix_thread_idx."
+      },
+      "expected_failure_mode": "A trap on one thread can leave another thread in supervisor mode or restore the wrong supervisor bit later, producing cross-thread privilege corruption and unstable interrupt/exception recovery.",
+      "evidence_for_injection": [
+        "The bug is only two assignments wide, making the incorrect thread association explicit.",
+        "Adjacent state save operations already use wb_trap_thread_idx, so ix_thread_idx is inconsistent with the surrounding trap-entry mechanism.",
+        "The commit message reports a real crash caused by one thread clobbering another thread's supervisor flag."
+      ],
+      "notes": [
+        "This is a narrow, high-quality injection target because it perturbs ownership of one architectural status bit without rewriting the broader trap flow.",
+        "The mutation is most meaningful on designs with simultaneous or interleaved per-thread execution."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "interrupt_privilege",
+    "summary": "陷阱入口在保存并强制进入 supervisor 模式时使用了错误的线程选择器，因此一个线程发生中断或异常时会覆盖另一个线程的 supervisor 相关状态。",
+    "why_it_counts": [
+      "补丁修改的是核心控制寄存器文件中的陷阱入口特权状态 RTL。",
+      "提交信息描述了明确的线程间中断故障。",
+      "被修改的索引直接决定保存和更新哪个线程的 supervisor 状态。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一被修改的 DUT 文件是 hardware/core/control_registers.sv。",
+      "supervisor_en_saved[0][wb_trap_thread_idx] 从 cr_supervisor_en[ix_thread_idx] 改为 cr_supervisor_en[wb_trap_thread_idx]。",
+      "陷阱入口时被强制置位的 cr_supervisor_en 目标从 ix_thread_idx 改为 wb_trap_thread_idx。",
+      "附近代码对 interrupt_en 和 mmu_en 的对应保存/关闭本来就使用 wb_trap_thread_idx，进一步说明这里的 ix_thread_idx 不一致。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/control_registers.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误属于陷阱来源线程与特权状态更新目标线程错配。在处理中断或异常时，机器必须为真正发生陷阱的线程保存特权位，并让该线程进入 supervisor 模式。错误实现把其中一部分更新错误地绑定到了另一个在流水线中的线程标识，因此一个线程的陷阱会破坏另一个线程的已保存或当前特权状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "陷阱入口每线程特权状态捕获",
+        "trigger_condition": "多线程核心在某线程发生陷阱时，另一条流水路径或控制路径上同时存在不同的线程标识。",
+        "injection_action": "在陷阱入口保存或强制设置 supervisor/特权状态时，使用非陷阱来源线程的选择器。",
+        "implementation_pattern": "把陷阱线程索引替换成另一条流水线线程索引",
+        "portability_notes": [
+          "可映射到任何在陷阱入口更新每线程特权状态或异常 CSR 的设计。",
+          "最小变异只需把一个特权字段错索引，这样能保留整体陷阱流程，同时破坏状态归属。",
+          "单线程设计也可以通过让陷阱状态更新来自错误的上下文记录或流水槽位来模拟同类错误。"
+        ],
+        "concrete_injection_steps": [
+          "找到陷阱入口中保存当前特权位并强制进入 supervisor 或异常模式的逻辑。",
+          "把这些赋值中的陷阱来源选择器替换成另一个可用的线程/上下文选择器。",
+          "保留其余陷阱分发逻辑不变，使故障表现为错误的特权恢复而不是完全不触发陷阱。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/control_registers.sv"
+        ],
+        "target_module_or_logic": "陷阱入口的 supervisor 保存与强制置位路径",
+        "commit_fix_summary": "修复改正了两个 copy-paste 错误，使陷阱入口期间 supervisor_en_saved 和 cr_supervisor_en 都按 wb_trap_thread_idx 而不是 ix_thread_idx 索引。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 wb_trap 代码块中，把 supervisor 保存和进入 supervisor 的两个 wb_trap_thread_idx 改回 ix_thread_idx。"
+      },
+      "expected_failure_mode": "一个线程上的陷阱会让另一个线程错误地停留在 supervisor 模式，或在之后恢复出错误的 supervisor 位，导致线程间特权状态破坏以及不稳定的中断/异常恢复。",
+      "evidence_for_injection": [
+        "该 bug 只涉及两个赋值，因此错误的线程关联非常直接。",
+        "相邻的状态保存操作都使用 wb_trap_thread_idx，说明 ix_thread_idx 与周围陷阱入口机制不一致。",
+        "提交信息报告了由一个线程覆盖另一个线程 supervisor 标志而引起的真实崩溃。"
+      ],
+      "notes": [
+        "这是一个高质量、局部化的注入目标，因为它只扰动单个架构状态位的归属，而不重写更宽的陷阱流程。",
+        "该变异在支持并发或交错执行多个线程的设计上最有意义。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

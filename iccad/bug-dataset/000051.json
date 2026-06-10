@@ -1,0 +1,131 @@
+{
+  "dataset_id": 51,
+  "original_review_id": 67,
+  "meta": {
+    "id": 67,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "023685983b935d51784c11d90b4b44671e0a1eb1",
+    "subject": "fix accscale softmax large z values overflow"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes a softmax exponent-approximation bug where a large intermediate exponent can overflow the variable shift count and corrupt the final approximation.",
+    "why_it_counts": [
+      "The patch changes arithmetic in the AccumulatorScale softmax datapath.",
+      "It adds explicit saturation on an exponent-derived shift amount before the final variable right shift.",
+      "The commit message and the diff both point to a real overflow in softmax behavior."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The fix adds z_iexp_saturated in src/main/scala/gemmini/AccumulatorScale.scala.",
+      "Overflowing z_iexp values are clamped to 32 before the final right shift.",
+      "The final shift changes from using z_iexp.asUInt()(5, 0) to using the saturated z_iexp_saturated."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In an approximate exp or softmax datapath, an intermediate integer exponent is often reused as a variable shift distance. If that shift count is not clamped to the range the shifter and approximation are designed for, large inputs can force an oversized shift and collapse the approximation, which then distorts normalized outputs.",
+      "portable_injection_spec": {
+        "affected_mechanism": "softmax exponent shift-range limiting",
+        "trigger_condition": "The exp-approximation path produces a shift count larger than the safe range supported by the implementation.",
+        "injection_action": "Remove the protection that saturates the exponent-derived shift amount before the final variable shift.",
+        "implementation_pattern": "remove shift-count saturation",
+        "portability_notes": [
+          "Apply this to datapaths that approximate exp or softmax with a polynomial followed by a variable shift.",
+          "The exact clamp value should match the destination DUT's shifter range or approximation contract.",
+          "Do not change the polynomial coefficients; the bug is specifically the unchecked shift distance."
+        ],
+        "concrete_injection_steps": [
+          "Find the stage that converts the input into an integer exponent or shift count for the exp approximation.",
+          "Bypass or delete the clamp that limits that shift count to a safe maximum.",
+          "Feed the raw computed exponent into the final variable shift while leaving the rest of the approximation logic intact."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala"
+        ],
+        "target_module_or_logic": "AccumulatorScale.iexp softmax exponential approximation",
+        "commit_fix_summary": "The fix introduces z_iexp_saturated and uses it as the final shift amount, clamping overflowed z_iexp values to 32 before shifting q_poly_iexp.",
+        "mutation_strategy": "remove shift-count saturation",
+        "source_level_edit_anchor": "In the iexp path, remove the z_iexp_saturated clamp and drive the final do_>> with the raw z_iexp-derived shift amount instead."
+      },
+      "expected_failure_mode": "Large-magnitude softmax inputs produce incorrect exponential approximations, leading to distorted or collapsed softmax outputs.",
+      "evidence_for_injection": [
+        "The only functional change is the new saturation logic on the shift count.",
+        "The commit message explicitly names overflow on large z values.",
+        "The modified logic sits in the softmax exp-approximation helper rather than test code."
+      ],
+      "notes": [
+        "This fault is localized and can be reinjected with a small reverse edit.",
+        "The most visible failures should appear on large negative-q or large-z softmax inputs."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "修复了 softmax 指数近似路径中的一个问题：较大的中间指数会使可变移位量溢出，从而破坏最终近似结果。",
+    "why_it_counts": [
+      "补丁修改的是 AccumulatorScale 中的 softmax 数据通路算术逻辑。",
+      "它在最终可变右移之前，对由指数导出的移位量加入了显式饱和限制。",
+      "提交信息和补丁都指向了 softmax 行为中的真实溢出问题。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "修复在 src/main/scala/gemmini/AccumulatorScale.scala 中新增了 z_iexp_saturated。",
+      "溢出的 z_iexp 在最终右移前会被钳位到 32。",
+      "最终移位从使用 z_iexp.asUInt()(5, 0) 改为使用饱和后的 z_iexp_saturated。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在近似 exp 或 softmax 的数据通路中，中间整数指数常常会被复用为可变移位距离。如果这个移位量没有被钳制到硬件移位器和近似算法允许的范围内，那么大输入就可能触发过大的移位，导致近似结果塌缩，进而扭曲归一化输出。",
+      "portable_injection_spec": {
+        "affected_mechanism": "softmax 指数移位范围限制",
+        "trigger_condition": "exp 近似路径产生的移位量超过实现所支持的安全范围时。",
+        "injection_action": "去掉最终可变移位前对指数派生移位量的饱和保护。",
+        "implementation_pattern": "remove shift-count saturation",
+        "portability_notes": [
+          "适用于使用多项式加可变移位来近似 exp 或 softmax 的数据通路。",
+          "具体钳位值应映射为目标 DUT 的移位器范围或近似算法约定。",
+          "不要改动多项式系数；该缺陷的核心是未受约束的移位距离。"
+        ],
+        "concrete_injection_steps": [
+          "找到把输入转换为 exp 近似用整数指数或移位量的那一级逻辑。",
+          "旁路或删除限制该移位量上界的钳位逻辑。",
+          "让最终可变移位直接使用原始计算得到的指数，同时保持其余近似逻辑不变。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala"
+        ],
+        "target_module_or_logic": "AccumulatorScale.iexp softmax 指数近似逻辑",
+        "commit_fix_summary": "修复引入了 z_iexp_saturated，并在对 q_poly_iexp 做最终移位前，把溢出的 z_iexp 钳位到 32 后再使用。",
+        "mutation_strategy": "remove shift-count saturation",
+        "source_level_edit_anchor": "在 iexp 路径中，移除 z_iexp_saturated 的钳位，让最终 do_>> 直接使用原始 z_iexp 派生出的移位量。"
+      },
+      "expected_failure_mode": "较大幅度的 softmax 输入会产生错误的指数近似，导致 softmax 输出被扭曲或塌缩。",
+      "evidence_for_injection": [
+        "唯一的功能性改动就是新增了对移位量的饱和逻辑。",
+        "提交信息明确指出 large z values overflow。",
+        "被修改的逻辑位于 softmax 的 exp 近似辅助函数中，而不是测试代码。"
+      ],
+      "notes": [
+        "该故障点局部且明确，可以通过小范围逆向修改重新注入。",
+        "最明显的失效通常会出现在较大的负 q 或较大的 z 输入上。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

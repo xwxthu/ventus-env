@@ -1,0 +1,139 @@
+{
+  "dataset_id": 191,
+  "original_review_id": 230,
+  "meta": {
+    "id": 230,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "109a1d796bbe84eb4395369d65651e3f98b61de3",
+    "subject": "fix: incorrect regext logic. also add simple example"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes multi-lane decode masking for REGEXT and REGEXTI by suppressing prefix slots using raw per-lane extension metadata instead of already-shifted carry metadata.",
+    "why_it_counts": [
+      "The commit message explicitly says the REGEXT logic is incorrect.",
+      "The patch changes executable decode logic in a core pipeline DUT file.",
+      "The changed predicate directly decides which fetch lanes are treated as real instructions after prefix propagation."
+    ],
+    "disqualifiers": [
+      "Most added lines are explanatory examples rather than logic changes."
+    ],
+    "evidence": [
+      "Only `ventus/src/pipeline/DecodeUnit.scala` is modified.",
+      "`maskAfterExt(i)` changes from checking `regextInfo(i)` to checking `regextInfo_pre(i)`.",
+      "Nearby code defines `regextInfo` as scratchpad-shifted prefix state, while `regextInfo_pre` is the current-lane raw prefix classification.",
+      "The added comments show cases where the old logic masked the consumer instruction instead of masking only the EXT slot."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a decoder that supports prefix-like extension instructions, the hardware must suppress the prefix slot itself while letting the following real instruction inherit the extension state. If the suppression decision is made from already-propagated carry metadata instead of the current lane's raw prefix classification, the decoder can suppress the consumer instruction after the prefix has been shifted forward.",
+      "portable_injection_spec": {
+        "affected_mechanism": "prefix-instruction slot suppression in multi-lane decode",
+        "trigger_condition": "A fetch group contains a REGEXT or REGEXTI-like prefix instruction adjacent to a real instruction, especially when prefix state is shifted across lanes or carried from the prior cycle.",
+        "injection_action": "Base the valid-lane suppression decision on propagated prefix state instead of on the current lane's raw prefix decode result.",
+        "implementation_pattern": "restore shifted-metadata predicate",
+        "portability_notes": [
+          "Map this to any DUT where a prefix or extension instruction modifies decode state for a neighboring instruction.",
+          "The bug lives in the logic that filters out prefix pseudo-instructions after prefix propagation has already been computed.",
+          "A suspicious implementation uses post-shift or carry-over metadata when deciding whether the current lane should be suppressed."
+        ],
+        "concrete_injection_steps": [
+          "Find the decode-stage logic that marks prefix-extension slots as non-instructions.",
+          "Identify both the raw per-lane prefix classification and the propagated or carry-over prefix state.",
+          "Change the suppression predicate to consult the propagated state for the current lane instead of the raw current-lane classification.",
+          "Keep the prefix propagation path unchanged so the injected fault only corrupts masking behavior."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "InstrDecodeV2 maskAfterExt generation",
+        "commit_fix_summary": "The fix changes `maskAfterExt` to test `regextInfo_pre(i)` rather than shifted `regextInfo(i)` so only the actual EXT or EXTI slot is suppressed.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In `ventus/src/pipeline/DecodeUnit.scala`, revert `maskAfterExt(i)` from `!(regextInfo_pre(i).isExtI || regextInfo_pre(i).isExt)` back to `!(regextInfo(i).isExtI || regextInfo(i).isExt)`."
+      },
+      "expected_failure_mode": "Decode will suppress the wrong lane around REGEXT or REGEXTI boundaries, causing lost instructions or incorrect extension pairing for the following instruction.",
+      "evidence_for_injection": [
+        "The only executable logic change is the `maskAfterExt` predicate.",
+        "The surrounding decode code constructs `regextInfo` by prepending scratchpad state to shifted per-lane metadata, which is exactly the stale source that caused the bug.",
+        "The added examples in the patch demonstrate that the broken behavior occurs after extension metadata is propagated across fetch positions."
+      ],
+      "notes": [
+        "The added comments do not need to be reverted when reinjecting the bug.",
+        "Dataset item 192 is a branch-port of the same underlying fix."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了 REGEXT 和 REGEXTI 的多发射槽位屏蔽逻辑：屏蔽前缀槽位时应依据当前槽位的原始扩展元数据，而不是依据已经移位后的携带元数据。",
+    "why_it_counts": [
+      "提交信息明确指出 REGEXT 逻辑有误。",
+      "补丁修改的是核心流水线 DUT 文件中的可执行译码逻辑。",
+      "被修改的条件会直接决定前缀传播后哪些取指槽位被当成真实指令。"
+    ],
+    "disqualifiers": [
+      "新增的大部分内容是解释性示例，而不是逻辑改动。"
+    ],
+    "evidence": [
+      "只修改了 `ventus/src/pipeline/DecodeUnit.scala`。",
+      "`maskAfterExt(i)` 从检查 `regextInfo(i)` 改为检查 `regextInfo_pre(i)`。",
+      "附近代码表明 `regextInfo` 是带有 scratchpad 移位效果的前缀状态，而 `regextInfo_pre` 是当前槽位的原始前缀分类。",
+      "补丁新增的注释展示了旧逻辑会错误地屏蔽消费者指令，而不是只屏蔽 EXT 槽位。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在支持前缀式扩展指令的译码器中，硬件应当只屏蔽前缀槽位本身，同时让后续真实指令继承扩展状态。如果屏蔽判断使用的是已经传播过的携带元数据，而不是当前槽位的原始前缀分类，那么当前缀状态前移后，译码器就可能把真正的消费者指令错误屏蔽掉。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多槽位译码中的前缀指令槽位屏蔽",
+        "trigger_condition": "一个取指组中存在 REGEXT 或 REGEXTI 一类前缀指令，并且其相邻位置存在真实指令，尤其是在前缀状态会跨槽位或跨周期传播时。",
+        "injection_action": "让有效槽位的屏蔽判断依赖已经传播的前缀状态，而不是依赖当前槽位的原始前缀译码结果。",
+        "implementation_pattern": "restore shifted-metadata predicate",
+        "portability_notes": [
+          "可映射到任何使用前缀或扩展指令来修改相邻指令译码状态的 DUT。",
+          "该缺陷位于“前缀传播完成后，哪些槽位要被当作伪指令丢弃”的逻辑中。",
+          "可疑实现通常会在判断当前槽位是否应被屏蔽时，错误使用移位后或跨周期携带的元数据。"
+        ],
+        "concrete_injection_steps": [
+          "定位译码阶段把前缀扩展槽位标记为非真实指令的逻辑。",
+          "找出当前槽位的原始前缀分类，以及传播后或跨周期保存的前缀状态。",
+          "把屏蔽条件改为检查当前槽位对应的传播后状态，而不是检查原始当前槽位分类。",
+          "保持前缀传播路径不变，使注入后的错误只体现在屏蔽行为上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "InstrDecodeV2 的 maskAfterExt 生成逻辑",
+        "commit_fix_summary": "修复把 `maskAfterExt` 改为检查 `regextInfo_pre(i)` 而不是移位后的 `regextInfo(i)`，从而只屏蔽真正的 EXT 或 EXTI 槽位。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 `ventus/src/pipeline/DecodeUnit.scala` 中，把 `maskAfterExt(i)` 从 `!(regextInfo_pre(i).isExtI || regextInfo_pre(i).isExt)` 改回 `!(regextInfo(i).isExtI || regextInfo(i).isExt)`。"
+      },
+      "expected_failure_mode": "在 REGEXT 或 REGEXTI 边界附近，译码会屏蔽错误的槽位，导致指令丢失，或让后续指令与错误的扩展状态配对。",
+      "evidence_for_injection": [
+        "补丁中唯一的可执行逻辑变化就是 `maskAfterExt` 条件。",
+        "周围代码通过在前面插入 scratchpad 状态来构造 `regextInfo`，这正是导致错误的陈旧来源。",
+        "补丁中的示例说明错误行为发生在扩展元数据跨取指位置传播之后。"
+      ],
+      "notes": [
+        "重新注入该缺陷时不需要删除补丁新增的注释。",
+        "数据项 192 是同一修复在另一分支上的移植。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

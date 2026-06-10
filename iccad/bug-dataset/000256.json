@@ -1,0 +1,133 @@
+{
+  "dataset_id": 256,
+  "original_review_id": 306,
+  "meta": {
+    "id": 306,
+    "repo": "ventus-gpgpu-cpp-simulator",
+    "branch": "develop",
+    "commit": "12e88ef0d1dcf2404912486a65d444dfcbc93c9f",
+    "subject": "bug fixed (regext s3/d vmadd)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes REGEXT decoding for vmadd-like ternary operations so src3 uses the destination-extension field when the ISA requires src3 to alias dst.",
+    "why_it_counts": [
+      "The patch changes instruction decode semantics in the simulator core.",
+      "It corrects source-register selection for a real instruction class, not a diagnostic or tooling path.",
+      "The commit message explains the architectural rule: vmadd-like instructions must satisfy dst equals src3 under REGEXT."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "decode.cpp changes tmpins.s3 selection to use logical && and distinguishes the scalar floating-point case from other instructions.",
+      "In the REGEXT path, tmpins.s3 now uses extd instead of ext3 for the non-scalar-FP form, while tmpins.d continues to use extd.",
+      "The commit message states the purpose is to ensure vmadd-like instructions always decode with dst equal to src3."
+    ],
+    "touched_dut_files": [
+      "src/sm/decode.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Some ternary instructions are architecturally destructive: the third source register is required to alias the destination register. If a decoder supports extended register-index fields, it must preserve that aliasing rule even when extra high bits are supplied. A bug appears when the decoder extends src3 from its own extension field instead of reusing the destination extension field for instruction forms whose src3 is architecturally the same register as dst.",
+      "portable_injection_spec": {
+        "affected_mechanism": "destructive ternary decode with extended register indices",
+        "trigger_condition": "A vmadd-like or fused ternary instruction that requires src3 == dst is decoded while a register-index extension prefix is active.",
+        "injection_action": "Decode src3 from its independent extension field instead of forcing it to share the destination extension field.",
+        "implementation_pattern": "use src3 extension bits instead of destination extension bits",
+        "portability_notes": [
+          "Apply this to any ISA form where a ternary instruction is destructive and the accumulator operand aliases the destination register.",
+          "The bug only matters when extended register-number encoding exists or when src3 and dst are reconstructed through separate decode paths.",
+          "If the design has both scalar-FP and vector forms, keep the mutation limited to the form that is supposed to alias dst."
+        ],
+        "concrete_injection_steps": [
+          "Identify the decode logic that reconstructs src3 and dst register numbers under an extension or prefix mechanism.",
+          "For destructive ternary instruction forms, change the src3 extension source back to the dedicated src3 extension field instead of the destination extension field.",
+          "Leave dst decoding unchanged so only the aliasing rule is broken.",
+          "Validate with vmadd-like instructions that should accumulate into the destination register while REGEXT or an equivalent prefix is present."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/sm/decode.cpp"
+        ],
+        "target_module_or_logic": "BASE::DECODE register-extension handling for tmpins.s3 and tmpins.d",
+        "commit_fix_summary": "The patch changes non-scalar-FP REGEXT decoding so tmpins.s3 adds extd instead of ext3, preserving src3 == dst for vmadd-like instruction forms.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Restore tmpins.s3 to extend with ext3 for the non-scalar-FP case, while tmpins.d still extends with extd."
+      },
+      "expected_failure_mode": "REGEXT-encoded vmadd-like instructions decode src3 from the wrong register number, breaking the required dst/src3 aliasing and producing incorrect fused or accumulate results.",
+      "evidence_for_injection": [
+        "The old code always extended tmpins.s3 with ext3, regardless of whether the instruction form required src3 to alias dst.",
+        "The fix keeps tmpins.d on extd and explicitly moves tmpins.s3 to extd for the relevant instruction class.",
+        "The commit message directly describes the bug as regext s3/d behavior for vmadd-like operations."
+      ],
+      "notes": [
+        "This is a portable decode bug for any destructive ternary instruction set, not only Ventus-specific vmadd naming.",
+        "The scalar floating-point special case remains on the src3 field and should not be mutated if the goal is to recreate only the vmadd-like bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了 vmadd 类三操作数指令在 REGEXT 条件下的译码：当 ISA 要求 src3 与 dst 绑定时，src3 应当使用目的寄存器的扩展字段。",
+    "why_it_counts": [
+      "补丁修改了模拟器核心中的指令译码语义。",
+      "它修正的是实际指令类别的源寄存器选择，而不是诊断或工具路径。",
+      "提交信息明确给出了架构规则：在 REGEXT 下，vmadd 类指令必须满足 dst 等于 src3。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "decode.cpp 修改了 tmpins.s3 的选择条件，改用逻辑 &&，并把标量浮点场景与其他指令形式区分开。",
+      "在 REGEXT 路径中，非标量浮点形式下 tmpins.s3 改为使用 extd 而不是 ext3，而 tmpins.d 仍继续使用 extd。",
+      "提交信息说明该修改的目标是确保 vmadd 类指令始终以 dst 等于 src3 的方式译码。"
+    ],
+    "touched_dut_files": [
+      "src/sm/decode.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "某些三操作数指令在架构上是 destructive 的：第三源寄存器必须与目标寄存器别名同一寄存器。如果译码器支持扩展寄存器编号字段，那么在补充高位时也必须保持这种绑定关系。缺陷出现在这种情况下：对于架构上要求 src3 与 dst 相同的指令形式，译码器却仍然从独立的 src3 扩展字段去扩展 src3，而不是复用目的寄存器的扩展字段。",
+      "portable_injection_spec": {
+        "affected_mechanism": "带扩展寄存器索引的 destructive 三操作数译码",
+        "trigger_condition": "发射需要 src3 == dst 的 vmadd 类或融合三操作数指令，且同时存在寄存器索引扩展前缀。",
+        "injection_action": "让 src3 重新从独立的扩展字段译码，而不是强制与目的寄存器共用扩展字段。",
+        "implementation_pattern": "使用 src3 扩展位而不是目的寄存器扩展位",
+        "portability_notes": [
+          "把它映射到任何三操作数中存在 destructive 形式、且累加输入与目标寄存器别名的 ISA。",
+          "只有在存在扩展寄存器编号编码，或者 src3 与 dst 通过两条独立译码路径恢复时，这个缺陷才会显现。",
+          "如果设计同时有标量浮点和向量形式，应只在本应与 dst 绑定的那一类形式上注入缺陷。"
+        ],
+        "concrete_injection_steps": [
+          "找到在扩展/前缀机制下恢复 src3 和 dst 寄存器号的译码逻辑。",
+          "对于 destructive 的三操作数指令形式，把 src3 的扩展来源改回独立的 src3 扩展字段，而不是目的寄存器扩展字段。",
+          "保持 dst 的译码不变，使被破坏的只有 src3/dst 绑定规则。",
+          "用带 REGEXT 或等效前缀的 vmadd 类指令验证，该类指令应当把结果累加到目的寄存器中。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/sm/decode.cpp"
+        ],
+        "target_module_or_logic": "BASE::DECODE 中 tmpins.s3 和 tmpins.d 的寄存器扩展处理",
+        "commit_fix_summary": "补丁把非标量浮点形式下的 REGEXT 译码从“tmpins.s3 加 ext3”改为“tmpins.s3 加 extd”，从而保持 vmadd 类指令的 src3 == dst。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把非标量浮点场景下 tmpins.s3 的扩展恢复为 ext3，同时保持 tmpins.d 继续使用 extd。"
+      },
+      "expected_failure_mode": "带 REGEXT 的 vmadd 类指令会把 src3 译码到错误的寄存器编号，破坏必须满足的 dst/src3 绑定关系，并导致融合或累加结果错误。",
+      "evidence_for_injection": [
+        "旧代码无论指令形式如何，都会把 tmpins.s3 扩展为 ext3。",
+        "修复保持 tmpins.d 使用 extd，并明确把相关指令类中的 tmpins.s3 也切换到 extd。",
+        "提交信息直接把该缺陷描述为 vmadd 类操作的 regext s3/d 行为错误。"
+      ],
+      "notes": [
+        "这是适用于任何 destructive 三操作数指令集的可移植译码缺陷，不只限于 Ventus 的 vmadd 命名。",
+        "如果目标只是复现 vmadd 类缺陷，就不要改动仍应保留在 src3 字段上的标量浮点特殊分支。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

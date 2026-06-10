@@ -1,0 +1,139 @@
+{
+  "dataset_id": 92,
+  "original_review_id": 115,
+  "meta": {
+    "id": 115,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "fc9d63a15d5a7921142e942b85f84ee1866cc675",
+    "subject": "bug workaround (shared mem)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "The commit mitigates a real shared-memory backpressure bug by enlarging the core-response queue so one accepted request can survive the bank-conflict arbiter splitting it into up to one response per thread lane.",
+    "why_it_counts": [
+      "The commit message explicitly describes incorrect CoreRsp backpressure in the shared-memory DUT",
+      "The functional change is in the SharedMemory implementation, not in tests or software",
+      "The new depth matches the stated worst-case fanout of one accepted request becoming up to num_thread internal responses"
+    ],
+    "disqualifiers": [
+      "The author labels it a workaround rather than a root-cause redesign",
+      "The scoreboard dontTouch addition is unrelated debug noise"
+    ],
+    "evidence": [
+      "The commit message states that one accepted CoreReq can be split by BankConflictArb into as many as num_thread requests, making the previous backpressure scheme ineffective",
+      "ventus/src/L1Cache/ShareMem/ShareMem.scala changes DepthCoreRsp_Q from 4 to num_thread",
+      "Nearby logic asserts io.coreReq.ready low based on coreRsp_Q almost-full, so queue capacity directly controls whether backpressure arrives early enough"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/ShareMem/ShareMem.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a banked shared-memory or coalescing load-store structure, one accepted front-end request can fan out into multiple internal bank operations and therefore multiple response fragments. If backpressure is applied only at the request boundary but the response buffer is sized for fewer fragments than the worst-case fanout, the design can accept a request that it no longer has space to retire cleanly, causing queue saturation, ineffective backpressure, or loss of forward progress.",
+      "portable_injection_spec": {
+        "affected_mechanism": "response-buffer sizing for bank-conflict fanout",
+        "trigger_condition": "A shared-memory request expands into many per-lane or per-bank operations before the downstream consumer drains their responses",
+        "injection_action": "Reduce response-buffer capacity below the maximum number of fragments that a single accepted request can generate",
+        "implementation_pattern": "undersize response queue relative to worst-case request fanout",
+        "portability_notes": [
+          "Map this to any DUT where a coalesced request can expand into multiple internal micro-requests or per-lane responses",
+          "The injected bug is about mismatched response credit capacity, not about a specific Ventus queue API",
+          "If the DUT has an almost-full threshold instead of a named depth parameter, reduce the effective headroom instead"
+        ],
+        "concrete_injection_steps": [
+          "Identify the response FIFO or skid storage that absorbs results produced after bank-conflict splitting or lane fanout",
+          "Determine the worst-case number of response fragments created by a single accepted front-end request",
+          "Change the queue depth or almost-full threshold so the storage can no longer absorb that worst case",
+          "Leave the request-side acceptance logic tied to the smaller buffer so the system still accepts a request whose expanded responses no longer fit"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/ShareMem/ShareMem.scala"
+        ],
+        "target_module_or_logic": "SharedMemory coreRsp queue sizing and ready/backpressure gating",
+        "commit_fix_summary": "The fix increases DepthCoreRsp_Q from 4 to num_thread so response backpressure matches the worst-case fanout created by BankConflictArb.",
+        "mutation_strategy": "reduce_queue_depth",
+        "source_level_edit_anchor": "Around lines 72 to 73, restore DepthCoreRsp_Q to 4 while leaving the unrelated scoreboard.scala change untouched."
+      },
+      "expected_failure_mode": "Under bank conflicts or wide-lane shared-memory requests, response storage fills too late and backpressure arrives too late, causing prolonged stalls or failure to drain all generated responses.",
+      "evidence_for_injection": [
+        "The commit text explicitly explains the fanout from one CoreReq to up to num_thread requests",
+        "coreRsp_QAlmstFull is computed from DepthCoreRsp_Q and directly feeds io.coreReq.ready",
+        "No other DUT logic in the commit changes the shared-memory data path, so queue capacity is the practical repair mechanism"
+      ],
+      "notes": [
+        "This is a workable fault-injection target even though the original fix is a capacity workaround",
+        "A smaller mutation is to keep the larger queue but move the almost-full threshold earlier or later to recreate the same response-credit mismatch"
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "该提交通过增大 core response queue，缓解了一个真实的 shared memory 反压缺陷：一次已接收请求可能被 bank-conflict 仲裁器拆成最多每线程一路响应，而旧队列深度不足以覆盖这种最坏扇出。",
+    "why_it_counts": [
+      "提交信息明确描述了 shared-memory DUT 中 CoreRsp 反压错误",
+      "功能性修改发生在 SharedMemory 实现中，而不是测试或软件侧",
+      "新深度与提交中说明的最坏扇出一致，即一次已接收请求最多扩展成 num_thread 个内部响应"
+    ],
+    "disqualifiers": [
+      "作者把它称为 workaround，而不是根因级重构修复",
+      "scoreboard 的 dontTouch 增加只是无关调试噪声"
+    ],
+    "evidence": [
+      "提交说明指出，一个已接收的 CoreReq 可能被 BankConflictArb 拆成最多 num_thread 个请求，从而使旧的反压方式失效",
+      "ventus/src/L1Cache/ShareMem/ShareMem.scala 把 DepthCoreRsp_Q 从 4 改成了 num_thread",
+      "附近逻辑用 coreRsp_Q 的 almost-full 状态直接压低 io.coreReq.ready，因此队列容量会直接决定反压是否来得及"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/ShareMem/ShareMem.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 banked shared memory 或带合并功能的 load-store 结构中，一个已接收的前端请求可能在内部被拆成多个 bank 操作，因此也会产生多个响应片段。如果系统只在请求边界做反压，但响应缓冲的容量又小于单个请求的最坏扇出，那么设计就可能接收一个后续根本没有足够空间退休的请求，最终导致队列饱和、反压失效或前向进展丢失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "bank-conflict 扇出下的响应缓冲容量匹配",
+        "trigger_condition": "某个 shared-memory 请求在下游尚未及时消费响应时，被扩展成多个按 lane 或按 bank 的内部操作",
+        "injection_action": "把响应缓冲容量缩小到低于单个已接收请求可能产生的最大响应片段数",
+        "implementation_pattern": "响应队列容量小于最坏请求扇出",
+        "portability_notes": [
+          "可映射到任何“一个合并请求会扩展成多个内部微请求或每 lane 响应”的 DUT",
+          "注入的本质是响应 credit 容量与最坏扇出不匹配，而不是 Ventus 某个特定 Queue API",
+          "如果 DUT 没有显式深度参数，也可以改小 almost-full 阈值或有效可用余量"
+        ],
+        "concrete_injection_steps": [
+          "找到用于吸收 bank-conflict 拆分结果或 lane 扇出结果的响应 FIFO 或中间缓存",
+          "确定单个已接收前端请求在最坏情况下会产生多少个响应片段",
+          "把队列深度或 almost-full 阈值改到无法容纳这个最坏情况",
+          "保留与该较小缓冲绑定的请求接收逻辑，使系统继续接收那些其扩展响应已经放不下的请求"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/ShareMem/ShareMem.scala"
+        ],
+        "target_module_or_logic": "SharedMemory 中 coreRsp 队列的容量与 ready/backpressure 控制",
+        "commit_fix_summary": "修复把 DepthCoreRsp_Q 从 4 增大到 num_thread，使响应反压能够覆盖 BankConflictArb 带来的最坏扇出。",
+        "mutation_strategy": "reduce_queue_depth",
+        "source_level_edit_anchor": "在约第 72 到 73 行附近，把 DepthCoreRsp_Q 改回 4，并保持无关的 scoreboard.scala 修改不变。"
+      },
+      "expected_failure_mode": "在 bank conflict 或宽 lane shared-memory 请求下，响应存储会过晚才触发反压，导致长时间停顿，甚至无法完整排空所有已生成的响应。",
+      "evidence_for_injection": [
+        "提交说明明确解释了单个 CoreReq 最多扩展成 num_thread 个请求这一扇出来源",
+        "coreRsp_QAlmstFull 由 DepthCoreRsp_Q 计算得到，并直接驱动 io.coreReq.ready",
+        "该提交没有对 shared-memory 数据通路做其他实质功能修改，因此队列容量就是实际修复抓手"
+      ],
+      "notes": [
+        "即使原始修复是容量 workaround，它仍然是可操作的故障注入目标",
+        "更细粒度的变异方式是保留大队列，但调整 almost-full 触发点，以复现同样的响应 credit 不匹配"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

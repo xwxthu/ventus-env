@@ -1,0 +1,139 @@
+{
+  "dataset_id": 126,
+  "original_review_id": 156,
+  "meta": {
+    "id": 156,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "d28df4588306c14f037310dcbbffc0940985c645",
+    "subject": "increased channel bitwidth"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes a too-narrow channel field in ExecuteController command decode and local state. Before the fix, large channel counts were truncated before they even reached the im2col engine.",
+    "why_it_counts": [
+      "The patch changes channel width in a central DUT controller rather than in tests or build files.",
+      "It widens both the stored channel register and the rs2 decode slice that populates it.",
+      "Truncation at command decode directly changes the hardware's interpreted convolution shape."
+    ],
+    "disqualifiers": [
+      "The commit message is terse and does not include an explicit failure trace.",
+      "The patch also repacks neighboring fields such as in_shift and weight_stride to free encoding space."
+    ],
+    "evidence": [
+      "ExecuteController.scala widens channel from 7 bits to 9 bits.",
+      "The decode changes from rs2(31, 25) to rs2(31, 23), which matches the wider stored field.",
+      "weight_stride is simultaneously repacked from rs2(24, 22) to rs2(22, 20), showing that command bits were reassigned to make room for the larger channel field."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is command-decode truncation on a workload dimension that drives downstream traversal. If the execute controller latches a channel-count field into too few bits, every later unit sees the wrong dimension even if its own local counters are wide enough. The hardware then configures the preprocessing and execution pipeline for a smaller problem than software requested.",
+      "portable_injection_spec": {
+        "affected_mechanism": "decode-stage channel-dimension latching",
+        "trigger_condition": "The command encoding carries a channel dimension larger than the legacy field width, and the execute controller is the first place that latches that dimension.",
+        "injection_action": "Reduce the decode slice and local register width for the channel dimension so upper bits are discarded at command decode time.",
+        "implementation_pattern": "truncate a decoded dimension field at the controller boundary",
+        "portability_notes": [
+          "This differs from dataset 125 because the fault is injected at command decode, not only inside the downstream im2col engine.",
+          "Any accelerator with a compact command packet and explicit field extraction can exhibit the same bug.",
+          "If a different DUT uses packed CSRs instead of rs fields, the same principle applies."
+        ],
+        "concrete_injection_steps": [
+          "Locate the command decoder that extracts channel or feature-map count into an execute-side register.",
+          "Shrink the register width and the extracted bit slice together so the field still type-checks but truncates high bits.",
+          "Leave downstream logic unchanged so it operates on the already truncated value.",
+          "Issue a command whose channel count exceeds the old field width and observe that preprocessing or compute traverses too few channels."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "ExecuteController channel register and rs2 decode field",
+        "commit_fix_summary": "The fix widens the execute-side channel register from 7 bits to 9 bits and expands the decoded rs2 bit slice so larger channel counts survive command decode.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Change the channel register back to 7 bits and restore the older rs2(31,25) decode slice, along with the old neighboring weight_stride packing."
+      },
+      "expected_failure_mode": "Large channel-count commands are misdecoded as smaller ones, causing incomplete im2col traversal or incomplete execution over the requested feature-map depth.",
+      "evidence_for_injection": [
+        "The field width and the decode slice are changed together, which strongly indicates a real decode truncation fix.",
+        "ExecuteController is the first consumer of the packed command bits, so an error here propagates into later pipeline stages.",
+        "The patch is self-contained to one controller file."
+      ],
+      "notes": [
+        "This entry complements dataset 125: that one targets local im2col state, while this one targets the upstream command decoder.",
+        "A different DUT may store the decoded dimension in a micro-op queue instead of a plain register; the same mutation still applies."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 ExecuteController 命令解码和本地状态中的 channel 字段过窄问题。修复前，大 channel 数在进入 im2col 引擎之前就已经被截断。",
+    "why_it_counts": [
+      "补丁修改的是核心 DUT 控制器中的 channel 位宽，而不是测试或构建文件。",
+      "它同时扩宽了保存 channel 的寄存器，以及写入该寄存器的 rs2 解码位段。",
+      "如果在命令解码阶段就截断 channel，会直接改变硬件理解到的卷积维度。"
+    ],
+    "disqualifiers": [
+      "提交信息比较简短，没有给出明确的失败轨迹。",
+      "补丁还重新打包了 in_shift 和 weight_stride 等相邻字段，为更宽的 channel 字段腾出空间。"
+    ],
+    "evidence": [
+      "ExecuteController.scala 把 channel 从 7 位扩宽到 9 位。",
+      "解码位段从 rs2(31,25) 改成 rs2(31,23)，与更宽的本地寄存器相匹配。",
+      "weight_stride 也从 rs2(24,22) 重新打包到 rs2(22,20)，说明命令位段被重新分配以容纳更宽的 channel。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误属于驱动后续遍历的维度字段在命令解码阶段被截断。如果执行控制器把 channel 数锁存在过窄的寄存器中，那么即使下游局部计数器本身足够宽，后续所有单元看到的也仍然是错误维度。硬件会按照比软件请求更小的问题规模去配置预处理和执行流水。",
+      "portable_injection_spec": {
+        "affected_mechanism": "解码阶段的 channel 维度锁存",
+        "trigger_condition": "命令编码里携带的 channel 维度大于旧字段位宽，而 execute controller 是第一个锁存该维度的地方。",
+        "injection_action": "缩小 channel 维度的解码位段和本地寄存器位宽，使高位在命令解码时就被丢弃。",
+        "implementation_pattern": "在控制器边界截断解码出的维度字段",
+        "portability_notes": [
+          "这与 dataset 125 不同：这里的错误注入点在命令解码，而不是仅在下游 im2col 引擎内部。",
+          "任何使用紧凑命令包并显式抽取字段的加速器都可能出现同样的问题。",
+          "如果另一套 DUT 用的是打包 CSR 而不是 rs 字段，道理完全相同。"
+        ],
+        "concrete_injection_steps": [
+          "定位从命令包中提取 channel 或 feature-map 深度并写入执行侧寄存器的解码逻辑。",
+          "同时缩小寄存器位宽和解码位段，让代码仍能通过类型检查，但高位会被静默截断。",
+          "保持下游逻辑不变，让它在已经被截断的值上工作。",
+          "发出一个 channel 数超过旧字段位宽的命令，观察预处理或计算是否只遍历了较小的 channel 深度。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "ExecuteController 的 channel 寄存器与 rs2 解码位段",
+        "commit_fix_summary": "该修复把执行侧 channel 寄存器从 7 位扩宽到 9 位，并扩大 rs2 解码位段，使较大的 channel 数能够完整通过命令解码。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "把 channel 寄存器改回 7 位，恢复旧的 rs2(31,25) 解码位段，并同步恢复旧的 weight_stride 打包。"
+      },
+      "expected_failure_mode": "大 channel 数命令会被解码成更小的值，导致 im2col 遍历不完整，或执行阶段只覆盖部分请求的 feature-map 深度。",
+      "evidence_for_injection": [
+        "字段位宽和解码位段一起被修改，这是典型的解码截断修复模式。",
+        "ExecuteController 是最先消费打包命令位的地方，因此这里的错误会向后传播到多个流水级。",
+        "补丁自洽且局限于一个控制器文件。"
+      ],
+      "notes": [
+        "本条目与 dataset 125 互补：125 针对 im2col 局部状态，这里针对上游命令解码器。",
+        "另一套 DUT 可能把解码结果存入 micro-op 队列而不是普通寄存器，但同样适用该变异方式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

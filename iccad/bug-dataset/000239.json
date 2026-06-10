@@ -1,0 +1,133 @@
+{
+  "dataset_id": 239,
+  "original_review_id": 287,
+  "meta": {
+    "id": 287,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "162144866d373181e57fb6c5c629000393d93439",
+    "subject": "directory valid signal bug fixed."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes directory flush progress on clean lines by letting the walker advance even when no flush result handshake will occur for the current entry.",
+    "why_it_counts": [
+      "The patch changes the L2 directory maintenance walker in a real DUT module.",
+      "It addresses a concrete progress bug for clean entries during flush or invalidate.",
+      "The behavior change is localized and directly affects whether a maintenance walk can complete."
+    ],
+    "disqualifiers": [
+      "A follow-up commit shortly afterward refined the timing alignment of the new clean-line bypass."
+    ],
+    "evidence": [
+      "flushCount now advances on flush_issue_reg && (io.result.fire || !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue)).",
+      "The newly added disjunct explicitly allows progress when the current line is not dirty and therefore has no result to consume.",
+      "The modification is inside Directory_test.scala, which holds the directory state and flush traversal logic."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A directory or tag walker used for flush or invalidate often emits downstream work only for dirty lines. Clean lines may need no external result at all. If the walker advances only when a result handshake fires, it can stall forever on a clean line because the handshake it is waiting for will never occur.",
+      "portable_injection_spec": {
+        "affected_mechanism": "clean-line bypass in a maintenance walker",
+        "trigger_condition": "The flush or invalidate walk reaches a clean entry that does not produce a downstream result transaction.",
+        "injection_action": "Require the same result-consumed handshake for clean entries as for dirty entries.",
+        "implementation_pattern": "remove_clean_bypass",
+        "portability_notes": [
+          "This applies to any maintenance engine that conditionally emits work only for dirty, valid, or otherwise special entries.",
+          "The equivalent bug on another DUT is to remove the local 'nothing to do, so advance' case from the walker."
+        ],
+        "concrete_injection_steps": [
+          "Locate the flush or invalidate walker counter and the condition that decides when it may step to the next entry.",
+          "Delete the bypass term that allows progress when the current line is clean or otherwise requires no downstream work.",
+          "Keep the dirty-line result path intact so the injected fault specifically tests progress on clean entries."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "flushCount advancement for clean directory entries",
+        "commit_fix_summary": "The commit adds a clean-line bypass term to the flushCount update so the directory walk can progress even when the current line is not dirty.",
+        "mutation_strategy": "remove_clean_bypass",
+        "source_level_edit_anchor": "In Directory_test.scala, flushCount changed to advance on io.result.fire or on !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue)."
+      },
+      "expected_failure_mode": "Flush or invalidate can hang on clean entries because the walker waits for a result handshake that never comes.",
+      "evidence_for_injection": [
+        "The only functional change in the commit is the extra bypass term in the flushCount condition.",
+        "That term directly references the registered dirty status of the currently scanned line.",
+        "A later follow-up commit refines the phase alignment but preserves the same basic clean-line progress fix."
+      ],
+      "notes": [
+        "This entry remains useful for injection even though the next commit refined the timing of the same logic.",
+        "If a target DUT has no explicit dirty bit, use the equivalent 'line requires no maintenance action' predicate."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 clean line 上的 directory flush 进度问题，使 walker 在当前条目不会产生 flush 结果握手时也能继续前进。",
+    "why_it_counts": [
+      "补丁修改的是实际 DUT 模块中的 L2 directory 维护 walker。",
+      "它修复了 flush/invalidate 遍历 clean entry 时的具体进度错误。",
+      "修改范围局部且直接决定维护遍历能否完成。"
+    ],
+    "disqualifiers": [
+      "后续很快又有一个提交继续细化了这个 clean-line bypass 的时序对齐。"
+    ],
+    "evidence": [
+      "flushCount 现在会在 flush_issue_reg && (io.result.fire || !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue)) 时推进。",
+      "新增的这一项明确允许 walker 在当前 line 不脏、因此不会产生可消费结果时继续前进。",
+      "修改位于保存 directory 状态和 flush 遍历逻辑的 Directory_test.scala 内。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "用于 flush/invalidate 的 directory 或 tag walker 往往只会对脏行发出下游维护事务。clean line 可能根本不需要外部结果。如果 walker 只在 result handshake 发生时才前进，那么它在 clean line 上就会永远等待一个本来就不会出现的握手，从而卡死。",
+      "portable_injection_spec": {
+        "affected_mechanism": "维护 walker 中针对 clean line 的旁路推进",
+        "trigger_condition": "flush 或 invalidate 遍历到了一个不会产生下游结果事务的 clean entry。",
+        "injection_action": "对 clean entry 也强制要求与 dirty entry 相同的结果消费握手才能前进。",
+        "implementation_pattern": "remove_clean_bypass",
+        "portability_notes": [
+          "该模式适用于任何只会对脏/有效/特殊条目发出下游工作的维护引擎。",
+          "在另一套 DUT 上，对应的等效错误就是删掉 walker 中“当前条目无需处理，所以直接前进”的分支。"
+        ],
+        "concrete_injection_steps": [
+          "找到 flush/invalidate walker 的计数器，以及决定何时推进到下一条目的条件。",
+          "删除其中针对 clean line 或“当前条目无需下游工作”时允许直接前进的旁路项。",
+          "保持 dirty line 的结果路径不变，使故障专门体现为 clean line 上的进度阻塞。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "clean directory entry 上的 flushCount 推进条件",
+        "commit_fix_summary": "该提交在 flushCount 更新条件里加入 clean-line bypass，使 directory 在当前 line 不脏时也能继续完成遍历。",
+        "mutation_strategy": "remove_clean_bypass",
+        "source_level_edit_anchor": "在 Directory_test.scala 中，flushCount 的推进条件被改成：io.result.fire 或 !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue)。"
+      },
+      "expected_failure_mode": "flush 或 invalidate 会在 clean entry 上卡住，因为 walker 一直等待一个永远不会到来的结果握手。",
+      "evidence_for_injection": [
+        "该提交唯一的功能变化就是在 flushCount 条件中新增 clean-line bypass。",
+        "这个旁路项直接读取当前扫描 line 的寄存 dirty 状态。",
+        "后续提交虽然细化了时序对齐，但保留了同一个“clean line 也必须能前进”的基本修复方向。"
+      ],
+      "notes": [
+        "尽管下一个提交继续细化了同一路径，这条记录仍然适合作为独立注入样本。",
+        "如果目标 DUT 没有显式 dirty bit，可改用等价的“当前 line 无需维护动作”谓词。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 120,
+  "original_review_id": 150,
+  "meta": {
+    "id": 150,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "61a5f1d1a47bc7f6fcaa3b4336726df7bf8bf196",
+    "subject": "Fixed DMA read resp"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma_response_metadata",
+    "summary": "DMA read response metadata was driven from a live command-tracker peek entry instead of being latched when the beat-packer accepted the request. The fix registers cmd_id and bytes_read at the request handshake so each emitted response beat carries stable metadata from the matching command.",
+    "why_it_counts": [
+      "The behavioral fix is in the DMA read datapath, not in software or tests.",
+      "The patch corrects command/response bookkeeping across a decoupled hardware interface.",
+      "The new RegEnable capture aligns response metadata with the beat-packer request acceptance event."
+    ],
+    "disqualifiers": [
+      "The commit also adds FpgaDebug instrumentation in Controller.scala and DMAReadCommandTracker.scala, which is not part of the bug-fix mechanism."
+    ],
+    "evidence": [
+      "In src/main/scala/gemmini/DMA.scala, io.resp.bits.cmd_id and io.resp.bits.bytes_read change from direct xactTracker.io.peek.entry connections to RegEnable(..., beatPacker.io.req.fire()).",
+      "beatPacker.io.req takes xactTracker.io.peek.entry at request time, while io.resp.valid/resp.bits come later from beatPacker.io.out, so a live peek value can drift before response emission.",
+      "The tracker pop signal is driven by beatPacker.io.in.fire() && core.module.io.beatData.bits.last, which means the peeked command can advance independently of the final resp beat timing.",
+      "The other touched files only add debug visibility and do not change the response-path semantics."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a metadata-alignment failure across a decoupled DMA response pipeline. When response data is buffered or transformed before it is emitted, sideband metadata such as command ID and byte count must be captured at the same handshake that admits the request into that pipeline stage. The broken behavior leaves metadata tied to a live outstanding-command entry, so by the time the response beat emerges, the tracker may already be pointing at a different command.",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA read response sideband metadata capture",
+        "trigger_condition": "A read response path accepts command context into an internal buffer or beat merger, and the outstanding-command tracker can advance before the buffered response is emitted.",
+        "injection_action": "Remove the metadata register at the decoupled boundary and drive response sideband fields directly from the current tracker entry.",
+        "implementation_pattern": "replace handshake-latched metadata with live peek signal",
+        "portability_notes": [
+          "Apply this to DMA, cache-fill, or networked memory-response paths where data beats and command bookkeeping are decoupled by buffering or packing logic.",
+          "Good candidate fields are command ID, original length, tag, byte count, or destination metadata that should stay constant for a buffered transaction.",
+          "The bug is especially likely when a tracker pop/advance event is driven by input-beat progress rather than final output-beat acceptance."
+        ],
+        "concrete_injection_steps": [
+          "Find the boundary where request metadata is handed into a buffering, packing, or beat-merging stage.",
+          "Delete the register or enable-controlled capture for response metadata fields at that boundary.",
+          "Reconnect those output metadata fields directly to the current outstanding-command tracker or live request state."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "StreamReader response cmd_id and bytes_read capture around beatPacker.io.req.fire()",
+        "commit_fix_summary": "The fix changes io.resp.bits.cmd_id and io.resp.bits.bytes_read from direct xactTracker.io.peek.entry wiring to RegEnable captures triggered by beatPacker.io.req.fire().",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In StreamReader, replace the RegEnable-captured cmd_id and bytes_read assignments with direct connections to xactTracker.io.peek.entry.cmd_id and xactTracker.io.peek.entry.bytes_to_read."
+      },
+      "expected_failure_mode": "DMA read responses can emerge with the wrong command ID or byte-count metadata, which corrupts completion bookkeeping, downstream accounting, or data placement associated with that response.",
+      "evidence_for_injection": [
+        "beatPacker.io.req.bits is sourced from xactTracker.io.peek.entry, but io.resp.bits is emitted later from beatPacker.io.out.",
+        "The tracker can advance on beatPacker input consumption, so a direct peek connection is not guaranteed to stay aligned with the delayed output beat.",
+        "The fix captures exactly the two metadata fields that were previously left live, which matches the proposed reinjection."
+      ],
+      "notes": [
+        "For this commit, Controller.scala and DMAReadCommandTracker.scala are supporting context only; the behavior-changing mutation lives entirely in DMA.scala.",
+        "This is a strong cross-DUT injection because decoupled response metadata drift is common in buffered memory systems."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma_response_metadata",
+    "summary": "DMA 读响应的元数据原先直接由实时变化的 command-tracker peek 项驱动，而不是在 beat-packer 接受请求时被锁存。修复在请求握手时寄存 cmd_id 和 bytes_read，从而保证每个输出响应 beat 都携带与之匹配的稳定命令元数据。",
+    "why_it_counts": [
+      "行为修复发生在 DMA 读数据路径中，而不是软件或测试中。",
+      "补丁修正了跨 decoupled 硬件接口的命令/响应记账。",
+      "新的 RegEnable 锁存使响应元数据与 beat-packer 接受请求这一事件对齐。"
+    ],
+    "disqualifiers": [
+      "该提交还在 Controller.scala 和 DMAReadCommandTracker.scala 中加入了 FpgaDebug 调试信息，这不是 bug-fix 机制本身。"
+    ],
+    "evidence": [
+      "在 src/main/scala/gemmini/DMA.scala 中，io.resp.bits.cmd_id 和 io.resp.bits.bytes_read 从直接连接 xactTracker.io.peek.entry 改成了 RegEnable(..., beatPacker.io.req.fire())。",
+      "beatPacker.io.req 在请求进入时使用 xactTracker.io.peek.entry，而 io.resp.valid/resp.bits 则更晚由 beatPacker.io.out 产生，因此实时 peek 值可能在响应真正发出前发生漂移。",
+      "tracker 的 pop 信号由 beatPacker.io.in.fire() && core.module.io.beatData.bits.last 驱动，这说明 peek 到的命令可能会独立于最终 resp beat 的时序而前移。",
+      "另外两个被修改文件只增加了调试可视性，不改变响应路径语义。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误属于 decoupled DMA 响应流水线中的元数据对齐失败。当响应数据在真正发出前会经过缓冲或变换时，命令号、字节数之类的 sideband 元数据必须在请求进入该流水级的同一次握手上被锁存。错误实现让这些元数据持续绑定到一个实时变化的 outstanding-command 条目上，因此当响应 beat 真正输出时，tracker 可能已经指向了另一个命令。",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA 读响应 sideband 元数据捕获",
+        "trigger_condition": "读响应路径把命令上下文送入内部 buffer 或 beat merger，而 outstanding-command tracker 会在缓冲后的响应发出前先前移。",
+        "injection_action": "移除 decoupled 边界上的元数据寄存器，让响应 sideband 字段直接来自当前 tracker 条目。",
+        "implementation_pattern": "用实时 peek 信号替换握手锁存的元数据",
+        "portability_notes": [
+          "可应用到任何 DMA、cache fill 或网络化内存响应路径中，只要数据 beat 和命令记账之间通过 buffer 或 packing 逻辑解耦。",
+          "高价值字段包括 command ID、原始长度、tag、byte count 或 destination 等本应对一个缓冲事务保持不变的元数据。",
+          "当 tracker 的 pop/advance 事件由输入 beat 进度驱动，而不是由最终输出 beat 接收驱动时，该错误尤其容易出现。"
+        ],
+        "concrete_injection_steps": [
+          "找到请求元数据被交给 buffer、packer 或 beat-merger 阶段的边界。",
+          "删除该边界上对响应元数据字段的寄存或 enable 控制锁存。",
+          "把这些输出元数据字段重新直接连接到当前 outstanding-command tracker 或实时请求状态。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "StreamReader 中围绕 beatPacker.io.req.fire() 的 cmd_id 与 bytes_read 捕获逻辑",
+        "commit_fix_summary": "修复把 io.resp.bits.cmd_id 和 io.resp.bits.bytes_read 从直接连接 xactTracker.io.peek.entry，改成了由 beatPacker.io.req.fire() 触发的 RegEnable 锁存。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 StreamReader 中，把 RegEnable 锁存的 cmd_id 和 bytes_read 赋值改回直接连接 xactTracker.io.peek.entry.cmd_id 与 xactTracker.io.peek.entry.bytes_to_read。"
+      },
+      "expected_failure_mode": "DMA 读响应输出时会带着错误的命令号或字节数元数据，破坏完成记账、下游统计或与该响应关联的数据放置。",
+      "evidence_for_injection": [
+        "beatPacker.io.req.bits 来自 xactTracker.io.peek.entry，而 io.resp.bits 则在更晚的时间由 beatPacker.io.out 发出。",
+        "tracker 会在 beatPacker 输入被消费时前移，因此直接连接 peek 值无法保证与延迟后的输出 beat 保持对齐。",
+        "修复只捕获了之前保持“实时”的两个元数据字段，这与建议的回注方式完全一致。"
+      ],
+      "notes": [
+        "对这个提交而言，Controller.scala 和 DMAReadCommandTracker.scala 仅提供上下文；真正改变行为的变异完全位于 DMA.scala。",
+        "这是一个很强的跨 DUT 注入点，因为带缓冲的内存系统里经常会出现 decoupled 响应元数据漂移。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

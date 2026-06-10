@@ -1,0 +1,129 @@
+{
+  "dataset_id": 279,
+  "original_review_id": 336,
+  "meta": {
+    "id": 336,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "b212eac8bca5d9c242be090f240471d5298fc92c",
+    "subject": "rop_mem bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "backpressure",
+    "summary": "Fixes a response backpressure bug in ROP memory handling by removing a direct ready assignment that bypassed the mem_streamer consumer.",
+    "why_it_counts": [
+      "The change is in the RTL response path of the ROP memory unit.",
+      "It fixes ready/backpressure semantics, not debug output or software.",
+      "A bad ready source can cause dropped or misaligned memory responses."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit deletes assign cache_rsp_ready = rsp_ready.",
+      "In the same module, mem_streamer already drives cache_rsp_ready through its mem_rsp_ready port.",
+      "No other functional data-path logic changes in this commit."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a response path passes through an internal buffering or aggregation block, upstream ready must come from that block's actual ability to absorb the response. If a direct assignment ties ready to an outer consumer instead, internal backpressure is bypassed and the upstream source can drop or advance data before the intermediate block has accepted it.",
+      "portable_injection_spec": {
+        "affected_mechanism": "response-path backpressure propagation",
+        "trigger_condition": "A cache or memory response arrives while an intermediate response-aggregation block is not ready to absorb it.",
+        "injection_action": "Bypass the intermediate block's ready signal and drive upstream ready directly from a downstream output-ready signal.",
+        "implementation_pattern": "parallel direct-ready override",
+        "portability_notes": [
+          "Apply this to response selectors, streamers, scoreboards, or packetizers that sit between memory and the final consumer.",
+          "The bug is specifically about acknowledging data too early, not about data formatting.",
+          "Even a single-line change can be architecturally meaningful if it changes ready ownership."
+        ],
+        "concrete_injection_steps": [
+          "Identify the intermediate module that consumes memory responses before they reach the final client.",
+          "Find the upstream ready signal that should be driven by that module's input-side readiness.",
+          "Override or replace it with the final output-ready signal so upstream acceptance ignores internal backpressure."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "cache_rsp_ready handling around mem_streamer in VX_rop_mem",
+        "commit_fix_summary": "The fix removes a direct assignment from cache_rsp_ready to rsp_ready so cache_rsp_ready remains controlled by mem_streamer.mem_rsp_ready.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_rop_mem, the deleted line assign cache_rsp_ready = rsp_ready is the entire functional fix."
+      },
+      "expected_failure_mode": "ROP cache responses can be accepted before the internal mem_streamer is ready, leading to dropped, misordered, or mis-tagged render-memory responses.",
+      "evidence_for_injection": [
+        "cache_rsp_ready is already an output of mem_streamer via its mem_rsp_ready port.",
+        "The deleted assignment created a competing direct source for the same readiness decision.",
+        "The commit touches only this handshake point, so the causal mechanism is narrow and clear."
+      ],
+      "notes": [
+        "This is a very clean single-line reverse patch and a good candidate for precise fault reinjection."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "backpressure",
+    "summary": "该提交修复了 ROP 内存响应路径中的背压错误：删除了一条绕过 mem_streamer 的直接 ready 赋值。",
+    "why_it_counts": [
+      "改动位于 ROP 内存单元的 RTL 响应路径中。",
+      "它修复的是 ready/背压语义，而不是调试输出或软件。",
+      "错误的 ready 来源会导致内存响应丢失或错位。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "该提交删除了 assign cache_rsp_ready = rsp_ready。",
+      "同一模块中，mem_streamer 已经通过其 mem_rsp_ready 端口驱动 cache_rsp_ready。",
+      "本提交没有其他功能性数据路径改动。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当响应路径中间还经过一个内部缓冲或聚合模块时，上游 ready 必须来自这个中间模块真正能否吸收该响应的状态。如果直接把 ready 绑到更外层的消费者上，就会绕过内部背压，使上游在中间模块尚未接受数据时就提前推进或丢弃响应。",
+      "portable_injection_spec": {
+        "affected_mechanism": "响应路径的背压传播",
+        "trigger_condition": "cache 或内存响应到达，而中间的响应聚合模块此时还无法接收该响应。",
+        "injection_action": "绕过中间模块的 ready 信号，直接用最终输出的 ready 去驱动上游 ready。",
+        "implementation_pattern": "并行的直接 ready 覆盖",
+        "portability_notes": [
+          "可应用于位于 memory 与最终消费者之间的 response selector、streamer、scoreboard 或 packetizer。",
+          "该缺陷的本质是过早确认数据，而不是数据格式问题。",
+          "即使只是单行修改，只要改变了 ready 的所有权，也会造成真实的架构级影响。"
+        ],
+        "concrete_injection_steps": [
+          "定位在最终客户端之前接收内存响应的中间模块。",
+          "找到本应由该模块输入侧就绪状态驱动的上游 ready 信号。",
+          "用最终输出 ready 覆盖它，使上游接受行为忽略内部背压。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "VX_rop_mem 中 mem_streamer 周围的 cache_rsp_ready 处理",
+        "commit_fix_summary": "修复删除了 cache_rsp_ready 到 rsp_ready 的直接赋值，使 cache_rsp_ready 继续由 mem_streamer.mem_rsp_ready 控制。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_rop_mem 中，被删除的 assign cache_rsp_ready = rsp_ready 这一行就是全部功能性修复。"
+      },
+      "expected_failure_mode": "ROP cache 响应可能在内部 mem_streamer 尚未准备好时就被接受，导致渲染内存响应丢失、乱序或 tag 错误。",
+      "evidence_for_injection": [
+        "cache_rsp_ready 已经通过 mem_streamer 的 mem_rsp_ready 端口输出。",
+        "被删除的赋值为同一个就绪决策引入了竞争性的直接来源。",
+        "该提交只修改了这个握手点，因此因果机制非常清晰。"
+      ],
+      "notes": [
+        "这是一个非常干净的单行反向补丁，适合作为精确故障回注样本。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

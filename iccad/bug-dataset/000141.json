@@ -1,0 +1,133 @@
+{
+  "dataset_id": 141,
+  "original_review_id": 177,
+  "meta": {
+    "id": 177,
+    "repo": "gemmini",
+    "branch": "reduction-tree",
+    "commit": "f1331cfd232cd0c106e31786d0d712df2e1e8f8c",
+    "subject": "fix latency + 1 bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_latency",
+    "summary": "This commit fixes an off-by-one latency bug in the Mesh helper used to pipeline valid-gated datapath signals between tiles.",
+    "why_it_counts": [
+      "It modifies the shared Mesh helper that propagates B, D, and control signals through the systolic array.",
+      "The patch changes the helper from Pipe(valid, t, latency+1) to Pipe(valid, t, latency), which is a direct timing correction.",
+      "An extra cycle in this helper misaligns pipelined operands and control relative to the rest of the mesh."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit message explicitly says it fixes a latency + 1 bug.",
+      "In src/main/scala/gemmini/Mesh.scala, only the helper implementation changes, from latency+1 to latency.",
+      "That helper is used for inter-tile propagation of B, D, and control fields, so the bug sits on a central DUT timing path."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Mesh.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Many tiled accelerators wrap a generic valid-gated pipeline primitive in a local helper so internal mesh links do not inherit unwanted reset behavior. If that wrapper adds one extra stage beyond the caller's requested latency, data, metadata, and valid timing drift apart from the rest of the array. The bug is architectural in the sense that it changes when an operand or control token reaches the next tile, not just how the code is written.",
+      "portable_injection_spec": {
+        "affected_mechanism": "valid-gated inter-tile pipeline latency accounting",
+        "trigger_condition": "Any path that relies on the mesh helper to forward an operand, propagated partial result, or control token across tiles.",
+        "injection_action": "Add one extra pipeline stage in the valid-gated helper so all users of that helper see latency N+1 instead of N.",
+        "implementation_pattern": "add_pipeline_stage",
+        "portability_notes": [
+          "Map this to whatever helper or reusable wrapper your DUT uses for mesh, crossbar, or lane-to-lane forwarding with valid-aware pipelining.",
+          "The essential fault is not a random retiming; it is a systematic off-by-one error in a shared helper, so many paths inherit the same skew.",
+          "If another DUT does not have a single helper, inject the extra stage consistently into the equivalent B-path, propagated-data path, and control path."
+        ],
+        "concrete_injection_steps": [
+          "Locate the helper or shared block that delays valid-qualified datapath signals between compute tiles or lanes.",
+          "Change the requested delay from N cycles to N+1 cycles for that helper or add one extra register stage inside it.",
+          "Keep the rest of the array timing unchanged so only the helper-based links move later by one cycle.",
+          "Run a workload that depends on aligned operand and control arrival across neighboring tiles."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Mesh.scala"
+        ],
+        "target_module_or_logic": "Mesh.pipe helper used for B, D, and control propagation across columns",
+        "commit_fix_summary": "The fix removes an unintended extra stage by changing Pipe(valid, t, latency+1) to Pipe(valid, t, latency) inside Mesh.pipe.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Change chisel3.withReset(false.B) { Pipe(valid, t, latency).bits } back to Pipe(valid, t, latency+1).bits in Mesh.pipe."
+      },
+      "expected_failure_mode": "Operands or control tokens arrive one cycle late on helper-driven mesh links, causing timing skew, stale pairing of values, or incorrect computation sequencing across tiles.",
+      "evidence_for_injection": [
+        "The patch is a one-line latency correction in a shared helper rather than a broad refactor.",
+        "The helper is used in the same file for mesh B, propagated D, and control fields, so its latency directly affects DUT behavior.",
+        "The original and fixed implementations differ by exactly one cycle, making reverse injection faithful and localized."
+      ],
+      "notes": [
+        "This is a clean single-site injection target.",
+        "The most visible failures should appear in workloads that depend on tight operand/control alignment across the mesh."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_latency",
+    "summary": "该提交修复了 Mesh 中用于 tile 间有效位流水传递的辅助函数里一个 off-by-one 延迟错误。",
+    "why_it_counts": [
+      "它修改的是在 systolic array 中传播 B、D 和控制信号的共享 Mesh 辅助逻辑。",
+      "补丁把辅助函数从 Pipe(valid, t, latency+1) 改成 Pipe(valid, t, latency)，这是直接的时序修正。",
+      "该辅助函数多出一拍会让流水化的操作数和控制相对 mesh 其他路径发生错位。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "提交信息明确说明是在修复 latency + 1 bug。",
+      "在 src/main/scala/gemmini/Mesh.scala 中，唯一的逻辑修改是把辅助函数里的 latency+1 改成 latency。",
+      "该辅助函数用于 tile 间传播 B、D 和控制字段，因此 bug 位于核心 DUT 时序路径上。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Mesh.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "很多阵列式加速器会把通用的 valid 驱动流水原语封装成局部辅助函数，以避免内部 mesh 链路继承不希望的 reset 行为。如果这个封装在调用者请求的延迟之外又额外多加了一拍，那么数据、元数据和 valid 的时序就会与阵列其他部分失配。这个 bug 改变的是操作数或控制令牌到达下一个 tile 的时刻，而不只是代码写法。",
+      "portable_injection_spec": {
+        "affected_mechanism": "带 valid 的 tile 间流水延迟计数",
+        "trigger_condition": "任何依赖该 mesh 辅助函数跨 tile 转发操作数、传播的部分结果或控制令牌的路径。",
+        "injection_action": "在带 valid 的共享辅助函数里额外增加一级流水，使所有用户看到的延迟从 N 变成 N+1。",
+        "implementation_pattern": "add_pipeline_stage",
+        "portability_notes": [
+          "把它映射到你的 DUT 中负责 mesh、crossbar 或 lane 间 valid 感知流水转发的辅助模块或公共封装。",
+          "核心故障不是随机 retiming，而是在共享辅助函数中系统性地多算了一拍，因此许多路径会一起继承这个偏差。",
+          "如果其他 DUT 没有单独的辅助函数，就在等价的 B 路径、传播数据路径和控制路径中一致地插入这一额外流水级。"
+        ],
+        "concrete_injection_steps": [
+          "定位负责在计算 tile 或 lane 之间延迟 valid 限定信号的辅助函数或共享模块。",
+          "把请求延迟从 N 改成 N+1，或者直接在该辅助函数内部再增加一级寄存器。",
+          "保持阵列其余时序不变，使只有通过该辅助函数的链路统一晚一拍。",
+          "运行那些依赖相邻 tile 间操作数与控制严格对齐的工作负载。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Mesh.scala"
+        ],
+        "target_module_or_logic": "Mesh.pipe 辅助函数，用于列方向传播 B、D 和控制信号",
+        "commit_fix_summary": "修复通过把 Mesh.pipe 内部的 Pipe(valid, t, latency+1) 改为 Pipe(valid, t, latency) 去掉了多余的一拍。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 Mesh.pipe 中 chisel3.withReset(false.B) { Pipe(valid, t, latency).bits } 改回 Pipe(valid, t, latency+1).bits。"
+      },
+      "expected_failure_mode": "通过该辅助函数传播的 mesh 链路会整体晚一拍，导致操作数或控制令牌错位、配对到过期值，或者跨 tile 的计算时序错误。",
+      "evidence_for_injection": [
+        "补丁是在共享辅助函数上的单行延迟修正，而不是大范围重构。",
+        "同文件中该辅助函数被用于 mesh 的 B、传播的 D 以及控制字段，因此其延迟直接影响 DUT 行为。",
+        "修复前后恰好只差一个周期，因此反向注入既忠实又局部。"
+      ],
+      "notes": [
+        "这是一个非常干净的单点注入目标。",
+        "最明显的错误通常出现在依赖 mesh 中操作数和控制紧密对齐的工作负载上。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

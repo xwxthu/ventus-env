@@ -1,0 +1,137 @@
+{
+  "dataset_id": 437,
+  "original_review_id": 574,
+  "meta": {
+    "id": 574,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "2cf483ddf5755a48ae493e1a78dfffef4986fbee",
+    "subject": "xrt afu bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "Fixes multi-bank XRT AFU memory addressing so each bank contributes its bank offset exactly once instead of aliasing banks onto the same address range.",
+    "why_it_counts": [
+      "The hardware fix is in the AFU wrapper address path that drives external AXI memory banks.",
+      "xrtsim is updated to match the corrected bank-offset placement.",
+      "The subject explicitly says these are AFU bug fixes."
+    ],
+    "disqualifiers": [
+      "The commit also includes XRT packaging and script changes."
+    ],
+    "evidence": [
+      "VX_afu_wrap.sv adds a BANK_OFFSET term inside the per-bank address loop for both AW and AR.",
+      "sim/xrtsim/xrt_sim.cpp removes the extra i * mem_bank_size_ offset from both read and write requests.",
+      "The diff is focused on physical address formation."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+      "sim/xrtsim/xrt_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a multi-bank memory interface, bank identity must appear in the physical address map exactly once. If the wrapper fails to add the per-bank base offset, or hardware and model disagree about which side adds it, different banks can alias the same physical region.",
+      "portable_injection_spec": {
+        "affected_mechanism": "per-bank external-memory address formation",
+        "trigger_condition": "The design runs with more than one external memory bank and bank-local addresses must be translated into bank-qualified physical addresses.",
+        "injection_action": "Remove the bank-dependent base offset from the hardware address formula, or equivalently add the bank contribution on the wrong side of the interface.",
+        "implementation_pattern": "drop bank-offset term",
+        "portability_notes": [
+          "Apply this to any AFU, DMA, cache, or memory wrapper with one channel per physical bank.",
+          "The reusable bug is incorrect placement of bank-select bits or bank base offset in the external address map."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that converts each bank local address into an outgoing physical byte address.",
+          "Delete the bank-select or bank-offset contribution from that formula.",
+          "Run a multi-bank workload that touches disjoint bank ranges to expose aliasing or wrong-bank access."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+          "sim/xrtsim/xrt_sim.cpp"
+        ],
+        "target_module_or_logic": "per-bank AXI address generation in the XRT AFU wrapper",
+        "commit_fix_summary": "The fix adds a per-bank BANK_OFFSET to AXI AW and AR addresses in hardware and removes duplicate bank offseting in xrtsim.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the BANK_OFFSET contribution from m_axi_mem_awaddr_a and m_axi_mem_araddr_a; optionally restore the old extra bank offset in xrtsim."
+      },
+      "expected_failure_mode": "Different memory banks can alias the same physical address range or access the wrong bank, causing wrong-bank reads, writes, or silent data corruption.",
+      "evidence_for_injection": [
+        "The only DUT-facing hunk adds a per-bank offset in the wrapper g_addressing block.",
+        "The simulator side removes a second bank offset at the same time.",
+        "Both read and write paths are corrected."
+      ],
+      "notes": [
+        "This is a reusable address-generation fault for banked off-chip memory interfaces.",
+        "If hardware-only injection is preferred, mutating the wrapper is sufficient."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "该提交修复了多 bank XRT AFU 的内存寻址问题，使每个 bank 的偏移只被应用一次，而不会让多个 bank 映射到同一地址区间。",
+    "why_it_counts": [
+      "硬件修复点位于 AFU wrapper 驱动外部 AXI memory bank 的地址路径。",
+      "xrtsim 也同步更新，以匹配修正后的 bank offset 放置方式。",
+      "提交标题明确说明这是 AFU bug fixes。"
+    ],
+    "disqualifiers": [
+      "该提交还包含 XRT 打包和脚本调整。"
+    ],
+    "evidence": [
+      "VX_afu_wrap.sv 在按 bank 的地址循环中为 AW 和 AR 都加入了 BANK_OFFSET。",
+      "sim/xrtsim/xrt_sim.cpp 从读写请求里都删除了额外的 i * mem_bank_size_ 偏移。",
+      "补丁聚焦于物理地址形成。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+      "sim/xrtsim/xrt_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在多 bank 内存接口中，bank 身份在物理地址图中必须且只能出现一次。如果 wrapper 漏掉每 bank 的基址偏移，或者硬件和模型对偏移应该由哪一侧添加理解不一致，不同 bank 就可能映射到同一物理区间。",
+      "portable_injection_spec": {
+        "affected_mechanism": "按 bank 的外部内存地址生成",
+        "trigger_condition": "设计启用了多个外部 memory bank，且 bank-local 地址必须被转换成带 bank 身份的物理地址。",
+        "injection_action": "从硬件地址公式中删除每 bank 的基址偏移，或者等价地在接口错误的一侧保留 bank 偏移。",
+        "implementation_pattern": "drop bank-offset term",
+        "portability_notes": [
+          "适用于任何为每个物理 bank 提供一条 channel 的 AFU、DMA、cache 或 memory wrapper。",
+          "可复用缺陷的本质是外部地址图中的 bank-select 位或基址偏移放置错误。"
+        ],
+        "concrete_injection_steps": [
+          "找到把每个 bank 的本地地址转换成外部物理字节地址的逻辑。",
+          "删除该公式中的 bank-select 或 bank-offset 项。",
+          "运行会访问不同 bank 区间的多 bank 负载，以暴露地址别名或错误 bank 访问。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+          "sim/xrtsim/xrt_sim.cpp"
+        ],
+        "target_module_or_logic": "XRT AFU wrapper 中按 bank 生成 AXI 地址的逻辑",
+        "commit_fix_summary": "修复在硬件 AXI AW 和 AR 地址中加入每 bank 的 BANK_OFFSET，并在 xrtsim 中去掉重复的 bank offset。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "从 m_axi_mem_awaddr_a 和 m_axi_mem_araddr_a 的公式中删除 BANK_OFFSET；如需匹配原 bug，也可在 xrtsim 中恢复旧的额外 bank 偏移。"
+      },
+      "expected_failure_mode": "不同 memory bank 可能映射到同一物理地址区间，或者访问到错误的 bank，从而导致错误读写或静默数据损坏。",
+      "evidence_for_injection": [
+        "唯一的 DUT 侧逻辑改动就是在 wrapper 的 g_addressing 块中加入每 bank 偏移。",
+        "模型侧同步删除了第二次 bank 偏移。",
+        "读路径和写路径都被同时修正。"
+      ],
+      "notes": [
+        "这是适用于 banked off-chip memory interface 的可复用地址生成故障。",
+        "如果偏好只做硬件注入，修改 wrapper 即可。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

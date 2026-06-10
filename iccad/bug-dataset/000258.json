@@ -1,0 +1,137 @@
+{
+  "dataset_id": 258,
+  "original_review_id": 309,
+  "meta": {
+    "id": 309,
+    "repo": "ventus-gpgpu-cpp-simulator",
+    "branch": "develop",
+    "commit": "598f3f370006de9aff62172477d983ce8a96e905",
+    "subject": "Bug fixed & small changes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Mixed commit whose primary DUT fix is correcting byte-lane packing for masked LSU writes in the ramulator-backed memory model; the decode assert cleanup is secondary.",
+    "why_it_counts": [
+      "ramulator.cpp changes modeled LSU data-lane semantics for masked memory accesses.",
+      "The old code mis-packed source bytes whenever the byte-enable mask was sparse or started at a high lane.",
+      "This directly changes architecturally visible memory contents, not just diagnostics."
+    ],
+    "disqualifiers": [
+      "The commit also suppresses a premature decode assert for invalid instructions that may never issue, which is not the primary bug here."
+    ],
+    "evidence": [
+      "ramulator.cpp replaces the old loop that indexed source bytes by addrOffset with a separate dataOffset counter for active byte lanes.",
+      "The commit message gives a concrete failing pattern: wordOffset1H = 1100 where the actual data should be packed into 0011 source-byte order.",
+      "decode.cpp only changes when to raise an invalid-instruction assert and does not alter LSU behavior."
+    ],
+    "touched_dut_files": [
+      "src/ramulator.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "For masked or partial-word stores, the selected destination byte lanes do not necessarily line up with the source data byte positions one-for-one. A correct implementation must pack the active source bytes densely in program order while scattering them to the enabled destination byte lanes. A bug appears when the implementation reuses the destination lane index as the source-byte index. That works only for contiguous low-byte masks; for sparse or high-byte masks it writes the wrong bytes into the selected memory lanes.",
+      "portable_injection_spec": {
+        "affected_mechanism": "masked store byte-lane packing",
+        "trigger_condition": "A memory write uses a byte-enable mask that is sparse or starts at a higher byte lane, such as 1100 rather than 0011.",
+        "injection_action": "Index source data bytes by destination lane position instead of by the compact order of active bytes.",
+        "implementation_pattern": "use address offset as source-byte offset",
+        "portability_notes": [
+          "Apply this to any LSU, memory model, or bus adapter that handles subword writes with a byte-enable mask.",
+          "The bug is most visible when the enabled lanes are not the lowest contiguous subset.",
+          "If the design already expands write data into per-byte lanes, inject the bug where source bytes are mapped into enabled destination bytes."
+        ],
+        "concrete_injection_steps": [
+          "Find the store-data packing loop that iterates over enabled byte lanes for a masked write.",
+          "Replace the compact source-byte counter with direct indexing by the destination byte-lane number.",
+          "Keep destination addresses and byte-enable masks unchanged so only the source-to-lane mapping becomes wrong.",
+          "Test with sparse masks such as high-byte-only or non-contiguous byte enables to expose misaligned write data."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/ramulator.cpp"
+        ],
+        "target_module_or_logic": "RamulatorWrapper masked-write byte packing in the L1D write path",
+        "commit_fix_summary": "The patch replaces the old write loop, which used addrOffset as both destination offset and source-byte index, with a separate dataOffset that increments only when a byte lane is actually enabled.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the old behavior that reads source bytes directly at the enabled destination lane index instead of maintaining a compact dataOffset."
+      },
+      "expected_failure_mode": "Masked stores with sparse or high-byte enables write the wrong byte values into memory, causing misaligned or scrambled subword data.",
+      "evidence_for_injection": [
+        "The fix introduces a separate data pointer solely for active lanes, which is the telltale correction for source-byte packing.",
+        "The commit message provides an explicit failing mask pattern where physical lane position and source-byte order differ.",
+        "No LSU-relevant behavior is changed in the decode.cpp part of the commit."
+      ],
+      "notes": [
+        "This is a portable memory-semantic bug that applies equally to hardware LSUs and cycle-accurate memory models.",
+        "Reverting only the ramulator.cpp change is sufficient to recreate the real DUT-visible failure."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "这是一个混合提交，其主要 DUT 修复是纠正 ramulator 内存模型中带 mask 的 LSU 写字节 lane 打包；decode assert 清理只是次要内容。",
+    "why_it_counts": [
+      "ramulator.cpp 修改了带掩码内存访问时的 LSU 数据 lane 语义。",
+      "旧代码在 byte-enable mask 稀疏或只命中高位 lane 时会把源字节打包错位。",
+      "这会直接改变架构可见的内存内容，而不是仅影响诊断。"
+    ],
+    "disqualifiers": [
+      "该提交还抑制了某些最终可能不会发射的非法指令的过早 decode assert，但这不是主要缺陷。"
+    ],
+    "evidence": [
+      "ramulator.cpp 把原先按 addrOffset 取源字节的循环改成了对有效字节 lane 使用独立 dataOffset 计数。",
+      "提交信息给出了明确失败模式：wordOffset1H = 1100 时，实际数据应按 0011 的源字节顺序打包。",
+      "decode.cpp 只改了何时触发非法指令断言，并未改变 LSU 行为。"
+    ],
+    "touched_dut_files": [
+      "src/ramulator.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "对于带 mask 的 partial-word store，被选中的目标字节 lane 与源数据字节位置并不一定一一对应。正确实现应当先按照程序语义把有效源字节紧凑排列，再把它们散射到被使能的目标字节 lane。若实现错误地复用了“目标 lane 下标”作为“源字节下标”，那么它只会在连续低位掩码时看起来正常；一旦掩码稀疏或只覆盖高位字节，就会把错误的字节写入被选中的内存 lane。",
+      "portable_injection_spec": {
+        "affected_mechanism": "带 mask store 的字节 lane 打包",
+        "trigger_condition": "一次内存写使用了稀疏 byte-enable mask，或只命中高位 byte lane，例如 1100 而不是 0011。",
+        "injection_action": "重新按目标 lane 位置索引源数据字节，而不是按有效字节的紧凑顺序索引。",
+        "implementation_pattern": "把地址偏移误用为源字节偏移",
+        "portability_notes": [
+          "把它映射到任何处理 subword 写且带 byte-enable mask 的 LSU、内存模型或总线适配器。",
+          "当有效 lane 不是最低位连续子集时，这个缺陷最容易暴露。",
+          "如果设计已经把写数据展开为逐字节 lane，应在“源字节映射到目标 lane”的位置注入该缺陷。"
+        ],
+        "concrete_injection_steps": [
+          "找到 masked write 中遍历有效字节 lane 的 store-data 打包循环。",
+          "去掉紧凑的源字节计数器，改为直接按目标字节 lane 编号访问源数据。",
+          "保持目标地址和 byte-enable mask 不变，使出错点只落在“源字节到目标 lane 的映射”。",
+          "用高位字节或非连续 byte-enable 掩码测试，以暴露错位写数据。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/ramulator.cpp"
+        ],
+        "target_module_or_logic": "RamulatorWrapper 的 L1D 写路径中带 mask 写的字节打包",
+        "commit_fix_summary": "补丁把旧的写循环从“用 addrOffset 同时表示目标偏移和源字节下标”改成“使用只在 lane 被使能时递增的独立 dataOffset”。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复旧行为：按被使能的目标 lane 下标直接读取源字节，而不维护紧凑的 dataOffset。"
+      },
+      "expected_failure_mode": "带稀疏或高位 byte-enable 的 masked store 会把错误字节写入内存，导致子字数据错位或被打乱。",
+      "evidence_for_injection": [
+        "修复新增了仅针对有效 lane 递增的数据指针，这是典型的源字节打包修正。",
+        "提交信息明确给出了一个物理 lane 位置与源字节顺序不一致的失败掩码模式。",
+        "该提交中 decode.cpp 的改动不涉及 LSU 行为。"
+      ],
+      "notes": [
+        "这是高度可移植的内存语义缺陷，既适用于真实硬件 LSU，也适用于周期精确内存模型。",
+        "只回退 ramulator.cpp 这部分改动，就足以重现真实的 DUT 可见错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

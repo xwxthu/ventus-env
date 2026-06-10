@@ -1,0 +1,143 @@
+{
+  "dataset_id": 83,
+  "original_review_id": 106,
+  "meta": {
+    "id": 106,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "ada9e14787cc40bce9d65330e50a6d12bc9bbda9",
+    "subject": "[dual-issue][done] fixed bug that scoreboard can't read right opc out fire signal"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "This commit fixes dual-issue scoreboard bookkeeping so operand-collector completion is credited to the warp actually leaving the collector, with related ready/valid cleanup in the collector path.",
+    "why_it_counts": [
+      "The commit message explicitly names a scoreboard bug.",
+      "pipe.scala changes the scoreboard clear events from collector input warp IDs to collector output warp IDs.",
+      "Related operand-collector routing changes support correct dual-issue ready/valid behavior in DUT pipeline logic."
+    ],
+    "disqualifiers": [
+      "The patch bundles several dual-issue bring-up fixes, so the primary injectable bug must be isolated to the scoreboard bookkeeping change."
+    ],
+    "evidence": [
+      "scoreb(op_colV_in_wid).op_colV_out_fire becomes scoreb(op_colV_out_wid).op_colV_out_fire.",
+      "scoreb(op_colX_in_wid).op_colX_out_fire becomes scoreb(op_colX_out_wid).op_colX_out_fire.",
+      "operand_collector.io.out(0).ready is corrected from exe_dataX.io.enq.ready to exe_dataV.io.enq.ready.",
+      "instDemux stops using a shared <> hookup and instead routes valid/ready separately for the two issue inputs."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/pipe.scala",
+      "ventus/src/pipeline/operandCollector.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a dual-issue machine, instructions may enter an operand collector in one order and leave it in a different order on scalar and vector outputs. Scoreboard clear events therefore must be tagged with the identity of the instruction or warp that actually exits the collector. If completion is instead attributed using the input-side identity captured at admission time, dependency bits for the wrong warp are cleared once issue order diverges.",
+      "portable_injection_spec": {
+        "affected_mechanism": "operand-collector completion attribution",
+        "trigger_condition": "Multiple warps are active and collector outputs complete out of order, or scalar and vector outputs fire independently from the inputs most recently admitted.",
+        "injection_action": "Drive scoreboard completion for each collector output using an admission-side warp or instruction ID instead of the ID on the output that actually fires.",
+        "implementation_pattern": "mis-tag completion event with input-side context",
+        "portability_notes": [
+          "Apply this to any design where dependency state is set when an instruction enters a collector or issue queue and cleared when it leaves.",
+          "The injected bug should corrupt only the bookkeeping target ID, not the collector payload itself.",
+          "If scalar and vector paths are separate, inject the mistake on both outputs; otherwise apply it on the completion path that clears dependencies."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that clears or advances scoreboard state when an operand-collector or issue-queue output fires.",
+          "Replace the output-side warp or instruction ID used for that update with the input or admission-side ID captured earlier in the pipeline.",
+          "Keep the output fire pulse unchanged so only the scoreboard target becomes wrong.",
+          "Do not modify execution datapaths; the intended injected fault is bookkeeping misattribution."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/pipe.scala",
+          "ventus/src/pipeline/operandCollector.scala"
+        ],
+        "target_module_or_logic": "Dual-issue scoreboard op_col*_out_fire accounting, with related collector ready/valid routing cleanup",
+        "commit_fix_summary": "The fix changes scoreb(...).op_colV_out_fire and scoreb(...).op_colX_out_fire to use output warp IDs, while operandCollector.scala also separates ready/valid routing for the two issue inputs and fixes output ready wiring.",
+        "mutation_strategy": "misroute_scoreboard_id",
+        "source_level_edit_anchor": "In pipe.scala, commit ada9e147 changes op_colV_out_fire/op_colX_out_fire from scoreb(op_col*_in_wid) to scoreb(op_col*_out_wid)."
+      },
+      "expected_failure_mode": "The wrong warp has its dependency state cleared, causing phantom stalls, premature issue eligibility, or intermittent dual-issue deadlock under contention.",
+      "evidence_for_injection": [
+        "The commit subject specifically calls out scoreboard inability to read the right op-collector out fire signal.",
+        "The key scoreboard fix is a direct ID-source change on the clear-event path.",
+        "Nearby scoreboard logic in scoreboard.scala uses op_colV_out_fire/op_colX_out_fire to clear collector dependency state."
+      ],
+      "notes": [
+        "This commit also contains related dual-issue handshake fixes; the most portable injected fault is the wrong-ID scoreboard update.",
+        "The ibuffer counter register change is not part of the fault model."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "该提交修复了 dual-issue 记分板记账错误：operand collector 完成事件现在会记到真正离开 collector 的 warp 上，并顺带清理了 collector 路径上的 ready/valid 路由。",
+    "why_it_counts": [
+      "提交信息明确指出这是 scoreboard bug。",
+      "pipe.scala 把 scoreboard 清除事件的索引从 collector 输入 warp ID 改成了 collector 输出 warp ID。",
+      "相关的 operand collector 路由修改也位于 DUT 流水线逻辑中，用于修正 dual-issue 的 ready/valid 行为。"
+    ],
+    "disqualifiers": [
+      "这个补丁混合了多处 dual-issue bring-up 修复，因此可注入的主故障应当聚焦在 scoreboard 记账路径上。"
+    ],
+    "evidence": [
+      "scoreb(op_colV_in_wid).op_colV_out_fire 被改成 scoreb(op_colV_out_wid).op_colV_out_fire。",
+      "scoreb(op_colX_in_wid).op_colX_out_fire 被改成 scoreb(op_colX_out_wid).op_colX_out_fire。",
+      "operand_collector.io.out(0).ready 从 exe_dataX.io.enq.ready 改成了 exe_dataV.io.enq.ready。",
+      "instDemux 不再使用共享的 <> 连接，而是对两个发射输入分别路由 valid/ready。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/pipe.scala",
+      "ventus/src/pipeline/operandCollector.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 dual-issue 机器中，指令进入 operand collector 的顺序与从标量或向量输出离开的顺序可能不同。因此记分板的清除事件必须使用真正从 collector 输出端离开的那条指令或 warp 身份。如果错误地沿用进入 collector 时记录的输入侧身份，那么一旦发射顺序发生偏离，就会把错误 warp 的依赖位清掉。",
+      "portable_injection_spec": {
+        "affected_mechanism": "operand-collector completion attribution",
+        "trigger_condition": "多个 warp 同时活跃，且 collector 输出乱序完成，或者标量/向量输出独立于最近一次进入 collector 的输入而发射。",
+        "injection_action": "在每个 collector 输出口上，用进入 collector 时的 warp 或指令 ID 去驱动 scoreboard 完成事件，而不是使用真正 fire 的输出口 ID。",
+        "implementation_pattern": "mis-tag completion event with input-side context",
+        "portability_notes": [
+          "把它映射到任何一种“进入 collector 或 issue queue 时置位依赖、离开时清除依赖”的设计。",
+          "注入故障时只应破坏记账目标 ID，不要改动 collector 真实负载数据。",
+          "如果标量和向量路径分离，应在两个输出上都注入该错误；否则就在负责清除依赖的完成路径上注入。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 operand collector 或 issue queue 输出 fire 时清除或推进 scoreboard 状态的逻辑。",
+          "把该更新使用的输出侧 warp 或指令 ID 替换成更早流水级保存的输入/准入侧 ID。",
+          "保持输出 fire 脉冲不变，只让 scoreboard 的目标对象出错。",
+          "不要修改执行数据通路；目标故障是记账归属错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/pipe.scala",
+          "ventus/src/pipeline/operandCollector.scala"
+        ],
+        "target_module_or_logic": "dual-issue scoreboard 的 op_col*_out_fire 记账，以及相关 collector ready/valid 路由修正",
+        "commit_fix_summary": "修复把 scoreb(...).op_colV_out_fire 与 scoreb(...).op_colX_out_fire 改为使用输出 warp ID；同时 operandCollector.scala 也把两个发射输入的 ready/valid 路由分离，并修正了输出 ready 连接。",
+        "mutation_strategy": "misroute_scoreboard_id",
+        "source_level_edit_anchor": "在 pipe.scala 中，提交 ada9e147 把 op_colV_out_fire/op_colX_out_fire 从 scoreb(op_col*_in_wid) 改成了 scoreb(op_col*_out_wid)。"
+      },
+      "expected_failure_mode": "错误的 warp 会被清除依赖状态，表现为伪相关停顿、过早可发射，或在竞争场景下出现间歇性的 dual-issue 死锁。",
+      "evidence_for_injection": [
+        "提交标题直接说明 scoreboard 读取到了错误的 op-collector out fire 信号。",
+        "关键修复就是在清除事件路径上直接替换 ID 来源。",
+        "邻近的 scoreboard.scala 逻辑确实使用 op_colV_out_fire/op_colX_out_fire 清除 collector 依赖状态。"
+      ],
+      "notes": [
+        "该提交还包含相关的 dual-issue 握手修复；最可移植的注入点是错误 ID 的 scoreboard 更新。",
+        "ibuffer 计数器寄存器修改不属于故障模型。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

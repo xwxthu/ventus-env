@@ -1,0 +1,143 @@
+{
+  "dataset_id": 205,
+  "original_review_id": 248,
+  "meta": {
+    "id": 248,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "887c6f1150b191244fbd6a9683a213b75ab36a6b",
+    "subject": "solve a d source bits mismatch"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes D-cache and L1 memory source-ID width mismatches so miss requests and responses preserve the full transaction-class, MSHR-entry, and set-index encoding needed to route fills back into the cache.",
+    "why_it_counts": [
+      "The patch directly fixes metadata widths in active cache request and response interfaces.",
+      "The source field controls MSHR lookup, set selection, and lower-memory response routing rather than tooling or tests.",
+      "Width truncation is a clean, portable fault-injection target."
+    ],
+    "disqualifiers": [
+      "One touched file only adds a comment and is not part of the functional fix."
+    ],
+    "evidence": [
+      "L1Interfaces.scala widens DCacheMemRsp.d_source from WIdBits to 3+log2Up(NMshrEntry)+log2Up(NSets).",
+      "L1Interfaces.scala changes L1CacheMemReq and DCacheMemReq to use the same full a_source width instead of the earlier narrow placeholders.",
+      "L1MSHR.scala changes MSHRprobeOut.a_source from log2Up(NEntry)+log2Up(NSub) to log2Up(NEntry), matching the actual miss-path consumer.",
+      "The DCache miss path packs a_source as Cat(\"d1\", MshrAccess.io.probeOut_st1.a_source, coreReq_st1.setIdx) and later slices d_source back into set index and MSHR entry."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1Interfaces.scala",
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Cache miss machinery often packs multiple routing fields into a source tag that travels to lower memory and returns with the response. Typical fields include transaction class, MSHR entry index, cache bank or cache ID, and set index. If request and response interfaces do not agree on the tag width, or if one stage truncates the tag before the response is decoded, the returned fill is matched to the wrong miss entry or wrong set. That can corrupt fill placement, leave an MSHR unresolved, or send a response to the wrong consumer.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache miss source-tag encoding",
+        "trigger_condition": "A lower-memory response returns for a miss or victim transaction and the upper cache decodes the source tag to recover the miss entry and destination set.",
+        "injection_action": "Truncate or inconsistently redefine the source-tag width so one of the encoded routing fields is lost before response demux.",
+        "implementation_pattern": "narrow interface field; mismatch producer and consumer bit slicing",
+        "portability_notes": [
+          "Map this to any cache or memory hierarchy that uses a packed return tag to identify outstanding miss state.",
+          "The most reusable mutation is dropping either the MSHR-entry bits or the set-index bits from the packed tag.",
+          "If the target DUT carries different fields in the source tag, remove whichever field is required to disambiguate return routing."
+        ],
+        "concrete_injection_steps": [
+          "Locate the packed miss-request source tag definition on the cache-to-lower-memory request interface.",
+          "Shrink that field width or redefine the bundle so the response interface expects fewer bits than the producer emits.",
+          "Keep the downstream response decoder unchanged so it still slices the tag as if the full routing fields were present.",
+          "Exercise at least two outstanding misses or a miss path that relies on set-index recovery to expose misrouting."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1Interfaces.scala",
+          "ventus/src/L1Cache/L1MSHR.scala"
+        ],
+        "target_module_or_logic": "L1 cache request and response source-field declarations and MSHR probe output width",
+        "commit_fix_summary": "The commit widens request and response source fields in L1Interfaces.scala to carry transaction type, MSHR entry, and set index, and narrows MSHRprobeOut.a_source to the entry index actually consumed by the DCache miss path.",
+        "mutation_strategy": "truncate source tag fields and restore mismatched widths",
+        "source_level_edit_anchor": "Restore the older narrow d_source and a_source declarations in L1Interfaces.scala and revert MSHRprobeOut.a_source to its previous inconsistent width in L1MSHR.scala."
+      },
+      "expected_failure_mode": "A returning miss response is attributed to the wrong MSHR or wrong set, leading to misplaced fills, unresolved misses, bogus ready-state transitions, or corrupted cache contents.",
+      "evidence_for_injection": [
+        "The old DCacheMemRsp width was only WIdBits even though the DCache later slices d_source into both set index and miss-entry fields.",
+        "The read-miss path explicitly constructs a_source by concatenating transaction class, probeOut_st1.a_source, and setIdx.",
+        "The fix aligns the interface widths with that packed encoding and separately removes unrelated subentry bits from MSHRprobeOut."
+      ],
+      "notes": [
+        "The comment-only L1TagAccess.scala change should not be part of the injected mutation.",
+        "This is a strong cross-DUT pattern whenever miss return tags are densely packed."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 D-cache 与 L1 访存 source ID 的位宽不匹配问题，使 miss 请求和响应能够保留完整的事务类别、MSHR 项号以及 set 索引编码，从而正确把 fill 路由回 cache。",
+    "why_it_counts": [
+      "补丁直接修复了活跃 cache 请求和响应接口中的元数据位宽。",
+      "source 字段控制的是 MSHR 查找、set 选择和下级存储返回路由，而不是工具链或测试。",
+      "位宽截断是非常干净、可移植的故障注入目标。"
+    ],
+    "disqualifiers": [
+      "一个被修改文件只新增了注释，不属于功能修复本身。"
+    ],
+    "evidence": [
+      "L1Interfaces.scala 把 DCacheMemRsp.d_source 从 WIdBits 扩大为 3+log2Up(NMshrEntry)+log2Up(NSets)。",
+      "L1Interfaces.scala 让 L1CacheMemReq 和 DCacheMemReq 使用同样完整的 a_source 位宽，而不再使用先前较窄的占位定义。",
+      "L1MSHR.scala 把 MSHRprobeOut.a_source 从 log2Up(NEntry)+log2Up(NSub) 改为 log2Up(NEntry)，与实际 miss 路径消费者匹配。",
+      "DCache miss 路径会把 a_source 打包为 Cat(\"d1\", MshrAccess.io.probeOut_st1.a_source, coreReq_st1.setIdx)，后续再从 d_source 中切出 set index 与 MSHR entry。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1Interfaces.scala",
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Cache miss 机制通常会把多个路由字段打包进一个 source tag，发送到下级存储后再随响应带回。常见字段包括事务类型、MSHR 项索引、cache 或 bank 编号，以及 set 索引。如果请求和响应接口对这个 tag 的位宽定义不一致，或者某一级在响应解码前截短了这个 tag，那么返回的 fill 就会匹配到错误的 miss 项或错误的 set。这会破坏 fill 放置、让 MSHR 无法释放，或者把响应送给错误的消费者。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache miss 的 source-tag 编码",
+        "trigger_condition": "下级存储对某个 miss 或 victim 事务返回响应，且上层 cache 需要解码 source tag 来恢复 miss 项和目标 set 时。",
+        "injection_action": "截短 source-tag 位宽，或让不同阶段对该 tag 使用不一致的位宽定义，使其中一个路由字段在响应分发前丢失。",
+        "implementation_pattern": "缩窄接口字段；让生产者与消费者的位切片不匹配",
+        "portability_notes": [
+          "可映射到任何使用打包返回 tag 来标识 outstanding miss 状态的 cache 或内存层次。",
+          "最可复用的变异方式，是从这个打包 tag 中删除 MSHR 项号位或 set 索引位。",
+          "如果目标 DUT 的 source tag 携带不同字段，就删除其中对返回路由必需的那部分字段。"
+        ],
+        "concrete_injection_steps": [
+          "定位 cache 到下级存储请求接口上打包 miss source tag 的定义。",
+          "缩小该字段位宽，或者把 bundle 改成让响应接口比生产者期望更少的位数。",
+          "保持下游响应解码逻辑不变，使其仍按完整路由字段存在的假设去切分这个 tag。",
+          "至少制造两个同时存在的 miss，或使用依赖 set-index 恢复的 miss 路径，以暴露错误路由。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1Interfaces.scala",
+          "ventus/src/L1Cache/L1MSHR.scala"
+        ],
+        "target_module_or_logic": "L1 cache 请求和响应 source 字段声明，以及 MSHR probe 输出位宽",
+        "commit_fix_summary": "该提交在 L1Interfaces.scala 中扩展了请求和响应 source 字段，使其能承载事务类型、MSHR 项号和 set 索引，并在 L1MSHR.scala 中把 MSHRprobeOut.a_source 缩减为 DCache miss 路径真正消费的 entry index。",
+        "mutation_strategy": "截短 source tag 字段并恢复不一致的位宽",
+        "source_level_edit_anchor": "把 L1Interfaces.scala 中较早的窄 d_source 与 a_source 声明恢复回来，并在 L1MSHR.scala 中把 MSHRprobeOut.a_source 改回此前不一致的位宽。"
+      },
+      "expected_failure_mode": "返回的 miss 响应会被归到错误的 MSHR 或错误的 set，导致 fill 放错位置、miss 无法完成、ready 状态异常，或 cache 内容被污染。",
+      "evidence_for_injection": [
+        "旧版 DCacheMemRsp 位宽只有 WIdBits，但 DCache 后续又会把 d_source 切成 set index 和 miss-entry 两部分。",
+        "读 miss 路径明确把 a_source 构造成“事务类型 + probeOut_st1.a_source + setIdx”的拼接。",
+        "修复同时对接口位宽和 MSHRprobeOut 做了对齐，这证明原先的编码和解码存在不一致。"
+      ],
+      "notes": [
+        "L1TagAccess.scala 中只有注释变化，不应纳入故障注入。",
+        "只要 miss 返回 tag 采用紧密打包，这就是非常典型的跨 DUT 可移植故障模式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

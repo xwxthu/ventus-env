@@ -1,0 +1,149 @@
+{
+  "dataset_id": 412,
+  "original_review_id": 521,
+  "meta": {
+    "id": 521,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "461be0880dd0c10edf1984028d9d944f88dac31a",
+    "subject": "fixed FPU-CSR data dependence"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "Fixes a real same-warp FPU/CSR hazard. The patch adds per-warp pending interlocks between CSR and FPU issue and moves fflags updates onto a direct FPU-to-CSR path so floating-point operations no longer observe stale FRM or retire fflags too late.",
+    "why_it_counts": [
+      "The subject explicitly states an FPU-CSR dependence bug was fixed.",
+      "The patch changes execute, CSR, FPU, and commit RTL in the datapath.",
+      "The new logic blocks unsafe same-warp overlap and rewires fflags state transfer."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_execute.v adds csr_pending and fpu_pending connectivity between VX_csr_unit and VX_fpu_unit.",
+      "VX_fpu_unit.v refuses new FPU issue when csr_pending is set for that warp and tracks pending FPU work per warp.",
+      "VX_csr_unit.v stalls CSR requests while fpu_pending is set for the same warp and tracks pending CSR work per warp.",
+      "VX_csr_data.v stops consuming commit-stage aggregated fflags and instead writes fflags directly from fpu_to_csr_if.write_enable and write_fflags."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_execute.v",
+      "hw/rtl/VX_fpu_unit.v",
+      "hw/rtl/VX_csr_unit.v",
+      "hw/rtl/VX_csr_data.v",
+      "hw/rtl/VX_commit.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A floating-point pipeline often depends on CSR-held rounding mode and exception-flag state. If a warp or thread can issue a CSR operation and an FPU operation concurrently without a dependence interlock, the FPU may read an old rounding mode or the CSR side may read or overwrite exception flags before the producing FPU instruction has retired. The fix makes that dependency explicit and transfers fflags on a dedicated path from the FPU completion point into CSR state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "same-context FPU/CSR hazard interlock",
+        "trigger_condition": "A thread or warp performs FRM or FFLAGS/FCSR CSR access close to floating-point instructions that consume FRM or produce exception flags.",
+        "injection_action": "Allow same-context CSR and FPU traffic to overlap again, and source or sink fflags through a later shared commit path instead of a direct FPU completion path.",
+        "implementation_pattern": "remove per-context pending interlock",
+        "portability_notes": [
+          "Map this to any design where FPU state is stored in CSRs or a shared architectural state block.",
+          "The key bug is missing same-context serialization, not the exact interface names.",
+          "Either removing the interlock or delaying fflags transfer is enough to recreate the original bug class."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that prevents CSR accesses and FPU operations from issuing together for the same architectural context.",
+          "Remove or bypass that context-local pending check in one or both directions.",
+          "Route exception-flag updates through a later shared retire stage or stale latched value instead of writing them directly from FPU completion.",
+          "Keep cross-context behavior unchanged so only same-context dependence ordering regresses."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_execute.v",
+          "hw/rtl/VX_fpu_unit.v",
+          "hw/rtl/VX_csr_unit.v",
+          "hw/rtl/VX_csr_data.v"
+        ],
+        "target_module_or_logic": "per-warp CSR/FPU pending bits and direct fflags handoff",
+        "commit_fix_summary": "The fix introduced csr_pending and fpu_pending interlocks and replaced commit-stage fflags aggregation with a direct fpu_to_csr_if writeback into CSR state.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Delete or ignore the csr_pending and fpu_pending checks in VX_fpu_unit.v and VX_csr_unit.v, then revert VX_csr_data.v to consume delayed commit-stage fflags instead of fpu_to_csr_if."
+      },
+      "expected_failure_mode": "FRM-dependent floating-point instructions can execute with stale rounding mode, and FFLAGS/FCSR reads or writes can observe missing or misattributed exception flags.",
+      "evidence_for_injection": [
+        "The new per-warp pending vectors are the only added ordering mechanism between CSR and FPU issue.",
+        "The fflags update point moved from commit aggregation to direct FPU completion, which changes architectural timing.",
+        "The commit subject and changed files align exactly with CSR/FPU dependence handling."
+      ],
+      "notes": [
+        "A short same-warp sequence that writes FRM, executes FP arithmetic, and reads FFLAGS is a good exposure pattern.",
+        "The simulator and interface renaming changes are secondary to the hardware hazard fix."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了真实的同 warp FPU/CSR 相关性冒险。补丁为 CSR 与 FPU 发射增加了按 warp 跟踪的 pending 互锁，并把 fflags 更新改为 FPU 到 CSR 的直接路径，从而避免浮点指令读取过期的 FRM，或让 fflags 更新过晚。",
+    "why_it_counts": [
+      "提交标题明确说明修复的是 FPU-CSR dependence bug。",
+      "补丁修改了执行、CSR、FPU 和提交相关的核心 RTL 数据通路。",
+      "新增逻辑显式阻止不安全的同 warp 重叠，并重连了 fflags 状态传递路径。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_execute.v 在 VX_csr_unit 与 VX_fpu_unit 之间新增了 csr_pending 和 fpu_pending 连线。",
+      "VX_fpu_unit.v 在对应 warp 存在 csr_pending 时禁止新的 FPU 发射，并按 warp 跟踪未完成的 FPU 工作。",
+      "VX_csr_unit.v 在对应 warp 存在 fpu_pending 时暂停 CSR 请求，并按 warp 跟踪未完成的 CSR 工作。",
+      "VX_csr_data.v 不再从提交阶段聚合后的 fflags 更新，而是直接根据 fpu_to_csr_if.write_enable 和 write_fflags 写入 fflags。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_execute.v",
+      "hw/rtl/VX_fpu_unit.v",
+      "hw/rtl/VX_csr_unit.v",
+      "hw/rtl/VX_csr_data.v",
+      "hw/rtl/VX_commit.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "浮点流水线通常依赖 CSR 中保存的舍入模式和异常标志状态。如果同一 warp 或线程里的 CSR 操作和 FPU 操作可以在没有相关性互锁的情况下并发发射，那么 FPU 可能读取到旧的舍入模式，CSR 侧也可能在产生该标志的浮点指令真正完成之前就读到或覆盖异常标志。该修复把这类依赖显式化，并通过一条专用路径把 fflags 从 FPU 完成点直接传入 CSR 状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "同一上下文的 FPU/CSR 相关性互锁",
+        "trigger_condition": "同一线程或 warp 在接近的时间内执行 FRM 或 FFLAGS/FCSR CSR 访问，以及依赖 FRM 或会产生异常标志的浮点指令。",
+        "injection_action": "重新允许同一上下文的 CSR 与 FPU 流量重叠，并把 fflags 的来源或落点改回更晚的共享提交路径，而不是直接来自 FPU 完成点。",
+        "implementation_pattern": "remove per-context pending interlock",
+        "portability_notes": [
+          "可映射到任何把 FPU 状态存放在 CSR 或共享体系结构状态块中的设计。",
+          "关键缺陷是缺少同一上下文内的串行化，而不是具体接口名。",
+          "只要删除互锁，或者把 fflags 传递延后，都足以重新引入原始缺陷类别。"
+        ],
+        "concrete_injection_steps": [
+          "找到阻止同一架构上下文里 CSR 访问与 FPU 操作同时发射的逻辑。",
+          "删除或绕过这个按上下文生效的 pending 检查，单向或双向都可以。",
+          "把异常标志更新改为经过更晚的共享 retire 阶段，或者来自过期锁存值，而不是直接由 FPU 完成点写入。",
+          "保持跨上下文行为不变，使回归只集中在同一上下文的相关性顺序上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_execute.v",
+          "hw/rtl/VX_fpu_unit.v",
+          "hw/rtl/VX_csr_unit.v",
+          "hw/rtl/VX_csr_data.v"
+        ],
+        "target_module_or_logic": "按 warp 跟踪的 CSR/FPU pending 位与直接 fflags 传递",
+        "commit_fix_summary": "修复引入了 csr_pending 和 fpu_pending 互锁，并把 fflags 更新从提交阶段聚合改为通过 fpu_to_csr_if 直接写入 CSR 状态。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_fpu_unit.v 和 VX_csr_unit.v 中删除或忽略 csr_pending、fpu_pending 检查，并把 VX_csr_data.v 恢复为从延后的提交阶段读取 fflags，而不是使用 fpu_to_csr_if。"
+      },
+      "expected_failure_mode": "依赖 FRM 的浮点指令可能在过期舍入模式下执行，FFLAGS/FCSR 的读写也可能看到缺失或归属错误的异常标志。",
+      "evidence_for_injection": [
+        "新增的按 warp pending 向量是 CSR 与 FPU 发射之间唯一新加的顺序约束。",
+        "fflags 的更新点从提交聚合移动到了直接 FPU 完成点，改变了架构可见时序。",
+        "提交标题和修改文件与 CSR/FPU 相关性处理完全一致。"
+      ],
+      "notes": [
+        "一个很好的暴露序列是：同一 warp 先写 FRM，再执行 FP 运算，随后读取 FFLAGS。",
+        "提交中的模拟器和接口重命名改动不是该硬件故障模型的核心。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

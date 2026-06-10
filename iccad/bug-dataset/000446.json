@@ -1,0 +1,139 @@
+{
+  "dataset_id": 446,
+  "original_review_id": 590,
+  "meta": {
+    "id": 590,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "df6209fb4252a921a4b1e7d2cb504cb465b7fed0",
+    "subject": "Fix: lw/sw decode. Add: spike log of `gaussian`."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "This is a real decode/control bug-fix: the VL*12_V and VS*12_V opcodes are remapped from the generic FN_ADD function to a dedicated FN_VLS12 function so downstream control can recognize the special vector load/store path.",
+    "why_it_counts": [
+      "The functional change is in the central hardware decode table.",
+      "The patch creates a dedicated function code and applies it to the affected vector load/store instructions.",
+      "Current decode logic derives the downstream is_vls12 control bit directly from this function field."
+    ],
+    "disqualifiers": [
+      "The commit also adds a large amount of Gaussian spike-log data."
+    ],
+    "evidence": [
+      "ventus/src/pipeline/DecodeUnit.scala adds FN_VLS12 = 30.U(6.W).",
+      "All VLW12_V, VLH12_V, VLB12_V, VLHU12_V, VLBU12_V, VSW12_V, VSH12_V, and VSB12_V entries change from FN_ADD to FN_VLS12.",
+      "DecodeUnit.scala later sets c.is_vls12 when the decoded function equals FN_VLS12, proving this field drives downstream control.",
+      "The commit subject explicitly says lw/sw decode fix."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Some instruction families share a base opcode but still require a dedicated decode subfunction so later control logic can steer them into the right LSU or vector path. If those special load/store opcodes are decoded as a generic address-add function instead of a dedicated memory subtype, downstream control never sees the distinguishing control bit and the instruction takes the wrong execution path.",
+      "portable_injection_spec": {
+        "affected_mechanism": "special vector load/store sub-decode",
+        "trigger_condition": "A vector or custom load/store opcode relies on a dedicated decode function bit to select a non-generic LSU path.",
+        "injection_action": "Collapse the special load/store subfunction back into the generic add or address-generation function code.",
+        "implementation_pattern": "replace dedicated decode selector with generic ALU function",
+        "portability_notes": [
+          "Apply this where downstream control derives a special-case memory path from a decoded function field.",
+          "The bug is not in immediate extraction or opcode matching; it is in losing the dedicated subtype marker.",
+          "This maps to any architecture with extended vector or custom memory instructions that share a broad opcode class."
+        ],
+        "concrete_injection_steps": [
+          "Find the decode table entries for the special load/store instruction family.",
+          "Replace the dedicated subfunction or operation code with the generic add or address-generation code used by ordinary loads and stores.",
+          "Leave the opcode pattern match itself intact so only the downstream subtype distinction is lost.",
+          "Exercise the affected instructions and observe that the special LSU or vector control bit no longer asserts."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "Decode LUT entries and is_vls12 function decoding in DecodeUnit",
+        "commit_fix_summary": "The fix introduces FN_VLS12, remaps the VL*12_V and VS*12_V entries to that function, and the same module derives c.is_vls12 from the decoded function field.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In DecodeUnit.scala, change the VL*12_V and VS*12_V LUT entries back from FN_VLS12 to FN_ADD, or otherwise prevent the dedicated function code from reaching the later c.is_vls12 decode."
+      },
+      "expected_failure_mode": "The affected vector load/store instructions decode as ordinary address-add memory operations, so downstream LSU or vector-specific handling is skipped and those instructions behave incorrectly.",
+      "evidence_for_injection": [
+        "The patch changes only decode-table function fields for the affected opcodes.",
+        "The same file proves that the dedicated function feeds a downstream is_vls12 control signal.",
+        "The added log files are non-functional noise and do not dilute the decode bug-fix."
+      ],
+      "notes": [
+        "This is a highly portable decode mutation because it targets the loss of a dedicated subtype marker, not a Ventus-specific signal name.",
+        "No source changes outside the decode table are needed to recreate the bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "这是真实的解码与控制修复：VL*12_V 和 VS*12_V 操作码从通用的 FN_ADD 函数字段改为专用的 FN_VLS12，因此下游控制才能识别这条特殊的向量 load/store 路径。",
+    "why_it_counts": [
+      "功能改动发生在核心硬件解码表中。",
+      "补丁新增了专用 function code，并将受影响的向量 load/store 指令映射到该编码。",
+      "当前 DecodeUnit 逻辑直接由这个函数字段派生下游 is_vls12 控制位。"
+    ],
+    "disqualifiers": [
+      "该提交也加入了大量 Gaussian spike-log 数据。"
+    ],
+    "evidence": [
+      "ventus/src/pipeline/DecodeUnit.scala 新增 FN_VLS12 = 30.U(6.W)。",
+      "VLW12_V、VLH12_V、VLB12_V、VLHU12_V、VLBU12_V、VSW12_V、VSH12_V 和 VSB12_V 的表项全部从 FN_ADD 改成 FN_VLS12。",
+      "DecodeUnit.scala 后续又用 decoded function 是否等于 FN_VLS12 来设置 c.is_vls12，证明该字段会驱动下游控制。",
+      "提交标题明确写了 lw/sw decode fix。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "有些指令家族虽然共享基础 opcode，但仍需要专门的 decode 子功能码，后续控制逻辑才能把它们送进正确的 LSU 或向量路径。如果这些特殊 load/store 操作码被解码成通用地址加法函数，而不是专用内存子类型，那么下游控制就永远看不到那个区分标志，指令会走错执行路径。",
+      "portable_injection_spec": {
+        "affected_mechanism": "特殊向量 load/store 子解码",
+        "trigger_condition": "某条向量或自定义 load/store 指令依赖专用 decode function 位来选择非通用的 LSU 路径。",
+        "injection_action": "把这种特殊 load/store 子功能重新折叠回通用的加法或地址生成功能码。",
+        "implementation_pattern": "replace dedicated decode selector with generic ALU function",
+        "portability_notes": [
+          "适用于那些由解码出的函数字段来派生特殊内存路径的设计。",
+          "该 bug 不在立即数提取或 opcode 匹配上，而在于丢失了专用子类型标记。",
+          "它可以映射到任何拥有扩展向量或自定义内存指令、且共享大类 opcode 的架构。"
+        ],
+        "concrete_injection_steps": [
+          "找到该特殊 load/store 指令家族在解码表中的条目。",
+          "把专用子功能码或 operation code 改回普通 load/store 使用的通用 add 或地址生成编码。",
+          "保持 opcode 模式匹配本身不变，只让下游丢失子类型区分。",
+          "运行这些受影响指令，并观察特殊 LSU 或向量控制位不再拉起。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "DecodeUnit 中的解码 LUT 条目以及 is_vls12 函数解码",
+        "commit_fix_summary": "该修复引入 FN_VLS12，把 VL*12_V 和 VS*12_V 的条目映射到它，并且同一个模块还从 decoded function 派生 c.is_vls12。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 DecodeUnit.scala 中，把 VL*12_V 和 VS*12_V 的 LUT 条目从 FN_VLS12 改回 FN_ADD，或以其他方式阻止这个专用 function code 传到后续 c.is_vls12 解码。"
+      },
+      "expected_failure_mode": "这些向量 load/store 指令会被解码成普通地址加法类内存操作，导致下游 LSU 或向量专用处理被跳过，从而产生错误行为。",
+      "evidence_for_injection": [
+        "补丁只修改了受影响操作码的解码表函数字段。",
+        "同一个文件证明了这个专用 function 会驱动下游 is_vls12 控制信号。",
+        "新增日志文件只是非功能性噪声，不影响这是一个 decode bug 修复的判断。"
+      ],
+      "notes": [
+        "这是高度可复用的解码类变异，因为它针对的是专用子类型标记的丢失，而不是 Ventus 特有信号名。",
+        "重现该 bug 不需要修改解码表之外的源码。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

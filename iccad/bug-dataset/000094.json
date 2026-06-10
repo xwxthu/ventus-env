@@ -1,0 +1,133 @@
+{
+  "dataset_id": 94,
+  "original_review_id": 117,
+  "meta": {
+    "id": 117,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "0e1650e1c2ca62886a530bbb61db7ba184fccf49",
+    "subject": "bank deadlock fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "The commit fixes the cache-bank root cause by refusing to dequeue a new MSHR replay while the prior MSHR-sourced access is still in a miss state, preventing self-blocking replay traffic.",
+    "why_it_counts": [
+      "The patch changes only cache-bank DUT logic and directly affects replay scheduling",
+      "The added guard is explicitly documented in the code as avoiding another MSHR request when the previous one missed",
+      "The commit simultaneously removes the earlier queue-headroom workaround, indicating this is the intended root-cause fix"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "mshr_pop_unqual changes from mshr_valid && !is_mshr_miss_st1 to mshr_valid, and the final mshr_pop assignment now carries the explicit !is_mshr_miss_st1 guard",
+      "The new source comment states that another MSHR request must not be scheduled when the previous one missed",
+      "The same commit restores the earlier ALM_FULL thresholds from -2 back to -1, showing explicit replay gating replaced the workaround"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A cache bank that replays outstanding misses from an MSHR or miss queue must not launch a second replayed miss while the previous replay is still occupying the miss path and has not resolved its miss outcome. If replay scheduling ignores that hazard, the bank can repeatedly feed replay traffic into a blocked miss path, starving normal requests and preventing the very events needed to clear the miss, which leads to deadlock.",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR replay hazard suppression",
+        "trigger_condition": "An MSHR-sourced or replayed cache request misses again while another replay candidate is ready",
+        "injection_action": "Remove or bypass the guard that blocks launching a new replay while the previous replayed access is still in the miss path",
+        "implementation_pattern": "drop replay scheduling predicate tied to prior miss-in-flight state",
+        "portability_notes": [
+          "Map this to any cache design that has a replay source, miss queue, or MSHR dequeue separate from normal core requests",
+          "The bug is about replay-vs-miss hazard tracking, not about a specific Vortex signal name",
+          "If the DUT uses stage-valid plus miss-detected signals, use those to identify the equivalent guard"
+        ],
+        "concrete_injection_steps": [
+          "Locate the logic that dequeues or grants MSHR replay traffic into the cache-bank pipeline",
+          "Identify the condition that detects the previous replay is still a miss or still occupying the miss path",
+          "Remove that condition from the replay grant or dequeue enable so replay traffic can be scheduled again immediately",
+          "Leave the rest of the replay arbitration intact so the injected bug specifically targets hazard suppression"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v"
+        ],
+        "target_module_or_logic": "MSHR replay dequeue logic around mshr_pop and is_mshr_miss_st1",
+        "commit_fix_summary": "The fix prevents mshr_pop from firing when the prior MSHR-sourced access is still in a miss state, and restores the queue thresholds used by the earlier workaround.",
+        "mutation_strategy": "remove_replay_hazard_guard",
+        "source_level_edit_anchor": "Around lines 241 to 246, revert mshr_pop to the older behavior by removing the explicit !is_mshr_miss_st1 term from the final replay-pop condition."
+      },
+      "expected_failure_mode": "Under sustained miss pressure, replay traffic can repeatedly reenter a blocked miss path, causing bank forward-progress loss or full deadlock.",
+      "evidence_for_injection": [
+        "The only touched file is VX_bank.v, and the central semantic change is on mshr_pop scheduling",
+        "The new inline comment explicitly describes the forbidden condition: scheduling another MSHR request while the previous one missed",
+        "Queue thresholds are restored in the same patch, which strongly indicates this replay guard is the real repair"
+      ],
+      "notes": [
+        "This is the stronger injection target for the bank-deadlock pair because it captures the actual control hazard",
+        "A minimal mutation can keep the threshold reversion intact and only remove the replay-miss guard"
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 cache bank 死锁的根因：当前一个来自 MSHR 的重放访问仍处于 miss 状态时，不再继续出队新的 MSHR 重放请求，从而避免 replay 流量自我阻塞。",
+    "why_it_counts": [
+      "补丁只修改了 cache-bank DUT 逻辑，并且直接影响 replay 调度",
+      "代码中的新增注释明确写明：当前一个请求 miss 时，不能继续调度新的 MSHR 请求",
+      "该提交同时移除了此前的队列余量 workaround，表明这里才是作者认定的根因修复"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "mshr_pop_unqual 从 mshr_valid && !is_mshr_miss_st1 改为 mshr_valid，而最终 mshr_pop 赋值新增了显式的 !is_mshr_miss_st1 保护",
+      "新注释直接说明：当前一个请求 miss 时，不能再调度新的 MSHR request",
+      "同一提交把之前的 ALM_FULL 阈值从 -2 恢复回 -1，说明显式 replay 限制取代了早期 workaround"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在带 MSHR 或 miss replay 队列的 cache bank 中，如果前一个 replay 出去的 miss 还占据着 miss 路径、其 miss 结果尚未解决，就不能继续发起第二个 replay miss。若 replay 调度忽略了这个冒险，bank 会持续把 replay 流量送入一个已经阻塞的 miss 路径，既饿死普通请求，也阻止能够解除 miss 的关键事件发生，最终导致死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR replay 冒险抑制",
+        "trigger_condition": "某个来自 MSHR 的 replay 请求再次 miss，而同时又有新的 replay 候选准备好被调度",
+        "injection_action": "移除或绕过“当前一个 replay 仍在 miss 路径中时禁止再发新 replay”的保护条件",
+        "implementation_pattern": "删除与前一条 miss-in-flight 状态绑定的 replay 调度谓词",
+        "portability_notes": [
+          "可映射到任何把 replay 源、miss 队列或 MSHR 出队与普通 core request 分开处理的 cache 设计",
+          "该缺陷本质是 replay 与 miss 路径之间的冒险跟踪错误，而不是某个特定 Vortex 信号名",
+          "如果 DUT 用 stage-valid 与 miss-detected 信号描述该状态，可用它们找到等价的保护条件"
+        ],
+        "concrete_injection_steps": [
+          "找到把 MSHR replay 流量送入 cache-bank 流水线的出队或 grant 逻辑",
+          "识别用于判断“前一个 replay 仍是 miss 或仍占据 miss 路径”的条件",
+          "把该条件从 replay grant 或 dequeue enable 中删掉，使 replay 能立即再次被调度",
+          "保留其余 replay 仲裁逻辑不变，使注入后的错误专门针对冒险抑制"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v"
+        ],
+        "target_module_or_logic": "围绕 mshr_pop 与 is_mshr_miss_st1 的 MSHR replay 出队逻辑",
+        "commit_fix_summary": "修复禁止在前一个来自 MSHR 的访问仍处于 miss 状态时触发 mshr_pop，并在同一提交中恢复了早期 workaround 使用的队列阈值。",
+        "mutation_strategy": "remove_replay_hazard_guard",
+        "source_level_edit_anchor": "在约第 241 到 246 行附近，把最终 replay-pop 条件中的显式 !is_mshr_miss_st1 保护去掉，恢复旧行为。"
+      },
+      "expected_failure_mode": "在持续 miss 压力下，replay 流量会反复进入一个已阻塞的 miss 路径，导致 bank 失去前向进展，甚至彻底死锁。",
+      "evidence_for_injection": [
+        "该提交只修改了 VX_bank.v，核心语义变化就是 mshr_pop 调度条件",
+        "新增的行内注释明确描述了被禁止的错误情形：前一个 replay miss 时又调度下一个 MSHR 请求",
+        "同一补丁中恢复队列阈值，强烈表明真正的修复点是 replay 冒险保护"
+      ],
+      "notes": [
+        "在这对 bank-deadlock 提交里，这条更适合作为主要注入目标，因为它刻画的是实际控制冒险",
+        "最小变异方式是保留阈值恢复不动，只移除 replay-miss 保护"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

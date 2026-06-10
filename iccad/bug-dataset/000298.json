@@ -1,0 +1,129 @@
+{
+  "dataset_id": 298,
+  "original_review_id": 359,
+  "meta": {
+    "id": 359,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "52a1167180cd1ca671781ae97e5b54a185fab6b4",
+    "subject": "fix shared memory bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes shared-memory read-response bookkeeping so each bank response is emitted once per queued request.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a shared-memory bug.",
+      "The patch changes DUT control logic in hw/rtl/cache/VX_shared_mem.sv.",
+      "The new sent-mask gating directly determines whether an already-served bank can be reissued on later cycles."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "bank_rsp_sel_r is renamed and repurposed as req_read_sent_r, making the state semantically track responses already sent for the current request.",
+      "per_bank_rsp_valid[i] is newly gated by ~req_read_sent_r[i].",
+      "The last-read detection and reset logic now use the accumulated sent mask instead of a selector mask that did not suppress repeats."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a shared-memory request fans out into multiple bank reads, the response combiner must remember which bank responses for the current request have already been emitted. If it keeps advertising all selected banks as valid until the request fully retires, the same bank response can be merged and emitted multiple times under multi-cycle drain or backpressure.",
+      "portable_injection_spec": {
+        "affected_mechanism": "per-bank response retirement tracking",
+        "trigger_condition": "A read request touches multiple banks and the responses drain across multiple cycles instead of all being consumed in one beat.",
+        "injection_action": "Stop masking out banks that have already produced a response for the current queued request.",
+        "implementation_pattern": "drop sent-mask gate",
+        "portability_notes": [
+          "This maps to any banked shared-memory or SRAM front-end that merges per-bank responses into one logical response stream.",
+          "The key state is “already sent for this request,” not merely “selected by this request.”",
+          "Backpressure or staggered response merge makes the bug easier to observe, but the structural fault is the missing retirement mask."
+        ],
+        "concrete_injection_steps": [
+          "Locate the bookkeeping state that tracks which bank responses for the current request have already been consumed or emitted.",
+          "Remove that state from the per-bank valid generation so all addressed banks remain continuously valid until the whole request retires.",
+          "Leave the merge/arbitration logic unchanged so duplicate emissions become visible at the output."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.sv"
+        ],
+        "target_module_or_logic": "Per-bank shared-memory response valid generation after a queued read request",
+        "commit_fix_summary": "The fix renames the state to req_read_sent_r and gates per_bank_rsp_valid with ~req_read_sent_r[i] so a bank response is only emitted once per request.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove `& ~req_read_sent_r[i]` from per_bank_rsp_valid and revert the sent-mask state to the old bank_rsp_sel-style behavior."
+      },
+      "expected_failure_mode": "The same bank read response can appear more than once for one logical request, which can duplicate output data or stall request retirement.",
+      "evidence_for_injection": [
+        "The only behavioral change is in response bookkeeping and valid generation, not in the RAM array or address decode.",
+        "The fixed variable name req_read_sent_r matches the actual semantics of the correction.",
+        "The output queue is intentionally stalled until all reads are sent, so a missing sent-mask gate can directly repeat responses."
+      ],
+      "notes": [
+        "This is a clean, localized control bug and is highly suitable for reverse-patch fault injection."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交修复了 shared memory 的读响应记账逻辑，使每个 bank 的响应对同一排队请求只会发出一次。",
+    "why_it_counts": [
+      "提交信息明确说明修复的是 shared memory bug。",
+      "补丁修改的是 hw/rtl/cache/VX_shared_mem.sv 中的 DUT 控制逻辑。",
+      "新增的 sent-mask 门控会直接决定一个已经服务过的 bank 是否会在后续周期再次被发出。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "bank_rsp_sel_r 被重命名并重新定义为 req_read_sent_r，其语义变成跟踪当前请求已经发出的 bank 响应。",
+      "per_bank_rsp_valid[i] 新增了 ~req_read_sent_r[i] 门控。",
+      "最后一个读响应的检测和状态清零逻辑也改为基于累计 sent mask，而不是旧的不会抑制重复发射的 selector mask。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一个 shared-memory 请求会扇出到多个 bank 读时，响应合并器必须记住当前请求中哪些 bank 响应已经被发出。如果在整个请求退休之前，一直把所有命中的 bank 都宣称为 valid，那么在多周期 drain 或回压下，同一个 bank 的响应就可能被重复合并并重复输出。",
+      "portable_injection_spec": {
+        "affected_mechanism": "每 bank 响应的退休跟踪",
+        "trigger_condition": "一个读请求访问了多个 bank，且响应不是在一个周期内全部被消费，而是跨多个周期排出。",
+        "injection_action": "停止屏蔽那些已经为当前排队请求产生过响应的 bank。",
+        "implementation_pattern": "删除已发送 mask 门控",
+        "portability_notes": [
+          "可映射到任何把 per-bank 响应合并成单个逻辑响应流的 banked shared-memory 或 SRAM 前端。",
+          "关键状态应当表示“这个请求已经发过”，而不是仅表示“这个请求选中了该 bank”。",
+          "回压或分周期响应会让该 bug 更容易观察到，但结构性根因是缺少退休 mask。"
+        ],
+        "concrete_injection_steps": [
+          "定位用于记录“当前请求哪些 bank 响应已经被消费或发出”的记账状态。",
+          "把这部分状态从每个 bank 的 valid 生成逻辑中移除，使得所有被请求命中的 bank 在整个请求退休前都持续保持 valid。",
+          "保持合并/仲裁逻辑不变，让重复发射在输出端显现出来。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.sv"
+        ],
+        "target_module_or_logic": "排队读请求之后的每-bank shared-memory 响应 valid 生成逻辑",
+        "commit_fix_summary": "修复把状态改名为 req_read_sent_r，并让 per_bank_rsp_valid 受 ~req_read_sent_r[i] 门控，从而保证每个 bank 响应对同一请求只输出一次。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 per_bank_rsp_valid 上的 `& ~req_read_sent_r[i]`，并把 sent-mask 状态恢复成旧的 bank_rsp_sel 风格行为。"
+      },
+      "expected_failure_mode": "同一个逻辑请求可能收到重复的 bank 读响应，从而导致输出数据重复或请求退休卡住。",
+      "evidence_for_injection": [
+        "唯一的行为修改集中在响应记账和 valid 生成上，而不是 RAM 阵列或地址译码。",
+        "修复后的变量名 req_read_sent_r 与修正后的真实语义一致。",
+        "设计本来就会在所有读都发出前阻塞输入队列，因此如果缺少 sent-mask 门控，重复响应会直接暴露出来。"
+      ],
+      "notes": [
+        "这是一个局部且清晰的控制类 bug，非常适合做 reverse-patch 故障注入。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

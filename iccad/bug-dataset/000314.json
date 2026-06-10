@@ -1,0 +1,141 @@
+{
+  "dataset_id": 314,
+  "original_review_id": 380,
+  "meta": {
+    "id": 380,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "001a107395eb31eb748851fc5c88fb0b6a105160",
+    "subject": "bram reset bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "This commit fixes inferred BRAM reset behavior by keeping whole-array RAM clearing as simulation-only logic instead of synthesizable DUT behavior.",
+    "why_it_counts": [
+      "It changes the shared DP and SP RAM primitives used throughout the DUT.",
+      "The patch alters reset semantics of synthesized memories, which directly affects hardware behavior and hardware-simulation correspondence.",
+      "The reverse mutation is localized to the RAM write macros."
+    ],
+    "disqualifiers": [
+      "The commit also updates Xilinx Tcl flow files, but those are supporting changes around the same BRAM reset issue."
+    ],
+    "evidence": [
+      "Both hw/rtl/libs/VX_dp_ram.sv and hw/rtl/libs/VX_sp_ram.sv add a SIMULATION guard around the full-array reset block.",
+      "Before the fix, RESET_RAM && reset unconditionally iterated over all RAM entries in synthesizable write macros.",
+      "The synthesis scripts are adjusted in the same commit to align the FPGA flow with the revised BRAM handling."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_dp_ram.sv",
+      "hw/rtl/libs/VX_sp_ram.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An inferred block RAM wrapper should not model reset by synchronously iterating over every storage entry in synthesizable hardware logic unless the target memory implementation truly supports that behavior. Doing so can break BRAM inference, force an unintended memory implementation, or create a mismatch where simulation clears memory but hardware does not behave the same way.",
+      "portable_injection_spec": {
+        "affected_mechanism": "synthesizable RAM reset semantics",
+        "trigger_condition": "A synthesized memory wrapper with reset-enabled RAM arrays, especially on FPGA BRAM inference paths.",
+        "injection_action": "Reintroduce an array-wide reset loop into the synthesizable RAM write path instead of restricting it to simulation.",
+        "implementation_pattern": "reintroduce whole-array reset in inferred RAM",
+        "portability_notes": [
+          "Target a generic shared single-port or dual-port RAM wrapper that is expected to infer vendor memory blocks.",
+          "The mutation belongs in the write macro or always block that updates the memory array, not in a testbench preload path.",
+          "Hardware impact may appear as reset corruption, failed BRAM inference, or divergence between simulation and FPGA behavior."
+        ],
+        "concrete_injection_steps": [
+          "Locate the generic inferred RAM wrapper used by the DUT.",
+          "Find any simulation-only branch that clears every RAM entry on reset.",
+          "Move that full-array clear into the synthesizable write logic so it runs when reset is asserted in hardware builds too.",
+          "Leave normal write behavior unchanged so the main difference is the illegal or unrealistic reset semantics."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_dp_ram.sv",
+          "hw/rtl/libs/VX_sp_ram.sv"
+        ],
+        "target_module_or_logic": "shared inferred BRAM write macros and reset blocks",
+        "commit_fix_summary": "The fix wraps the full-array RESET_RAM logic in SIMULATION-only guards in both DP and SP RAM primitives, so synthesized builds no longer try to clear the whole memory array on reset.",
+        "mutation_strategy": "remove simulation guard from array reset",
+        "source_level_edit_anchor": "In hw/rtl/libs/VX_dp_ram.sv and hw/rtl/libs/VX_sp_ram.sv, restore the unconditional RESET_RAM reset loop inside the synthesizable RAM write macros."
+      },
+      "expected_failure_mode": "Reset either corrupts memory contents, changes the inferred memory implementation, or causes hardware behavior to diverge from simulation in RAM-backed structures.",
+      "evidence_for_injection": [
+        "The pre-fix macros explicitly wrote INIT_VALUE into every RAM entry under RESET_RAM && reset.",
+        "The fix does not delete reset semantics entirely; it confines them to simulation-only code paths.",
+        "The accompanying synthesis-script adjustments indicate this bug mattered in the hardware build flow, not only in software simulation."
+      ],
+      "notes": [
+        "For dataset portability, the RTL mutation in the RAM wrapper is the primary injection target; the Tcl changes are only grounding context.",
+        "This bug is most relevant on FPGA-oriented inferred BRAM implementations."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "该提交修复了推导式 BRAM 的复位行为：整块 RAM 清零只应保留在仿真逻辑中，而不应继续作为可综合的 DUT 行为。",
+    "why_it_counts": [
+      "它修改了 DUT 中广泛复用的单双口 RAM 原语。",
+      "该补丁改变了综合后存储器的复位语义，直接影响硬件行为以及硬件与仿真的一致性。",
+      "其反向注入点集中在 RAM 写宏中，定位明确。"
+    ],
+    "disqualifiers": [
+      "提交还更新了 Xilinx Tcl 流程文件，但那只是围绕同一 BRAM reset 问题的配套修改。"
+    ],
+    "evidence": [
+      "hw/rtl/libs/VX_dp_ram.sv 和 hw/rtl/libs/VX_sp_ram.sv 都给整数组复位块加上了 SIMULATION 保护。",
+      "修复前，RESET_RAM && reset 会在可综合写宏中无条件遍历并清空所有 RAM 项。",
+      "同一提交也调整了综合脚本，使 FPGA 流程与新的 BRAM 处理方式一致。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_dp_ram.sv",
+      "hw/rtl/libs/VX_sp_ram.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一个用于推导 block RAM 的通用 RAM 包装器，不应在可综合硬件逻辑中通过遍历所有存储项来模拟复位，除非目标存储器真实支持这种行为。否则它可能破坏 BRAM 推导、把实现逼成非预期结构，或造成“仿真中被清零而硬件中并不等价”的行为差异。",
+      "portable_injection_spec": {
+        "affected_mechanism": "可综合 RAM 复位语义",
+        "trigger_condition": "带 reset 使能的 RAM 包装器被综合到硬件时，尤其是 FPGA BRAM 推导路径上。",
+        "injection_action": "重新把整数组清零循环放回可综合 RAM 写路径，而不是只保留在仿真分支中。",
+        "implementation_pattern": "在推导式 RAM 中重新引入整数组复位",
+        "portability_notes": [
+          "应把故障注入到用于推导厂商存储块的通用单口或双口 RAM 包装器中。",
+          "故障点位于更新 RAM 数组的写宏或 always 块，而不是测试预加载路径。",
+          "硬件后果可能表现为 reset 污染、BRAM 推导失败，或仿真与 FPGA 行为分叉。"
+        ],
+        "concrete_injection_steps": [
+          "定位 DUT 使用的通用推导式 RAM 包装器。",
+          "找到其中仅用于仿真的“reset 时清空所有 RAM 项”的分支。",
+          "把这个整数组清零逻辑移回可综合写路径，使硬件构建时 reset 也会尝试清空整个数组。",
+          "保持普通写入逻辑不变，使主要差异集中在不合理的复位语义上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_dp_ram.sv",
+          "hw/rtl/libs/VX_sp_ram.sv"
+        ],
+        "target_module_or_logic": "共享推导式 BRAM 的写宏和复位块",
+        "commit_fix_summary": "修复在 DP 和 SP RAM 原语中都把整数组 RESET_RAM 逻辑包进 SIMULATION 保护，使综合构建不再在 reset 时试图清空整个 RAM 数组。",
+        "mutation_strategy": "去掉数组复位的仿真保护",
+        "source_level_edit_anchor": "在 hw/rtl/libs/VX_dp_ram.sv 和 hw/rtl/libs/VX_sp_ram.sv 中，恢复无条件的 RESET_RAM 循环，让它重新出现在可综合 RAM 写宏里。"
+      },
+      "expected_failure_mode": "reset 会污染存储器内容、改变推导出的存储实现，或让基于 RAM 的结构在硬件上与仿真出现明显偏差。",
+      "evidence_for_injection": [
+        "修复前的宏会在 RESET_RAM && reset 时把 INIT_VALUE 写入每一个 RAM 项。",
+        "修复并没有删除该复位语义，而是把它限制在仿真代码路径中。",
+        "同步提交的综合脚本调整说明这个问题影响的是实际硬件构建流程，而不只是软件仿真。"
+      ],
+      "notes": [
+        "对数据集的可移植性而言，主要注入点是 RAM 包装器中的 RTL 变异；Tcl 只是辅助佐证。",
+        "该问题最适用于面向 FPGA 的推导式 BRAM 实现。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

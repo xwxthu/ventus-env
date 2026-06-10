@@ -1,0 +1,133 @@
+{
+  "dataset_id": 353,
+  "original_review_id": 430,
+  "meta": {
+    "id": 430,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "76e442c94226ae326f9b851adae419c60bab5b72",
+    "subject": "fix lut_ctrl input data order issue when sq-sum bypass enable"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "datapath",
+    "summary": "Fixes multi-lane packing order for LUT-control input data when the CDP sq-sum bypass path feeds the LUT directly.",
+    "why_it_counts": [
+      "The commit message explicitly names an input-data order issue.",
+      "The patch changes central CDP datapath RTL in the LUT input assembly path.",
+      "The change directly corrects which per-lane samples are concatenated into the downstream vector."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The generated loop stops using forward lane index `${m}` and instead computes `${ss} = $k - $m - 1`.",
+      "The concatenation changes from `cvtin_out_int8_${m}` to `cvtin_out_int8_${ss}`.",
+      "The resulting vector is selected by `lutctrl_in_pd = sqsum_bypass_en ? cvtin_out_int8_ext : sum2itp_pd`."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdp/NV_NVDLA_CDP_dp.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A bypass path that forwards multi-lane data directly into a downstream lookup or nonlinear stage must preserve the lane ordering expected by that consumer. If the bypass concatenates lanes in producer order when the consumer expects the opposite order, each lane's sample is delivered to the wrong slot. The bug only appears when the bypass path is active and throughput is greater than one lane.",
+      "portable_injection_spec": {
+        "affected_mechanism": "bypass-path lane ordering into lookup input",
+        "trigger_condition": "A multi-lane datapath bypasses an intermediate reduction stage and directly packs per-lane samples for a lookup/control block.",
+        "injection_action": "Assemble the packed lookup-input vector in the wrong lane order.",
+        "implementation_pattern": "use producer order instead of consumer order in vector concatenation",
+        "portability_notes": [
+          "This maps to any SIMD or multi-lane pipeline with explicit concatenation or packing before a shared lookup block.",
+          "The key is not the exact lane count but the existence of a bypass path that changes which ordering is required.",
+          "Inject only the lane-order error; keep valid and data-width logic unchanged."
+        ],
+        "concrete_injection_steps": [
+          "Locate the logic that packs per-lane samples into a single vector for a lookup or interpolation stage.",
+          "Restrict the mutation to the bypass path that skips the normal intermediate datapath.",
+          "Replace the consumer-expected lane ordering with the raw producer ordering or the opposite ordering used before the fix.",
+          "Leave sign extension and per-lane width handling untouched so the fault remains a pure ordering bug."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdp/NV_NVDLA_CDP_dp.v"
+        ],
+        "target_module_or_logic": "CDP LUT-control input concatenation under `sqsum_bypass_en`",
+        "commit_fix_summary": "The fix reverses the lane index used when building `cvtin_out_int8_ext`, so the LUT sees the intended lane order when bypass is enabled.",
+        "mutation_strategy": "restore_forward_lane_order",
+        "source_level_edit_anchor": "The source-level anchor is the generated `assign cvtin_out_int8_ext = { ... }` block immediately above `lutctrl_in_pd`."
+      },
+      "expected_failure_mode": "With bypass enabled, the lookup/control stage consumes samples in the wrong lane order, producing incorrect per-lane nonlinear processing results.",
+      "evidence_for_injection": [
+        "The only functional hunk changes the lane index mapping inside the packed vector generator.",
+        "The packed vector is used only on the `sqsum_bypass_en` path, matching the commit subject exactly.",
+        "The patch preserves bit widths and sign extension, isolating the bug to ordering rather than arithmetic width."
+      ],
+      "notes": [
+        "The affected lines are generated-template comments embedded in the checked-in RTL; the hardware effect is still real.",
+        "This is a strong cross-DUT injection pattern for any vector packing bug before a shared lookup table."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "datapath",
+    "summary": "该提交修复了 CDP 在 sq-sum bypass 直接驱动 LUT 时，多 lane 输入数据的打包顺序错误。",
+    "why_it_counts": [
+      "提交信息明确指出了输入数据顺序问题。",
+      "补丁修改的是 CDP LUT 输入拼接路径中的核心数据通路 RTL。",
+      "该修改直接修正了下游向量中每个位置到底拼接哪一路 lane 样本。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "生成循环不再直接使用正向 lane 索引 `${m}`，而是改为计算 `${ss} = $k - $m - 1`。",
+      "拼接项从 `cvtin_out_int8_${m}` 改为 `cvtin_out_int8_${ss}`。",
+      "最终向量由 `lutctrl_in_pd = sqsum_bypass_en ? cvtin_out_int8_ext : sum2itp_pd` 选择。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdp/NV_NVDLA_CDP_dp.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当旁路路径把多 lane 数据直接送入下游查找或非线性处理级时，必须保持该消费者所期望的 lane 顺序。如果旁路路径按生产者顺序拼接，而消费者期望相反顺序，那么每一路样本都会落到错误的槽位。该问题只会在旁路路径启用且吞吐大于单 lane 时出现。",
+      "portable_injection_spec": {
+        "affected_mechanism": "旁路路径进入查找输入时的 lane 顺序",
+        "trigger_condition": "多 lane 数据通路绕过中间归约级，直接把各 lane 样本打包给查找/控制模块。",
+        "injection_action": "以错误的 lane 顺序组装查找输入向量。",
+        "implementation_pattern": "在向量拼接中使用生产者顺序而不是消费者期望顺序",
+        "portability_notes": [
+          "适用于任何在共享查找模块前显式拼接或打包多 lane 数据的 SIMD/多 lane 通路。",
+          "关键不是具体 lane 数，而是存在一条会改变所需排序的旁路路径。",
+          "注入时只引入 lane 顺序错误，不改变 valid 或位宽逻辑。"
+        ],
+        "concrete_injection_steps": [
+          "找到将各 lane 样本打包成单个向量、送往查找或插值模块的逻辑。",
+          "将变异限定在绕过正常中间数据通路的旁路路径上。",
+          "把消费者期望的 lane 顺序替换为原始生产者顺序，或恢复修复前的相反排序。",
+          "保持符号扩展和单 lane 位宽处理不变，使故障纯粹体现为顺序错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdp/NV_NVDLA_CDP_dp.v"
+        ],
+        "target_module_or_logic": "在 `sqsum_bypass_en` 下的 CDP LUT-control 输入拼接",
+        "commit_fix_summary": "修复在构建 `cvtin_out_int8_ext` 时反转了 lane 索引，从而在 bypass 开启时让 LUT 看到正确的 lane 顺序。",
+        "mutation_strategy": "恢复正向 lane 顺序",
+        "source_level_edit_anchor": "源级锚点位于 `lutctrl_in_pd` 上方、生成 `assign cvtin_out_int8_ext = { ... }` 的那段逻辑。"
+      },
+      "expected_failure_mode": "在 bypass 开启时，查找/控制模块会以错误的 lane 顺序消费样本，导致逐 lane 的非线性处理结果错误。",
+      "evidence_for_injection": [
+        "唯一的功能性 hunk 就是在打包向量生成器内部修改 lane 索引映射。",
+        "该打包向量只在 `sqsum_bypass_en` 路径上被使用，与提交标题完全一致。",
+        "补丁保留了位宽和符号扩展逻辑，说明问题被隔离为顺序错误而非算术位宽错误。"
+      ],
+      "notes": [
+        "这些修改行以嵌入式生成模板注释的形式存在于 RTL 文件中，但对应的硬件行为是真实的。",
+        "对于任何共享查找表前的向量打包错误，这都是很强的跨 DUT 注入模式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

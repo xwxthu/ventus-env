@@ -1,0 +1,127 @@
+{
+  "dataset_id": 108,
+  "original_review_id": 136,
+  "meta": {
+    "id": 136,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "c3c9a3ed0e7857100f59d994f9d14885419c12aa",
+    "subject": "fix MMU bug with multiple threads"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "This commit fixes instruction-fetch MMU behavior by aligning the MMU-enable check with the one-cycle-late TLB response for the selected thread.",
+    "why_it_counts": [
+      "The commit message describes a concrete cross-thread fetch bug and its failure symptom.",
+      "The patch changes hardware fetch-stage control logic, not test scaffolding.",
+      "The bug affects architectural instruction delivery and PC advancement when threads differ in MMU state."
+    ],
+    "disqualifiers": [
+      "The touched tlb.sv change is only a clarifying comment, not part of the hardware fix."
+    ],
+    "evidence": [
+      "ifetch_tag_stage.sv adds last_selected_thread_idx and uses it for the cr_mmu_en lookup in the combinational block that consumes TLB outputs.",
+      "The same file latches last_selected_thread_idx alongside the fetch request state on each cycle.",
+      "The commit message explains that the old code used a thread identifier that was one cycle early relative to the TLB result latency."
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_tag_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a multithreaded fetch pipeline, the TLB result often returns one cycle after the thread scheduler picks the next fetch target. Any control bit that interprets that TLB result, such as whether MMU translation is enabled for the thread, must be indexed by the same registered thread identity that launched the lookup. If the pipeline instead uses the current scheduler output, one thread can consume another thread's translation status.",
+      "portable_injection_spec": {
+        "affected_mechanism": "thread-aligned TLB result interpretation in instruction fetch",
+        "trigger_condition": "Two threads have different MMU-enable states and the fetch pipeline consumes a one-cycle-latency TLB result while the scheduler has already selected a different thread for the next cycle.",
+        "injection_action": "Use the current arbitration thread ID, rather than the registered lookup thread ID, when deciding whether to honor the returned TLB result.",
+        "implementation_pattern": "misalign thread context across one-cycle TLB latency",
+        "portability_notes": [
+          "Apply this to any multithreaded or banked fetch path where lookup response timing is decoupled from current arbitration.",
+          "The same pattern can affect permission bits, cache-hit interpretation, or TLB-hit handling; MMU enable is just the instance fixed here.",
+          "The bug is easiest to trigger when one thread uses translation and another uses identity mapping."
+        ],
+        "concrete_injection_steps": [
+          "Identify the registered thread ID or context tag that accompanies an ifetch TLB lookup into the cycle where the response is interpreted.",
+          "Stop using that registered ID for the MMU-enable or translation-valid decision, and substitute the current scheduler-selected thread instead.",
+          "Leave the TLB lookup itself unchanged so the fault is purely a response/context misalignment."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_tag_stage.sv"
+        ],
+        "target_module_or_logic": "MMU-enable selection in the combinational block that consumes TLB outputs",
+        "commit_fix_summary": "The fix adds last_selected_thread_idx, latches it with the fetch request, and uses it instead of selected_thread_idx when interpreting the one-cycle-late TLB result.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Replace the registered thread-ID lookup with the current selected_thread_idx in the MMU-enable check, and optionally remove the last_selected_thread_idx register update."
+      },
+      "expected_failure_mode": "Instruction fetch for one thread can use another thread's MMU-enable state, causing dropped fetches, missing TLB-miss handling, or PC advance without a delivered instruction.",
+      "evidence_for_injection": [
+        "The commit message explicitly describes mixed-MMU-state threads and says the instruction can be thrown away while the PC still advances.",
+        "The code fix is limited to aligning the thread index used after the TLB's one-cycle latency."
+      ],
+      "notes": []
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "该提交通过让 MMU 使能检查与所选线程的一拍延迟 TLB 返回结果对齐，修复了取指阶段的 MMU 行为错误。",
+    "why_it_counts": [
+      "提交信息描述了一个具体的跨线程取指缺陷及其失败现象。",
+      "补丁修改的是硬件取指阶段控制逻辑，而不是测试脚手架。",
+      "当线程的 MMU 状态不同时，该缺陷会直接影响指令交付和 PC 推进这一体系结构行为。"
+    ],
+    "disqualifiers": [
+      "被触及的 tlb.sv 改动只是说明性注释，不属于硬件修复本身。"
+    ],
+    "evidence": [
+      "ifetch_tag_stage.sv 新增了 last_selected_thread_idx，并在消费 TLB 输出的组合逻辑里用它来索引 cr_mmu_en。",
+      "同一个文件中，last_selected_thread_idx 与取指请求状态一起在每个周期被锁存。",
+      "提交信息说明旧代码使用的线程标识比 TLB 结果提前一拍。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_tag_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在多线程取指流水线中，TLB 结果通常会比线程调度器选择下一个取指目标晚一拍返回。任何用来解释这个 TLB 结果的控制位，例如某线程是否开启 MMU 翻译，都必须使用发起该 lookup 的同一份已寄存线程身份。如果流水线改而使用当前调度器输出，那么一个线程就可能错误地消费另一个线程的翻译状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "thread-aligned TLB result interpretation in instruction fetch",
+        "trigger_condition": "两个线程的 MMU 使能状态不同，而取指流水线在消费一拍延迟的 TLB 结果时，调度器已经为下一拍选择了另一个线程。",
+        "injection_action": "在决定是否采用返回的 TLB 结果时，使用当前仲裁线程 ID，而不是发起 lookup 时寄存下来的线程 ID。",
+        "implementation_pattern": "misalign thread context across one-cycle TLB latency",
+        "portability_notes": [
+          "可映射到任何 TLB 响应时序与当前仲裁解耦的多线程或多 bank 取指路径。",
+          "相同模式也可能影响权限位、cache-hit 解释或 TLB-hit 处理；本提交修复的是其中的 MMU enable 实例。",
+          "当一个线程开启地址翻译、另一个线程使用恒等映射时，这个故障最容易触发。"
+        ],
+        "concrete_injection_steps": [
+          "找出在 ifetch TLB lookup 发出后、到响应被解释这一拍之间随请求同行的寄存线程 ID 或上下文标签。",
+          "在 MMU-enable 或 translation-valid 判断处停止使用该寄存 ID，改为使用当前调度器选中的线程。",
+          "保持 TLB lookup 本身不变，使故障纯粹来自“响应与上下文错位”。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_tag_stage.sv"
+        ],
+        "target_module_or_logic": "MMU-enable selection in the combinational block that consumes TLB outputs",
+        "commit_fix_summary": "修复新增并锁存了 last_selected_thread_idx，在解释一拍延迟的 TLB 结果时使用它替代 selected_thread_idx。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 MMU-enable 检查中的寄存线程索引换回当前的 selected_thread_idx，并可选地删除 last_selected_thread_idx 的更新。"
+      },
+      "expected_failure_mode": "一个线程的取指会错误使用另一个线程的 MMU-enable 状态，导致取指丢失、TLB miss 处理缺失，或 PC 前进但没有真正交付指令。",
+      "evidence_for_injection": [
+        "提交信息明确写出：在混合 MMU 状态的线程下，指令可能被丢弃而 PC 仍然前进。",
+        "代码修复只是在配合 TLB 的一拍延迟对齐所使用的线程索引。"
+      ],
+      "notes": []
+    },
+    "needs_human_review": false
+  }
+}

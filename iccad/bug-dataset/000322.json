@@ -1,0 +1,139 @@
+{
+  "dataset_id": 322,
+  "original_review_id": 389,
+  "meta": {
+    "id": 389,
+    "repo": "vortex",
+    "branch": "tensor_unit",
+    "commit": "4947eb54903f71913565a9ac04b49ae30169cd37",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "This commit fixes request-tag handling in the generic and LSU memory arbiters so source-selection bits are inserted only when multiple inputs are actually merged onto fewer outputs.",
+    "why_it_counts": [
+      "The patch changes central DUT memory-arbiter RTL used to route requests and responses.",
+      "It corrects a concrete tag-corruption path that would misidentify response provenance in some legal configurations.",
+      "The functional fix is localized to arbiter request-tag composition and is reusable as a fault injection target."
+    ],
+    "disqualifiers": [
+      "The commit also adds CI coverage and changes a default SIMD_WIDTH configuration, but those are not the injection target.",
+      "The VX_operands.sv hunk is whitespace only."
+    ],
+    "evidence": [
+      "VX_mem_arb.sv removes the NUM_INPUTS >= NUM_OUTPUTS assumption, resizes req_sel_out to MIN(NUM_INPUTS, NUM_OUTPUTS), and only inserts req_sel_out bits into tags when NUM_INPUTS > NUM_OUTPUTS.",
+      "VX_lsu_mem_arb.sv makes the same request-tag insertion conditional and otherwise passes req_tag_out through unchanged.",
+      "Before the fix, both arbiters unconditionally rewrote outgoing request tags with req_sel_out bits."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/mem/VX_mem_arb.sv",
+      "hw/rtl/mem/VX_lsu_mem_arb.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Many memory arbiters piggyback request-source information onto the outgoing tag so a later response can be returned to the right requester. That tag augmentation is only valid when multiple requesters are collapsed onto fewer outputs. If a design still rewrites tags when there is no real requester merge, meaningless selection bits overwrite part of the original tag and responses can come back with corrupted identity.",
+      "portable_injection_spec": {
+        "affected_mechanism": "request tag augmentation for response routing",
+        "trigger_condition": "The arbiter is configured in a 1:1 or fan-out style case where the number of request inputs does not exceed the number of outputs, so there is no true requester-selection field to encode.",
+        "injection_action": "Force the outgoing request tag to be rewritten with arbiter-select bits even when no merge is happening.",
+        "implementation_pattern": "restore unconditional requester-select insertion",
+        "portability_notes": [
+          "Apply this only to arbiters that normally embed return-route metadata into tags when multiplexing inputs.",
+          "On another DUT, the selection metadata may be stored in sideband bits rather than a field named 'tag'.",
+          "The core bug is unconditional provenance rewriting in a topology that does not need provenance augmentation."
+        ],
+        "concrete_injection_steps": [
+          "Identify the point where request-source selection bits are inserted into the outgoing memory request tag or metadata.",
+          "Remove the topology guard that bypasses this insertion when the arbiter is not merging multiple inputs.",
+          "Leave the response-side decode path unchanged so it still expects the original tag layout."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/mem/VX_mem_arb.sv",
+          "hw/rtl/mem/VX_lsu_mem_arb.sv"
+        ],
+        "target_module_or_logic": "outgoing request-tag composition in generic and LSU memory arbiters",
+        "commit_fix_summary": "The fix guards VX_bits_insert behind NUM_INPUTS > NUM_OUTPUTS and otherwise forwards req_tag_out unchanged; VX_mem_arb also resizes req_sel_out to SEL_COUNT = MIN(NUM_INPUTS, NUM_OUTPUTS).",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the unconditional VX_bits_insert blocks in the g_bus_out_if loops so req_sel_out is always packed into bus_out_if[*].req_data.tag."
+      },
+      "expected_failure_mode": "In configurations without true input merging, memory responses can return with corrupted requester identity, causing misrouting, wrong tag decode, or silent data association errors.",
+      "evidence_for_injection": [
+        "The parent version unconditionally inserted req_sel_out bits into every outgoing tag.",
+        "The fix explicitly distinguishes NUM_INPUTS > NUM_OUTPUTS from the pass-through case.",
+        "Both the generic arbiter and the LSU-specific arbiter required the same correction."
+      ],
+      "notes": [
+        "The CI and default SIMD_WIDTH changes are validation/support changes, not part of the fault to inject."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "该提交修复了通用内存仲裁器和 LSU 内存仲裁器中的请求标签处理，使源选择位只在多个输入真实汇聚到更少输出时才被插入。",
+    "why_it_counts": [
+      "补丁修改了用于请求/响应路由的核心 DUT 内存仲裁 RTL。",
+      "它修复了一条明确的标签破坏路径，该路径会在某些合法配置下让响应来源标识出错。",
+      "该功能修复局部集中在仲裁器的请求标签组装逻辑上，适合作为故障注入目标。"
+    ],
+    "disqualifiers": [
+      "该提交还加入了 CI 覆盖并调整了默认 SIMD_WIDTH 配置，但这些都不是注入目标。",
+      "VX_operands.sv 的 hunk 只是空白修改。"
+    ],
+    "evidence": [
+      "VX_mem_arb.sv 去除了 NUM_INPUTS >= NUM_OUTPUTS 的假设，把 req_sel_out 的宽度改为 MIN(NUM_INPUTS, NUM_OUTPUTS)，并且只在 NUM_INPUTS > NUM_OUTPUTS 时才把 req_sel_out 位插入标签。",
+      "VX_lsu_mem_arb.sv 也把请求标签插入改为有条件执行，否则直接透传 req_tag_out。",
+      "修复前，这两个仲裁器都会无条件地用 req_sel_out 位重写输出请求标签。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/mem/VX_mem_arb.sv",
+      "hw/rtl/mem/VX_lsu_mem_arb.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "很多内存仲裁器会把请求源信息拼接进输出标签，以便后续响应能返回给正确的请求者。只有在多个请求源被汇聚到更少输出时，这种标签增强才成立。如果在没有真实汇聚的拓扑下仍然重写标签，那么无意义的选择位就会覆盖原始标签的一部分，响应返回时的身份信息就会被破坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "用于响应路由的请求标签增强",
+        "trigger_condition": "仲裁器处于 1:1 或 fan-out 形式，即请求输入数不大于输出数，因此实际上没有需要编码的请求源选择字段。",
+        "injection_action": "即使没有发生真实汇聚，也强制用仲裁选择位重写输出请求标签。",
+        "implementation_pattern": "恢复无条件的请求源选择位插入",
+        "portability_notes": [
+          "只应作用于那些在多输入复用时会把返回路径元数据打包进标签的仲裁器。",
+          "在其他 DUT 中，这些选择信息也可能存放在 sideband 元数据里，而不是名为 tag 的字段。",
+          "核心错误是不论拓扑是否需要，始终重写来源标识。"
+        ],
+        "concrete_injection_steps": [
+          "定位把请求源选择位插入输出内存请求标签或元数据的位置。",
+          "删除在非汇聚拓扑下绕过该插入操作的保护条件。",
+          "保持响应侧解码路径不变，使其仍然假设原始标签布局。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/mem/VX_mem_arb.sv",
+          "hw/rtl/mem/VX_lsu_mem_arb.sv"
+        ],
+        "target_module_or_logic": "通用与 LSU 内存仲裁器中的输出请求标签组装",
+        "commit_fix_summary": "修复把 VX_bits_insert 包在 NUM_INPUTS > NUM_OUTPUTS 条件下，否则直接透传 req_tag_out；VX_mem_arb 还把 req_sel_out 调整为 SEL_COUNT = MIN(NUM_INPUTS, NUM_OUTPUTS)。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 g_bus_out_if 循环中恢复无条件的 VX_bits_insert，使 req_sel_out 始终被打包到 bus_out_if[*].req_data.tag 中。"
+      },
+      "expected_failure_mode": "在没有真实输入汇聚的配置下，内存响应可能带着被破坏的请求者身份返回，导致路由错误、标签解码错误或静默数据关联错误。",
+      "evidence_for_injection": [
+        "父版本会无条件地把 req_sel_out 位插入每个输出标签。",
+        "修复后明确区分了 NUM_INPUTS > NUM_OUTPUTS 与直接透传两种情况。",
+        "通用仲裁器和 LSU 专用仲裁器都需要相同的修正。"
+      ],
+      "notes": [
+        "CI 与默认 SIMD_WIDTH 的变更属于验证或辅助改动，不应作为注入对象。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

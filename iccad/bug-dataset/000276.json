@@ -1,0 +1,139 @@
+{
+  "dataset_id": 276,
+  "original_review_id": 332,
+  "meta": {
+    "id": 332,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "a25076b9c17fca55a8703801245fa2619f4abff6",
+    "subject": "regression fix."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes warp-control execution by decoding scalar control operands from the issuing thread and by clearing stalled warps when control operations commit.",
+    "why_it_counts": [
+      "The patch changes warp-control RTL that directly affects execution semantics.",
+      "It fixes both operand interpretation and scheduler state updates for barrier, TMC, split, and wspawn operations.",
+      "The runtime header hunk is only naming noise; the real fix is in DUT logic."
+    ],
+    "disqualifiers": [
+      "runtime/include/vx_intrinsics.h only renames a software parameter."
+    ],
+    "evidence": [
+      "VX_gpu_unit introduces rs1_data = gpu_req_if.rs1_data[gpu_req_if.tid] and reuses it for tmc, wspawn, and barrier decoding.",
+      "The same file rebuilds taken_tmask and not_taken_tmask and uses them for pred and split.",
+      "VX_warp_sched now clears stalled_warps on valid barrier, tmc, and split control events."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_unit.v",
+      "hw/rtl/VX_warp_sched.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Warp-control instructions often carry one scalar control operand that should be interpreted from the issuing lane, while other per-lane operands are used only to build predicate masks. If the control unit reads the wrong lane for scalar values, or if the scheduler leaves a warp marked stalled after a control instruction has updated its state, the warp can receive the wrong mask or barrier ID and may never resume execution correctly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "warp control operand decode and stall release",
+        "trigger_condition": "A warp commits TMC, predicate, split, wspawn, or barrier control operations while the scheduler is using a stall-until-commit protocol.",
+        "injection_action": "Decode scalar control fields from the wrong per-thread source and/or fail to clear the warp's stalled bit on control commit.",
+        "implementation_pattern": "restore per-lane scalar misuse; omit stall-clear on control op",
+        "portability_notes": [
+          "Look for GPU or SIMT control units where one source operand is broadcast logically but physically stored per lane.",
+          "Barrier ID, spawned-warp count, and thread-mask values are typical scalar control fields.",
+          "The scheduler-side mutation is portable to any design that stalls a warp until a control instruction retires."
+        ],
+        "concrete_injection_steps": [
+          "Locate the decode logic for warp-control instructions and identify which source operand is supposed to come from the issuing lane.",
+          "Replace the issuing-lane scalar extraction with a per-lane array access pattern that depends on all active lanes or the wrong lane.",
+          "In the warp scheduler, remove the logic that clears the stalled bit when barrier, TMC, or split control updates are committed."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_gpu_unit.v",
+          "hw/rtl/VX_warp_sched.v"
+        ],
+        "target_module_or_logic": "GPU control decode in VX_gpu_unit and stalled_warps handling in VX_warp_sched",
+        "commit_fix_summary": "The fix centralizes scalar operand decode through rs1_data for TMC/WSPAWN/BAR and explicitly clears stalled_warps on barrier, TMC, and split updates.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_gpu_unit, rs1_data and the taken_tmask/not_taken_tmask rework are the operand-decode anchors. In VX_warp_sched, the new stalled_warps[wid] <= 0 assignments on barrier/tmc/split are the scheduler anchor."
+      },
+      "expected_failure_mode": "Warp control instructions can compute the wrong thread mask or barrier ID, or a warp can remain permanently stalled after a control update that should have released it.",
+      "evidence_for_injection": [
+        "The fix affects both decode-time control fields and scheduler state release.",
+        "Each modified operation is a live architectural control instruction rather than a debug path.",
+        "The runtime header rename does not change hardware behavior and is easy to exclude."
+      ],
+      "notes": [
+        "A focused reinjection can target only the stalled_warps clearing bug if a single-mechanism fault is preferred.",
+        "A second valid reinjection is to revert the issuing-thread scalar decode for TMC/WSPAWN/BAR."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了 warp 控制执行逻辑：控制类标量操作数应从发起线程解码，同时控制指令提交后必须清除 stalled warp。",
+    "why_it_counts": [
+      "补丁修改了直接影响执行语义的 warp-control RTL。",
+      "它同时修复了 barrier、TMC、split、wspawn 的操作数解释和调度器状态更新。",
+      "runtime 头文件那一处只是命名噪声，真正的修复在 DUT 逻辑。"
+    ],
+    "disqualifiers": [
+      "runtime/include/vx_intrinsics.h 只做了软件参数名重命名。"
+    ],
+    "evidence": [
+      "VX_gpu_unit 新增 rs1_data = gpu_req_if.rs1_data[gpu_req_if.tid]，并把它用于 tmc、wspawn、barrier 解码。",
+      "同一文件重新构建了 taken_tmask 和 not_taken_tmask，并用于 pred 与 split。",
+      "VX_warp_sched 现在会在 barrier、tmc、split 控制事件有效时清除 stalled_warps。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_unit.v",
+      "hw/rtl/VX_warp_sched.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "warp-control 指令通常携带一个应从发起 lane 解释的标量控制操作数，而其他逐 lane 源操作数只用于构造谓词掩码。如果控制单元从错误的 lane 读取这些标量值，或者调度器在控制指令更新完状态后仍把该 warp 标为 stalled，那么该 warp 就可能得到错误的 mask、错误的 barrier ID，甚至永远无法恢复执行。",
+      "portable_injection_spec": {
+        "affected_mechanism": "warp 控制操作数解码与 stall 释放",
+        "trigger_condition": "warp 提交 TMC、predicate、split、wspawn 或 barrier 等控制操作，且调度器采用 stall-until-commit 策略。",
+        "injection_action": "从错误的逐线程来源解码标量控制字段，并且/或者在控制提交后不清除该 warp 的 stalled 位。",
+        "implementation_pattern": "恢复错误的 per-lane 标量读取；删除控制指令的 stall-clear",
+        "portability_notes": [
+          "应寻找那类逻辑上是广播标量、物理上却按 lane 存放的 GPU 或 SIMT 控制操作数。",
+          "barrier ID、spawn 的 warp 数量、thread-mask 值都属于典型标量控制字段。",
+          "调度器侧变异适用于任何在控制指令退休前让 warp 暂停的设计。"
+        ],
+        "concrete_injection_steps": [
+          "定位 warp-control 指令的解码逻辑，识别应从发起 lane 读取的源操作数。",
+          "把该标量提取改回依赖所有活动 lane 或错误 lane 的逐线程数组访问。",
+          "在 warp scheduler 中，删除 barrier、TMC 或 split 提交时清除 stalled 位的逻辑。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_gpu_unit.v",
+          "hw/rtl/VX_warp_sched.v"
+        ],
+        "target_module_or_logic": "VX_gpu_unit 中的 GPU 控制解码，以及 VX_warp_sched 中的 stalled_warps 处理",
+        "commit_fix_summary": "修复通过 rs1_data 统一 TMC/WSPAWN/BAR 的标量操作数解码，并在 barrier、TMC、split 更新时显式清除 stalled_warps。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_gpu_unit 中，rs1_data 以及 taken_tmask/not_taken_tmask 的重构是操作数修复锚点；在 VX_warp_sched 中，barrier/tmc/split 上新增的 stalled_warps[wid] <= 0 是调度器修复锚点。"
+      },
+      "expected_failure_mode": "warp 控制指令可能计算出错误的 thread mask 或 barrier ID，或者在本应释放后仍永久停顿。",
+      "evidence_for_injection": [
+        "修复同时作用于解码时的控制字段和调度器释放状态。",
+        "被修改的都是架构上真实执行的控制指令，而不是调试路径。",
+        "runtime 头文件重命名不改变硬件行为，容易剥离。"
+      ],
+      "notes": [
+        "如果希望故障更聚焦，可以只回注 stalled_warps 清除缺陷。",
+        "另一个同样有根据的回注方式是恢复 TMC/WSPAWN/BAR 对发起线程标量操作数的错误读取。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

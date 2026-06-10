@@ -1,0 +1,147 @@
+{
+  "dataset_id": 419,
+  "original_review_id": 534,
+  "meta": {
+    "id": 534,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "a421e4bd68e5d9a8516ee2898ddfa20c1a7b7a92",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes FPU conversion decode semantics, especially the RV64 W-versus-L distinction for FCVT operations. The decoder now takes integer-width selection from rs2[1] instead of overloading the FP format field, and the simulator and trace logic are updated to match.",
+    "why_it_counts": [
+      "The patch changes the RTL decoder in a way that directly alters executed instruction semantics.",
+      "The updated simulator and trace code match the same decode bug rather than introducing a new feature.",
+      "The affected instructions are architectural FCVT variants, not debug-only paths."
+    ],
+    "disqualifiers": [
+      "The commit also touches trace and test infrastructure, but those changes are secondary mirrors of the decode fix."
+    ],
+    "evidence": [
+      "VX_decode.sv changes op_args.fpu.fmt[1] for FCVT instructions from funct2-based encoding to rs2[1], with an inline comment 'CVT W/L'.",
+      "VX_trace_pkg.sv rewrites FCVT mnemonic selection to decode all four W/WU/L/LU combinations explicitly.",
+      "sim/simx/types.h renames the simulator-side field from fmt to cvt, and sim/simx/execute.cpp uses cvt rather than fmt to pick FCVT operation width."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_decode.sv",
+      "sim/simx/execute.cpp",
+      "sim/simx/types.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Floating-point conversion decode needs two independent pieces of information: floating-point precision and integer destination or source width. If a decoder reuses one bitfield for both roles, an RV64-class design can interpret 64-bit FCVT instructions as 32-bit variants or vice versa. The arithmetic engine then executes the wrong architectural conversion even though the opcode class is otherwise correct.",
+      "portable_injection_spec": {
+        "affected_mechanism": "FCVT width-field decode",
+        "trigger_condition": "The core executes FCVT.W, FCVT.WU, FCVT.L, FCVT.LU, FCVT.S.W, FCVT.S.L, or their double-precision counterparts on a design that supports both 32-bit and 64-bit integer widths.",
+        "injection_action": "Decode the integer-width selector from the floating-point format field instead of from the dedicated conversion-width field.",
+        "implementation_pattern": "swap decode bit",
+        "portability_notes": [
+          "Map this to any decoder that must distinguish FP precision from integer width for conversion instructions.",
+          "The bug is purely architectural decode selection, so it is portable across RTL and simulator DUTs.",
+          "Do not alter the convert unit itself; only corrupt the field that tells it whether to perform W or L conversion."
+        ],
+        "concrete_injection_steps": [
+          "Find the decode logic that produces control bits for FP-to-int and int-to-FP conversion instructions.",
+          "Make the width-select control reuse a floating-point format bit or another unrelated field instead of the dedicated W/L selector.",
+          "Leave the main opcode and sign/unsigned selection unchanged so only the 32-bit versus 64-bit conversion choice regresses.",
+          "Mirror the same mistake in any tightly coupled reference model only if the target DUT is a simulator rather than RTL."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_decode.sv",
+          "sim/simx/execute.cpp",
+          "sim/simx/types.h",
+          "hw/rtl/VX_trace_pkg.sv"
+        ],
+        "target_module_or_logic": "FCVT decode field selection for W/L conversion width",
+        "commit_fix_summary": "The fix changed RTL FCVT decoding to take the width bit from rs2[1], and updated trace and simulator code to use a dedicated conversion-width field instead of overloading fmt.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_decode.sv, restore op_args.fpu.fmt[1] for FCVT from the old funct2-based source instead of rs2[1], and if needed mirror the same misuse in sim/simx/execute.cpp and sim/simx/types.h."
+      },
+      "expected_failure_mode": "RV64 FCVT instructions execute the wrong 32-bit or 64-bit conversion variant, producing incorrect result width, sign extension, and architectural mnemonic behavior.",
+      "evidence_for_injection": [
+        "The decode fix is a one-bit control-source change with direct architectural effect.",
+        "Trace and simulator changes were updated in lockstep, confirming the original bug was semantic rather than cosmetic.",
+        "The affected instruction family is precisely FCVT W/WU/L/LU and their inverse forms."
+      ],
+      "notes": [
+        "This is a clean decode-only fault and is highly portable.",
+        "Tests that distinguish FCVT.W from FCVT.L are the best validation pattern."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了 FPU conversion 的 decode 语义，尤其是 RV64 中 FCVT 的 W 与 L 区分。现在 decoder 会从 rs2[1] 获取整数位宽选择，而不是错误地复用浮点格式字段，模拟器和 trace 也同步修正了这一点。",
+    "why_it_counts": [
+      "补丁修改的是 RTL decoder，而且会直接改变实际执行的指令语义。",
+      "同步更新的模拟器和 trace 代码是在配合同一个 decode bug，而不是新增功能。",
+      "受影响的是体系结构层面的 FCVT 指令，而不是仅供调试使用的路径。"
+    ],
+    "disqualifiers": [
+      "该提交也触及 trace 与测试基础设施，但那些改动只是 decode 修复的镜像更新。"
+    ],
+    "evidence": [
+      "VX_decode.sv 把 FCVT 指令的 op_args.fpu.fmt[1] 从基于 funct2 的编码改成了 rs2[1]，并附带注释 'CVT W/L'。",
+      "VX_trace_pkg.sv 重写了 FCVT 助记符选择逻辑，显式区分四种 W/WU/L/LU 组合。",
+      "sim/simx/types.h 把模拟器侧字段从 fmt 改名为 cvt，sim/simx/execute.cpp 也开始根据 cvt 而不是 fmt 来选择 FCVT 的位宽。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_decode.sv",
+      "sim/simx/execute.cpp",
+      "sim/simx/types.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "浮点转换指令的 decode 需要两类相互独立的信息：浮点精度，以及整数源或目的操作数的位宽。如果 decoder 把同一个 bitfield 同时拿来表示这两件事，那么在支持 32 位和 64 位整数宽度的设计里，RV64 类 FCVT 指令就会把 64 位版本误当成 32 位版本，或者反过来。这样即使 opcode 类别没错，算术引擎执行的也是错误的体系结构转换。",
+      "portable_injection_spec": {
+        "affected_mechanism": "FCVT 位宽字段解码",
+        "trigger_condition": "内核执行 FCVT.W、FCVT.WU、FCVT.L、FCVT.LU、FCVT.S.W、FCVT.S.L 及其双精度对应形式，而且设计同时支持 32 位与 64 位整数宽度。",
+        "injection_action": "让整数位宽选择重新从浮点格式字段获取，而不是从专用的 conversion-width 字段获取。",
+        "implementation_pattern": "swap decode bit",
+        "portability_notes": [
+          "可映射到任何需要同时区分浮点精度和整数位宽的转换指令 decoder。",
+          "该缺陷是纯粹的体系结构 decode 选择错误，因此适用于 RTL 与 simulator DUT。",
+          "不要修改 convert 单元本身，只破坏告诉它应该执行 W 还是 L 转换的控制字段。"
+        ],
+        "concrete_injection_steps": [
+          "找到为 FP-to-int 和 int-to-FP conversion 指令生成控制位的 decode 逻辑。",
+          "让位宽选择控制重新复用浮点格式位，或其它无关字段，而不是专用的 W/L 选择字段。",
+          "保持主 opcode 以及 signed/unsigned 选择不变，只让 32 位和 64 位转换的选择退化。",
+          "如果目标 DUT 是模拟器而不是 RTL，则只在紧耦合参考模型里同步引入同样的字段误用。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_decode.sv",
+          "sim/simx/execute.cpp",
+          "sim/simx/types.h",
+          "hw/rtl/VX_trace_pkg.sv"
+        ],
+        "target_module_or_logic": "FCVT 指令 W/L 转换位宽的解码字段选择",
+        "commit_fix_summary": "修复把 RTL 中 FCVT 的位宽位改为取自 rs2[1]，并同步更新 trace 与 simulator，使它们使用专门的 conversion-width 字段，而不再复用 fmt。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_decode.sv 中把 FCVT 的 op_args.fpu.fmt[1] 恢复成旧的 funct2 来源而不是 rs2[1]；如果需要，也可在 sim/simx/execute.cpp 与 sim/simx/types.h 中恢复同样的字段误用。"
+      },
+      "expected_failure_mode": "RV64 的 FCVT 指令会执行错误的 32 位或 64 位转换变体，产生错误的结果位宽、符号扩展和体系结构可见行为。",
+      "evidence_for_injection": [
+        "这个 decode 修复本质上是一位控制源的改变，且直接影响体系结构行为。",
+        "trace 与模拟器代码同步更新，证明原始问题是语义错误而不是显示问题。",
+        "受影响的指令族正是 FCVT 的 W/WU/L/LU 以及它们的反向形式。"
+      ],
+      "notes": [
+        "这是一个非常干净的 decode 类故障，移植性很高。",
+        "能区分 FCVT.W 和 FCVT.L 的测试是最佳验证方式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

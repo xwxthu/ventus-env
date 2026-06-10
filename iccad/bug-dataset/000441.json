@@ -1,0 +1,145 @@
+{
+  "dataset_id": 441,
+  "original_review_id": 581,
+  "meta": {
+    "id": 581,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "6a8c6e10f861c240f7dac5e9c49ec0ea809e5991",
+    "subject": "tensor core bug fixes and refactoring"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "pipeline_timing",
+    "summary": "This large tensor-core refactor contains a real DUT bug-fix: tensor FEDP completion tracking was changed from simplistic fixed latency assumptions to backend-specific arithmetic latency, so writeback metadata retires with the actual reduction pipeline result.",
+    "why_it_counts": [
+      "The fix changes central tensor-core RTL in the floating-point and integer FEDP wrappers.",
+      "The patch corrects completion-delay bookkeeping and metadata queue sizing rather than only refactoring module names.",
+      "The old logic could signal done using a shorter latency than the real multiply-reduce datapath."
+    ],
+    "disqualifiers": [
+      "The commit also performs broad backend refactoring and simulator updates.",
+      "The bug-fix slice is mixed with new FEDP module splits and non-DUT changes."
+    ],
+    "evidence": [
+      "VX_tcu_fp.sv replaces PIPE_LATENCY with FEDP_LATENCY derived from multiply, accumulate, and round stages, and resizes fedp_delay_pipe and MDATA_QUEUE_DEPTH from that value.",
+      "VX_tcu_int.sv changes the assumed latency from TCU_TC_K to LATENCY_IMUL plus clog2(TCU_TC_K) plus 1, and passes the explicit latency into VX_tcu_fedp_int.",
+      "The parent versions used fixed PIPE_LATENCY-style assumptions even though the actual FEDP implementations have backend-specific pipeline depth.",
+      "The commit subject explicitly says tensor core bug fixes and refactoring."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_fp.sv",
+      "hw/rtl/tcu/VX_tcu_int.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a pipelined tensor dot-product engine, the completion token and queued writeback metadata must be delayed by the true arithmetic latency of the selected backend. If control logic assumes a shorter fixed latency than the real multiply-reduce pipeline, the result side can dequeue metadata before the matching reduction output is ready, causing retirement timing skew between tags and data.",
+      "portable_injection_spec": {
+        "affected_mechanism": "tensor MAC completion-delay bookkeeping",
+        "trigger_condition": "The tensor backend has a deeper multiply or reduction pipeline than the fixed latency assumed by the issue or writeback side.",
+        "injection_action": "Underestimate the tensor FEDP completion latency and size the metadata delay path from that stale shorter value.",
+        "implementation_pattern": "restore stale fixed latency formula",
+        "portability_notes": [
+          "Apply this to any tensor or matrix MAC block that separately tracks result metadata and arithmetic completion.",
+          "Do not change the arithmetic datapath itself; only corrupt the control-side latency accounting.",
+          "This is easiest on designs with backend-specific latency differences such as DSP, DPI, integer, or tree-depth-dependent reductions."
+        ],
+        "concrete_injection_steps": [
+          "Find the register or queue that delays the tensor done signal or writeback metadata until the arithmetic tree finishes.",
+          "Replace the real latency sum of multiply, reduction, and rounding stages with an older constant or per-element approximation.",
+          "Resize any associated metadata FIFO or delay pipe from the shorter latency value.",
+          "Keep the actual FEDP arithmetic pipeline unchanged so completion bookkeeping becomes early relative to data."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_fp.sv",
+          "hw/rtl/tcu/VX_tcu_int.sv"
+        ],
+        "target_module_or_logic": "FEDP done-delay pipe and metadata queue sizing in the tensor-core FP and INT wrappers",
+        "commit_fix_summary": "The fix computes FEDP_LATENCY from the real backend stages, uses it for fedp_delay_pipe and metadata queue depth, and passes explicit latency into the integer FEDP block instead of relying on older fixed PIPE_LATENCY assumptions.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_tcu_fp.sv, revert MDATA_QUEUE_DEPTH and fedp_delay_pipe sizing from FEDP_LATENCY to the older PIPE_LATENCY-style expression. In VX_tcu_int.sv, revert FEDP_LATENCY from LATENCY_IMUL plus clog2(TCU_TC_K) plus 1 back to the earlier TCU_TC_K assumption."
+      },
+      "expected_failure_mode": "Tensor-core operations can assert completion or retire metadata too early, leading to mismatched result timing, wrong destination association, or corrupted WMMA or GEMM outputs when the datapath latency exceeds the stale control delay.",
+      "evidence_for_injection": [
+        "Both wrapper modules changed only the latency bookkeeping around the FEDP result path, which is directly reinjectable.",
+        "The old integer path assumed latency equal to TCU_TC_K even though the actual implementation contains a multiply stage and reduction depth.",
+        "The fix leaves the architectural tensor operation intact while repairing when completion is declared."
+      ],
+      "notes": [
+        "For fault injection, a narrow reverse edit in the wrapper latency constants is cleaner than reverting the entire FEDP backend refactor.",
+        "This bug is reusable across other DUTs as an early-done or metadata-skew mutation in a pipelined reduction engine."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "pipeline_timing",
+    "summary": "这个大规模 tensor-core 重构中包含真实的 DUT 修复：张量 FEDP 的完成时序跟踪从过于简化的固定延迟假设改成了按后端实际算术流水计算，因此写回元数据能和真正的归约结果同步退役。",
+    "why_it_counts": [
+      "修复发生在浮点和整数 FEDP 包装层这些核心 tensor-core RTL 中。",
+      "补丁修正的是完成延迟记账和元数据队列 sizing，而不只是模块重命名式重构。",
+      "旧逻辑可能在真实乘法加归约数据通路完成之前就提前宣告 done。"
+    ],
+    "disqualifiers": [
+      "该提交同时还做了较大范围的后端重构和模拟器更新。",
+      "这个修复切片与新的 FEDP 模块拆分及非 DUT 改动混在一起。"
+    ],
+    "evidence": [
+      "VX_tcu_fp.sv 用按乘法、累加和舍入级数计算的 FEDP_LATENCY 替换了 PIPE_LATENCY，并据此调整 fedp_delay_pipe 和 MDATA_QUEUE_DEPTH。",
+      "VX_tcu_int.sv 把假定延迟从 TCU_TC_K 改为 LATENCY_IMUL 加 clog2(TCU_TC_K) 加 1，并把显式延迟参数传给 VX_tcu_fedp_int。",
+      "父版本使用的是固定 PIPE_LATENCY 风格的假设，而真实 FEDP 实现具有后端相关的流水深度。",
+      "提交标题明确写了 tensor core bug fixes and refactoring。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_fp.sv",
+      "hw/rtl/tcu/VX_tcu_int.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在流水化张量点积引擎中，完成 token 和写回元数据必须按所选后端的真实算术延迟进行延后。如果控制逻辑使用了比真实乘法加归约流水更短的固定延迟，结果侧就可能在匹配的数据真正准备好之前先弹出元数据，导致标签和数据的退役时序失配。",
+      "portable_injection_spec": {
+        "affected_mechanism": "张量 MAC 完成延迟记账",
+        "trigger_condition": "张量后端的乘法或归约流水深度比 issue 或 writeback 侧假定的固定延迟更深。",
+        "injection_action": "低估张量 FEDP 的完成延迟，并用这个过短的值去驱动元数据延迟路径的 sizing。",
+        "implementation_pattern": "restore stale fixed latency formula",
+        "portability_notes": [
+          "可应用于任何把结果元数据与算术完成分开跟踪的张量或矩阵 MAC 模块。",
+          "不要修改算术数据通路本身，只破坏控制侧的延迟记账。",
+          "在具有 DSP、DPI、整数或归约树深度差异等后端延迟差异的设计上最容易复现。"
+        ],
+        "concrete_injection_steps": [
+          "找到用于把张量 done 信号或写回元数据延迟到算术树完成时刻的寄存器或队列。",
+          "把真实的乘法、归约、舍入延迟总和改回旧的常数或按元素近似公式。",
+          "把相关元数据 FIFO 或 delay pipe 的深度也按这个更短的值重新 sizing。",
+          "保持实际 FEDP 算术流水不变，从而让完成记账相对数据提前。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_fp.sv",
+          "hw/rtl/tcu/VX_tcu_int.sv"
+        ],
+        "target_module_or_logic": "tensor-core FP 和 INT 包装层中的 FEDP done-delay pipe 与元数据队列 sizing",
+        "commit_fix_summary": "该修复根据真实后端级数计算 FEDP_LATENCY，并将其用于 fedp_delay_pipe 与元数据队列深度，同时把显式延迟传给整数 FEDP 模块，而不是继续依赖旧的固定 PIPE_LATENCY 假设。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_tcu_fp.sv 中，把 MDATA_QUEUE_DEPTH 与 fedp_delay_pipe 的 sizing 从 FEDP_LATENCY 改回旧的 PIPE_LATENCY 风格表达式；在 VX_tcu_int.sv 中，把 FEDP_LATENCY 从 LATENCY_IMUL 加 clog2(TCU_TC_K) 加 1 改回更早的 TCU_TC_K 假设。"
+      },
+      "expected_failure_mode": "当真实数据通路延迟超过陈旧控制延迟时，tensor-core 操作可能过早宣告完成或提前退役元数据，导致结果时序错位、目标关联错误，或者出现 WMMA 或 GEMM 输出损坏。",
+      "evidence_for_injection": [
+        "这两个包装模块改动的都是 FEDP 结果路径周围的延迟记账逻辑，适合直接反向注入。",
+        "旧的整数路径把延迟近似为 TCU_TC_K，但真实实现还包含乘法级和归约深度。",
+        "修复保持了张量运算的架构语义不变，只修正了完成被宣告的时机。"
+      ],
+      "notes": [
+        "做故障注入时，直接回退包装层的延迟常量，比回退整个 FEDP 后端重构更干净。",
+        "这个 bug 可以复用于其他 DUT，表现为流水化归约引擎中的 early-done 或 metadata-skew 变异。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

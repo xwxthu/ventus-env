@@ -1,0 +1,151 @@
+{
+  "dataset_id": 383,
+  "original_review_id": 474,
+  "meta": {
+    "id": 474,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "2eeb2ac532eadf158ac4b41d2cc98cda2f350cb9",
+    "subject": "fixed memory flags propagation through the cache hierarchy"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes cache-hierarchy request metadata handling by propagating the full memory-flag vector through cache wrappers, banks, and request queues instead of collapsing it to a flush bit.",
+    "why_it_counts": [
+      "The commit message explicitly names a correctness bug in the cache hierarchy.",
+      "The patch threads FLAGS_WIDTH through top-level cache instantiations, cache wrappers, cache banks, and memory-request queues.",
+      "Request flags drive special memory semantics such as flush, IO, and local-memory handling, so dropping them changes DUT behavior."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/Vortex.sv, hw/rtl/VX_cluster.sv, and hw/rtl/VX_socket.sv start instantiating caches with FLAGS_WIDTH set to MEM_REQ_FLAGS_WIDTH.",
+      "hw/rtl/cache/VX_cache.sv replaces the old mem_req_flush signal with full-width mem_req_flags and forwards those flags onto the memory bus.",
+      "hw/rtl/cache/VX_cache_bank.sv stores core_req_flags through the pipeline and emits mreq_queue_flags through the memory-request queue."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/Vortex.sv",
+      "hw/rtl/VX_cluster.sv",
+      "hw/rtl/VX_socket.sv",
+      "hw/rtl/cache/VX_cache.sv",
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_wrap.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Caches and memory adapters must preserve request attribute bits as a request moves through arbitration, buffering, miss handling, and writeback machinery. If those attributes are narrowed to a single flush bit, zeroed, or otherwise stripped, downstream logic can no longer distinguish cacheable versus special requests such as IO, local-memory, or flush operations. That changes routing and handling semantics even when the address and data are otherwise correct.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Memory-request attribute propagation through the cache hierarchy",
+        "trigger_condition": "A request carrying non-default metadata such as flush, IO, or local-memory attributes passes through one or more cache stages before reaching memory or a bypass path.",
+        "injection_action": "Drop or truncate request-flag bits while buffering or repacking cache requests, so only a subset of the metadata survives to later stages.",
+        "implementation_pattern": "drop_flag_bits",
+        "portability_notes": [
+          "Map this to any cache, miss queue, bypass path, or memory adapter that repacks requests into an internal format.",
+          "The essential mutation is metadata loss during transport, not an address-translation bug.",
+          "If the target DUT uses different flag names, apply the fault to any bits that distinguish special memory semantics from normal cached access."
+        ],
+        "concrete_injection_steps": [
+          "Reduce the internal flag bus width at a cache boundary or internal queue so only one control bit, or zero bits, are carried forward.",
+          "When packing requests into a bank pipeline or memory-request queue, preserve only flush-like state and discard other attribute bits.",
+          "Keep downstream special-case logic unchanged so it consumes incomplete metadata and exhibits misrouting or mis-handling."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache.sv",
+          "hw/rtl/cache/VX_cache_bank.sv",
+          "hw/rtl/cache/VX_cache_wrap.sv",
+          "hw/rtl/VX_cluster.sv",
+          "hw/rtl/VX_socket.sv",
+          "hw/rtl/Vortex.sv"
+        ],
+        "target_module_or_logic": "Cache request flag plumbing and memory-request queue packing",
+        "commit_fix_summary": "The fix adds FLAGS_WIDTH parameters to cache instantiations, replaces single-bit flush propagation with full-width flag propagation, and stores request flags through cache-bank pipelines and memory-request queues.",
+        "mutation_strategy": "drop_flag_bits",
+        "source_level_edit_anchor": "In VX_cache.sv and VX_cache_bank.sv, revert mem_req_flags and core_req_flags back toward a single flush-style signal when packing requests and when driving the memory bus; in upper-level wrappers, instantiate cache stages with FLAGS_WIDTH = 0 or 1 instead of MEM_REQ_FLAGS_WIDTH."
+      },
+      "expected_failure_mode": "Special memory requests are routed or handled as ordinary cached accesses, or flush requests lose auxiliary semantics, leading to incorrect cache behavior, wrong bypass decisions, or broken local-memory and IO handling.",
+      "evidence_for_injection": [
+        "The patch consistently replaces single flush-bit storage with full-width flag storage across multiple cache stages.",
+        "Existing cache bypass and local-memory logic in the tree already consumes distinct MEM_REQ_FLAG bits, so flag loss is behaviorally meaningful.",
+        "The request metadata is explicitly carried through the cache-bank request queue after the fix, which provides a concrete reinjection point."
+      ],
+      "notes": [
+        "This fault is most visible on workloads that mix normal cached traffic with IO, local-memory, or explicit flush traffic.",
+        "The cache-bank request queue is the most direct injection anchor because it sits after arbitration but before external memory emission."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了缓存层级中的请求元数据处理问题：完整的内存标志位向量现在会穿过 cache wrapper、cache bank 和请求队列传播，而不是被压缩成单独的 flush 位。",
+    "why_it_counts": [
+      "提交信息直接指出缓存层级中的正确性问题。",
+      "补丁把 FLAGS_WIDTH 贯穿到顶层缓存实例、cache wrapper、cache bank 以及内存请求队列。",
+      "这些请求标志控制 flush、IO、本地内存等特殊语义，丢失它们会改变 DUT 行为。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/Vortex.sv、hw/rtl/VX_cluster.sv 和 hw/rtl/VX_socket.sv 开始以 MEM_REQ_FLAGS_WIDTH 实例化缓存。",
+      "hw/rtl/cache/VX_cache.sv 用全宽 mem_req_flags 替换了旧的 mem_req_flush，并把这些标志直接送到内存总线。",
+      "hw/rtl/cache/VX_cache_bank.sv 在流水线中保存 core_req_flags，并通过 memory-request queue 输出 mreq_queue_flags。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/Vortex.sv",
+      "hw/rtl/VX_cluster.sv",
+      "hw/rtl/VX_socket.sv",
+      "hw/rtl/cache/VX_cache.sv",
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_wrap.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "缓存和内存适配器必须在仲裁、缓冲、miss 处理和写回路径中保留请求属性位。如果这些属性被缩成单个 flush 位、被清零，或在传输中被剥离，下游逻辑就无法再区分普通可缓存访问与 IO、本地内存、flush 等特殊请求。即使地址和数据本身正确，请求的路由和处理语义仍会被改变。",
+      "portable_injection_spec": {
+        "affected_mechanism": "缓存层级中的内存请求属性传播",
+        "trigger_condition": "带有 flush、IO 或本地内存等非默认元数据的请求在到达内存或 bypass 路径前经过一个或多个缓存阶段。",
+        "injection_action": "在缓存请求的缓冲或重打包过程中丢弃或截断请求标志位，使只有部分元数据能进入后续阶段。",
+        "implementation_pattern": "drop_flag_bits",
+        "portability_notes": [
+          "可映射到任何会把请求重打包成内部格式的 cache、miss queue、bypass 路径或内存适配器。",
+          "该故障的本质是在传输过程中丢失元数据，而不是地址翻译出错。",
+          "如果目标 DUT 使用不同的标志命名，只要这些位用于区分特殊内存语义和普通缓存访问，就可以施加该故障。"
+        ],
+        "concrete_injection_steps": [
+          "在某个缓存边界或内部队列处缩减内部 flag 总线宽度，只保留一个控制位或者直接不保留任何位。",
+          "把请求打包进 bank 流水线或 memory-request queue 时，只保留类似 flush 的状态而丢弃其他属性位。",
+          "保持下游特殊处理逻辑不变，让它消费不完整的元数据并表现出错误路由或错误处理。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache.sv",
+          "hw/rtl/cache/VX_cache_bank.sv",
+          "hw/rtl/cache/VX_cache_wrap.sv",
+          "hw/rtl/VX_cluster.sv",
+          "hw/rtl/VX_socket.sv",
+          "hw/rtl/Vortex.sv"
+        ],
+        "target_module_or_logic": "缓存请求标志位布线与内存请求队列打包逻辑",
+        "commit_fix_summary": "该修复为缓存实例加入 FLAGS_WIDTH 参数，用全宽标志传播替换单 bit flush 传播，并在 cache-bank 流水线和 memory-request queue 中保存请求标志。",
+        "mutation_strategy": "drop_flag_bits",
+        "source_level_edit_anchor": "在 VX_cache.sv 和 VX_cache_bank.sv 中，把 mem_req_flags 和 core_req_flags 改回类似单独 flush 信号的实现；在上层 wrapper 中把 FLAGS_WIDTH 从 MEM_REQ_FLAGS_WIDTH 改成 0 或 1。"
+      },
+      "expected_failure_mode": "特殊内存请求会被当成普通缓存访问来路由或处理，或者 flush 请求丢失附加语义，导致缓存行为错误、bypass 判定错误，或本地内存与 IO 处理失效。",
+      "evidence_for_injection": [
+        "补丁在多个缓存阶段中一致地把单个 flush 位替换成全宽 flag 存储。",
+        "代码树中已有 cache bypass 和本地内存逻辑会消费不同的 MEM_REQ_FLAG 位，因此丢标志具有明确的行为后果。",
+        "修复后这些元数据会显式穿过 cache-bank 请求队列，这提供了具体的回注位置。"
+      ],
+      "notes": [
+        "当工作负载混合普通缓存流量与 IO、本地内存、显式 flush 流量时，该故障最容易暴露。",
+        "cache-bank 的 request queue 是最直接的注入点，因为它位于仲裁之后、外部内存发射之前。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

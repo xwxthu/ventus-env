@@ -1,0 +1,139 @@
+{
+  "dataset_id": 352,
+  "original_review_id": 429,
+  "meta": {
+    "id": 429,
+    "repo": "miaow",
+    "branch": "master",
+    "commit": "1e2cc29328b1954e5bafe858c62c895f84ffaa08",
+    "subject": "More syntax error fixes and a logic bug with the mb to mem interface."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "control",
+    "summary": "Fixes phase qualification for MMIO-triggered control writes in the FPGA interface: instruction-buffer writes must wait for true dispatch idle, while mb-to-memory data writes must not be blocked by the execute flag.",
+    "why_it_counts": [
+      "The commit message explicitly mentions a logic bug in the mb-to-mem interface.",
+      "The RTL hunk changes write-enable predicates in a hardware register interface, not just comments or syntax.",
+      "The changed conditions directly decide when on-chip state updates are accepted."
+    ],
+    "disqualifiers": [
+      "The same commit also contains a pure VHDL syntax fix in the wrapper.",
+      "This is FPGA integration/control-plane logic rather than the GPU execution datapath, so confidence is lower than for a core datapath bug."
+    ],
+    "evidence": [
+      "At MMIO address `9'h008`, the enable condition changes from `~execute` to `dispatch_idle`.",
+      "At MMIO address `9'h041`, the enable condition drops the `~execute` requirement entirely.",
+      "Both predicates sit in the combinational block that generates `instrBuffWrEn` and `mb2fpgamem_data_we` from AXI-Lite writes."
+    ],
+    "touched_dut_files": [
+      "src/verilog/rtl/fpga/compute_unit_fpga.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Accelerator control interfaces often have different legality rules for different MMIO writes. Command-buffer or instruction-buffer writes may only be safe when the dispatch front-end is truly idle, while writes into a staging-memory window may need to stay available during execution. If a design uses one coarse execution-state predicate for both cases, it can wrongly block valid data-window writes or wrongly permit command-buffer mutation before the front-end is actually idle.",
+      "portable_injection_spec": {
+        "affected_mechanism": "control-register phase qualification",
+        "trigger_condition": "Software performs control-plane MMIO writes while execution is active or while dispatch is not yet fully idle.",
+        "injection_action": "Use an overly coarse execution-state guard for per-register write enables instead of the correct per-register legality conditions.",
+        "implementation_pattern": "wrong_phase_guard on MMIO write-enable decode",
+        "portability_notes": [
+          "Map this to any hardware control block that exposes both command-buffer writes and data-window writes through MMIO.",
+          "The bug is about phase qualification, not bus protocol correctness.",
+          "A reusable injection can target only one of the affected write classes if a DUT does not expose both."
+        ],
+        "concrete_injection_steps": [
+          "Locate the decode logic that turns MMIO writes into per-register write strobes.",
+          "Identify one register whose writes should wait for dispatcher/front-end idle and one register whose writes should remain allowed during execution.",
+          "Replace the specific legality condition with a coarse global execute/not-execute predicate.",
+          "Keep the address decode unchanged so the failure remains a timing-of-acceptance bug, not an addressing bug."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/verilog/rtl/fpga/compute_unit_fpga.v"
+        ],
+        "target_module_or_logic": "AXI-Lite write-enable decode for instruction-buffer and mb-to-memory registers",
+        "commit_fix_summary": "The fix makes instruction-buffer writes depend on `dispatch_idle` and removes the erroneous `~execute` gate from `mb2fpgamem_data_we`.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "The source-level anchor is the `always @(*)` block that drives `instrBuffWrEn` and `mb2fpgamem_data_we` for addresses `9'h008` and `9'h041`."
+      },
+      "expected_failure_mode": "MMIO writes are accepted or blocked in the wrong execution phase, causing missed instruction-buffer updates, blocked mb-to-memory transfers, or command mutation at unsafe times.",
+      "evidence_for_injection": [
+        "The two functional edits both change write-acceptance predicates rather than data values.",
+        "The wrapper file change is only a VHDL `port map` syntax correction and does not affect the hardware bug mechanism.",
+        "The address-specific enable logic shows that the bug is per-register phase qualification, not a generic AXI-Lite handshake defect."
+      ],
+      "notes": [
+        "This is still a DUT-relevant RTL bug because the faulty behavior lives in synthesized interface logic.",
+        "If a target DUT only has one comparable MMIO path, inject the wrong phase guard on that path alone."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "control",
+    "summary": "该提交修复了 FPGA 接口中 MMIO 控制写入的阶段限定：instruction buffer 写入必须等待真正的 dispatch idle，而 mb-to-memory 数据写入不应再被 execute 标志错误阻塞。",
+    "why_it_counts": [
+      "提交信息明确提到了 mb-to-mem 接口中的逻辑缺陷。",
+      "RTL 补丁修改的是硬件寄存器接口中的写使能条件，而不是注释或纯语法。",
+      "这些条件会直接决定片上状态更新何时被接受。"
+    ],
+    "disqualifiers": [
+      "同一提交还包含一个纯粹的 VHDL wrapper 语法修复。",
+      "该问题位于 FPGA 集成/控制平面，而不是 GPU 执行数据通路，因此置信度低于核心数据通路缺陷。"
+    ],
+    "evidence": [
+      "在 MMIO 地址 `9'h008` 上，使能条件从 `~execute` 改为 `dispatch_idle`。",
+      "在 MMIO 地址 `9'h041` 上，使能条件完全移除了 `~execute` 要求。",
+      "这两个谓词都位于根据 AXI-Lite 写操作生成 `instrBuffWrEn` 和 `mb2fpgamem_data_we` 的组合逻辑块中。"
+    ],
+    "touched_dut_files": [
+      "src/verilog/rtl/fpga/compute_unit_fpga.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "加速器控制接口通常会对不同 MMIO 写入定义不同的合法时机。命令缓冲区或指令缓冲区写入往往只应在 dispatch 前端真正空闲时发生，而写入暂存内存窗口的数据通道则可能需要在执行期间继续可用。如果设计错误地对两类寄存器都使用同一个粗粒度执行状态谓词，就会把本该允许的数据窗口写入错误阻塞，或者在前端尚未真正空闲时错误允许命令缓冲区被修改。",
+      "portable_injection_spec": {
+        "affected_mechanism": "控制寄存器写入的阶段限定",
+        "trigger_condition": "软件在执行仍然活跃或 dispatch 尚未完全空闲时发起控制平面 MMIO 写入。",
+        "injection_action": "对不同寄存器的写使能错误地使用一个粗粒度的 execute/not-execute 条件，而不是各自正确的合法性条件。",
+        "implementation_pattern": "在 MMIO 写使能译码中使用错误阶段保护",
+        "portability_notes": [
+          "可映射到任何同时通过 MMIO 暴露命令缓冲区写入和数据窗口写入的硬件控制块。",
+          "该缺陷关注的是写入时机限定，而不是总线协议本身是否正确。",
+          "如果目标 DUT 只暴露其中一种路径，也可以只对那一类写入注入错误阶段保护。"
+        ],
+        "concrete_injection_steps": [
+          "找到把 MMIO 写操作译码成逐寄存器写 strobe 的逻辑。",
+          "识别一个应当等待 dispatcher 或前端空闲的寄存器，以及一个执行期间仍应允许写入的寄存器。",
+          "把原本针对该寄存器的特定合法性条件替换为一个粗粒度的全局 execute/not-execute 谓词。",
+          "保留地址译码不变，使故障保持为“写入接收时机错误”，而不是地址错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/verilog/rtl/fpga/compute_unit_fpga.v"
+        ],
+        "target_module_or_logic": "instruction-buffer 与 mb-to-memory 寄存器的 AXI-Lite 写使能译码",
+        "commit_fix_summary": "修复使 instruction-buffer 写入依赖 `dispatch_idle`，并移除了 `mb2fpgamem_data_we` 上错误的 `~execute` 门控。",
+        "mutation_strategy": "恢复旧条件",
+        "source_level_edit_anchor": "源级锚点是 `always @(*)` 组合块，其中为地址 `9'h008` 和 `9'h041` 驱动 `instrBuffWrEn` 与 `mb2fpgamem_data_we`。"
+      },
+      "expected_failure_mode": "MMIO 写入会在错误的执行阶段被接受或阻塞，导致 instruction buffer 更新丢失、mb-to-memory 传输被阻塞，或在不安全时机修改命令状态。",
+      "evidence_for_injection": [
+        "两个功能性修改都只改变了写接收谓词，而没有改动数据内容。",
+        "wrapper 文件中的改动只是 VHDL `port map` 语法修复，与硬件故障机制无关。",
+        "按地址区分的写使能逻辑说明该缺陷属于“逐寄存器阶段限定错误”，而不是通用的 AXI-Lite 握手缺陷。"
+      ],
+      "notes": [
+        "虽然这是接口逻辑，但错误行为确实存在于可综合的 DUT RTL 中。",
+        "如果目标 DUT 只有一种可比的 MMIO 路径，可只在那条路径上注入错误阶段保护。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

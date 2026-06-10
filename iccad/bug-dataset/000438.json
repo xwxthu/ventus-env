@@ -1,0 +1,145 @@
+{
+  "dataset_id": 438,
+  "original_review_id": 577,
+  "meta": {
+    "id": 577,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "87297e0eca466a3192f37d0a01332043e14cbf9e",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "Fixes AXI write synchronization so each bank keeps AW and W handshakes paired until both complete, preventing premature readiness and address-data mispairing.",
+    "why_it_counts": [
+      "The patch modifies core RTL write-interface files VX_axi_adapter.sv and VX_axi_write_ack.sv.",
+      "xrtsim is updated to match the corrected address-then-data write sequencing.",
+      "The affected behavior is correctness of external memory writes."
+    ],
+    "disqualifiers": [
+      "The commit also contains unrelated fixes such as cache replacement RAM reset and RAM-wrapper cleanup.",
+      "Several platform and runtime files are touched in the same commit."
+    ],
+    "evidence": [
+      "VX_axi_adapter moves AXI write-ack tracking inside each bank loop and computes arb_ready_out from a bank-local axi_write_ready.",
+      "m_axi_awvalid_w and m_axi_wvalid_w are held off once their corresponding per-bank ack bits fire.",
+      "VX_axi_write_ack keeps aw_fired and w_fired until both handshakes complete.",
+      "xrtsim disables W acceptance until a matching AW has been captured."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_axi_write_ack.sv",
+      "sim/xrtsim/xrt_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "AXI writes use separate address and data channels but still form one logical transaction. If an adapter treats the write as ready before both channels have been accepted, or shares ack state across banks, address and data beats can be mismatched or reordered.",
+      "portable_injection_spec": {
+        "affected_mechanism": "split-channel write-transaction synchronization",
+        "trigger_condition": "AW and W are accepted in different cycles because of backpressure, or multiple banks issue writes concurrently.",
+        "injection_action": "Make the write path ready before both channels complete, or share handshake state across banks so one completion releases another transaction.",
+        "implementation_pattern": "collapse channel-pairing handshake",
+        "portability_notes": [
+          "Apply this to any AXI bridge, DMA engine, or memory wrapper with separate write address and write data channels.",
+          "The reusable bug is premature completion of split write channels."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that tracks whether both write address and write data beats have been accepted.",
+          "Change ready or completion so it fires when either channel succeeds.",
+          "Move that tracking state out of per-bank scope or otherwise let one bank affect another."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "hw/rtl/libs/VX_axi_write_ack.sv",
+          "sim/xrtsim/xrt_sim.cpp"
+        ],
+        "target_module_or_logic": "per-bank AXI write address/data handshake tracking",
+        "commit_fix_summary": "The fix localizes AXI write-ack state to each bank, keeps aw_fired and w_fired until both handshakes complete, and makes xrtsim honor the same sequencing.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Move the write-ack bookkeeping back out of the per-bank loop or relax tx_rdy/tx_ack so a write is treated as ready before both AW and W complete."
+      },
+      "expected_failure_mode": "External-memory writes can lose address-data pairing, be accepted out of order, or be partially dropped, leading to silent corruption or missing writes.",
+      "evidence_for_injection": [
+        "The pre-fix adapter used shared write-ack arrays outside the per-bank loop.",
+        "The fixed adapter computes readiness from a bank-local axi_write_ready signal.",
+        "xrtsim now explicitly requires AW to be captured before W is accepted."
+      ],
+      "notes": [
+        "This AXI write-pairing bug is the cleanest portable injection point in the commit.",
+        "The failure is especially easy to expose under per-bank backpressure or concurrent writes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "该提交修复了 AXI 写事务的同步逻辑，使每个 bank 都会把 AW 和 W 握手保持配对直到两者都完成，从而避免过早 ready 和地址数据错配。",
+    "why_it_counts": [
+      "补丁修改了关键 RTL 写接口文件 VX_axi_adapter.sv 和 VX_axi_write_ack.sv。",
+      "xrtsim 也同步更新为修正后的先地址后数据写时序。",
+      "受影响的是外部内存写入的正确性。"
+    ],
+    "disqualifiers": [
+      "该提交还包含 cache replacement RAM reset 和 RAM wrapper 清理等无关修复。",
+      "同一次提交中也触及了多个平台和 runtime 文件。"
+    ],
+    "evidence": [
+      "VX_axi_adapter 把 AXI 写确认状态移动到每个 bank 循环内部，并用 bank-local 的 axi_write_ready 计算 arb_ready_out。",
+      "对应 per-bank ack 触发后，m_axi_awvalid_w 和 m_axi_wvalid_w 会被压低。",
+      "VX_axi_write_ack 会保持 aw_fired 和 w_fired，直到两个握手都完成。",
+      "xrtsim 会在捕获到匹配 AW 之前禁止接受 W。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_axi_write_ack.sv",
+      "sim/xrtsim/xrt_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "AXI 写事务虽然拆成地址通道和数据通道，但仍然是一个逻辑事务。如果 adapter 在两个通道都真正完成之前就把写路径视为 ready，或者在多个 bank 之间共享 ack 状态，那么地址 beat 和数据 beat 就可能错配或乱序。",
+      "portable_injection_spec": {
+        "affected_mechanism": "分离写通道的事务同步",
+        "trigger_condition": "由于回压导致 AW 和 W 在不同周期被接受，或者多个 bank 同时发起写请求。",
+        "injection_action": "让写路径在两个通道都完成之前就 ready，或者在多个 bank 之间共享握手状态，使一个 bank 的完成错误释放另一个事务。",
+        "implementation_pattern": "collapse channel-pairing handshake",
+        "portability_notes": [
+          "适用于任何具有独立写地址和写数据通道的 AXI bridge、DMA engine 或 memory wrapper。",
+          "可复用缺陷的本质是分离写通道过早完成。"
+        ],
+        "concrete_injection_steps": [
+          "找到跟踪写地址 beat 和写数据 beat 是否都被接受的逻辑。",
+          "把 ready 或 completion 改成任一通道成功就成立。",
+          "把该跟踪状态移出 per-bank 作用域，或以其他方式让一个 bank 影响另一个 bank。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "hw/rtl/libs/VX_axi_write_ack.sv",
+          "sim/xrtsim/xrt_sim.cpp"
+        ],
+        "target_module_or_logic": "按 bank 维护的 AXI 写地址/数据握手跟踪",
+        "commit_fix_summary": "修复把 AXI 写确认状态限定在每个 bank 内部，保持 aw_fired 和 w_fired 直到两个握手都完成，并让 xrtsim 服从相同顺序。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把写确认状态恢复到 per-bank 循环之外，或者放宽 tx_rdy/tx_ack，让写事务在 AW 和 W 都完成之前就被当成 ready。"
+      },
+      "expected_failure_mode": "外部内存写可能丢失地址数据配对、被乱序接受，或者只提交一半，从而导致静默损坏或写丢失。",
+      "evidence_for_injection": [
+        "修复前的 adapter 在 per-bank 循环外维护共享写确认数组。",
+        "修复后的 adapter 用 bank-local axi_write_ready 计算就绪条件。",
+        "xrtsim 现在显式要求先捕获 AW 再接受 W。"
+      ],
+      "notes": [
+        "这是该提交里最干净的可移植注入点。",
+        "在 per-bank 回压或并发写流量下最容易暴露。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "dataset_id": 415,
+  "original_review_id": 530,
+  "meta": {
+    "id": 530,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "34290f7e9515fc56f9223f59dd2aa836311b0833",
+    "subject": "RV64F DSP FPU hardware fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "This is a real RV64F FPU correctness fix. The patch repairs how the DSP-backed FPU path classifies and formats 32-bit results on a 64-bit core, and it also tightens conversion and div/sqrt flag handling so RV64F single-precision operations no longer return wrongly extended values or missing exception flags.",
+    "why_it_counts": [
+      "The subject explicitly says hardware fixes for RV64F DSP FPU.",
+      "The patch changes core FPU RTL modules, not only tests or host software.",
+      "The modified logic affects architectural floating-point results and exception flags."
+    ],
+    "disqualifiers": [
+      "The commit bundles several FPU fixes together rather than isolating one narrow bug."
+    ],
+    "evidence": [
+      "VX_fpu_dsp.sv adds per-operation return-type metadata and uses it to choose sign-extension, zero-extension, or NaN-box style packing of 32-bit results into XLEN-wide outputs.",
+      "VX_fpu_cvt.sv rewrites special-case, rounding-sticky, and inexact handling in the conversion pipeline.",
+      "VX_fpu_div.sv and VX_fpu_sqrt.sv change the DPI path to pass 64-bit operands correctly and carry fflags through the pipeline instead of discarding them.",
+      "The patch explicitly gates RV64F behavior with result-type bits like cvt_ret_int_out and ncp_rt_int_out, showing the bug is in result classification and formatting."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_cvt.sv",
+      "hw/rtl/fpu/VX_fpu_dsp.sv",
+      "hw/rtl/fpu/VX_fpu_div.sv",
+      "hw/rtl/fpu/VX_fpu_sqrt.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a 64-bit core that reuses 32-bit floating-point subunits, different FPU operations do not all return the same architectural value class. Some return 32-bit integers that must be sign-extended or zero-extended to XLEN, while others return 32-bit FP values that must remain FP-formatted. If the result-merging stage loses that return-type metadata and applies one fixed packing rule to all 32-bit results, RV64F instructions produce wrong upper bits or even wrong value class.",
+      "portable_injection_spec": {
+        "affected_mechanism": "mixed-width FPU result classification and XLEN packing",
+        "trigger_condition": "A 64-bit core executes single-precision FPU conversions, comparisons, moves, or class operations whose subunits naturally produce 32-bit outputs.",
+        "injection_action": "Remove the return-type tag that distinguishes integer-style results from FP-style results and force one shared output-extension policy.",
+        "implementation_pattern": "drop result-format tag",
+        "portability_notes": [
+          "Map this to any RV64F-like FPU wrapper that multiplexes multiple 32-bit subunit outputs into one XLEN-wide result bus.",
+          "The bug is about result classification at the merge point, not about the arithmetic core itself.",
+          "If the target DUT already tracks whether a result is integer, unsigned integer, or FP, corrupt only that classification, not the subunit datapath."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that merges 32-bit outputs from FPU convert, compare, move, or classify subunits into an XLEN-wide architectural result.",
+          "Delete or ignore the metadata bit that marks whether the output should be sign-extended, zero-extended, or left as an FP-formatted 32-bit value.",
+          "Apply one fixed packing rule to every 32-bit result, such as always NaN-boxing or always sign-extending.",
+          "Keep the subunit arithmetic unchanged so the injected bug stays focused on result interpretation and formatting."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_dsp.sv",
+          "hw/rtl/fpu/VX_fpu_cvt.sv",
+          "hw/rtl/fpu/VX_fpu_div.sv",
+          "hw/rtl/fpu/VX_fpu_sqrt.sv"
+        ],
+        "target_module_or_logic": "DSP-backed FPU result merge and RV64F conversion/flag handling",
+        "commit_fix_summary": "The fix added explicit return-type bits in VX_fpu_dsp.sv, corrected XLEN packing for RV64F results, and repaired conversion and div/sqrt flag propagation in supporting FPU blocks.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Remove the cvt_ret_int or ncp result-type handling in VX_fpu_dsp.sv so all 32-bit outputs are packed the same way again, and revert the supporting flag-carry fixes in VX_fpu_div.sv and VX_fpu_sqrt.sv if a stronger regression is desired."
+      },
+      "expected_failure_mode": "RV64F single-precision instructions can return wrong upper 32 bits, mis-typed compare or move results, and missing or incorrect floating-point exception flags.",
+      "evidence_for_injection": [
+        "The patch introduces dedicated result-type bits before the final response arbiter, which is a clear architectural classification fix.",
+        "The output packing logic explicitly distinguishes sign-extension, zero-extension, and FP-style packing only after this commit.",
+        "The same commit also fixes flag propagation in div and sqrt DPI paths, confirming real architectural-state regressions were present."
+      ],
+      "notes": [
+        "A high-yield trigger is RV64F FCVT.W, FCVT.WU, FCVT.L, FCVT.LU, FCLASS, or FMV.X.W style operations.",
+        "The commit contains additional conversion-corner fixes; the result-classification bug is the most portable single injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "这是一个真实的 RV64F FPU 正确性修复。补丁修复了 DSP 驱动的 FPU 路径在 64 位内核上如何分类并格式化 32 位结果，同时也修正了 conversion 与 div/sqrt 的标志处理，从而避免 RV64F 单精度操作返回错误扩展值或缺失异常标志。",
+    "why_it_counts": [
+      "提交标题明确写了 RV64F DSP FPU hardware fixes。",
+      "补丁修改的是核心 FPU RTL 模块，而不是仅改测试或宿主端软件。",
+      "被修改的逻辑直接影响体系结构可见的浮点结果与异常标志。"
+    ],
+    "disqualifiers": [
+      "该提交把多个 FPU 修复打包在一起，而不是只修一个狭窄缺陷。"
+    ],
+    "evidence": [
+      "VX_fpu_dsp.sv 新增了按操作区分的返回类型元数据，并据此在把 32 位结果打包到 XLEN 输出时选择 sign-extension、zero-extension 或类 NaN-box 的格式。",
+      "VX_fpu_cvt.sv 重写了 conversion 流水线中的 special-case、rounding-sticky 和 inexact 处理。",
+      "VX_fpu_div.sv 与 VX_fpu_sqrt.sv 修改了 DPI 路径，正确传递 64 位操作数，并把 fflags 带过流水，而不再丢弃。",
+      "补丁显式使用 cvt_ret_int_out 和 ncp_rt_int_out 之类的返回类型位来控制 RV64F 行为，说明缺陷点就在结果分类与格式化。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_cvt.sv",
+      "hw/rtl/fpu/VX_fpu_dsp.sv",
+      "hw/rtl/fpu/VX_fpu_div.sv",
+      "hw/rtl/fpu/VX_fpu_sqrt.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在一个复用 32 位浮点子单元的 64 位内核中，不同 FPU 操作返回的体系结构值类别并不相同。有些操作返回 32 位整数，需要按 XLEN 做符号扩展或零扩展；另一些则返回 32 位浮点值，必须保持浮点格式。如果结果合并级丢失了这类返回类型元数据，并对所有 32 位结果套用同一种打包规则，那么 RV64F 指令就会得到错误的高 32 位，甚至得到错误的值类别。",
+      "portable_injection_spec": {
+        "affected_mechanism": "混合位宽 FPU 结果分类与 XLEN 打包",
+        "trigger_condition": "64 位内核执行单精度 FPU conversion、compare、move 或 class 等操作，而对应子单元自然产生 32 位输出。",
+        "injection_action": "删除区分整数类结果和浮点类结果的返回类型标签，并强制所有 32 位输出共用一套扩展规则。",
+        "implementation_pattern": "drop result-format tag",
+        "portability_notes": [
+          "可映射到任何把多个 32 位 FPU 子单元输出复用到一个 XLEN 结果总线上的 RV64F 类封装器。",
+          "该缺陷关注的是合并点的结果分类，而不是算术核心本身。",
+          "如果目标 DUT 已经会区分整数、无符号整数和浮点结果，只破坏这个分类，不要改子单元计算本身。"
+        ],
+        "concrete_injection_steps": [
+          "找到把 FPU convert、compare、move 或 classify 子单元产生的 32 位结果合并到 XLEN 架构结果上的逻辑。",
+          "删除或忽略用于标记该结果应做符号扩展、零扩展还是保持浮点格式的元数据位。",
+          "对所有 32 位结果统一使用一种固定打包规则，例如一律 NaN-box 或一律符号扩展。",
+          "保持子单元算术不变，使注入后的回归聚焦在结果解释与格式化上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_dsp.sv",
+          "hw/rtl/fpu/VX_fpu_cvt.sv",
+          "hw/rtl/fpu/VX_fpu_div.sv",
+          "hw/rtl/fpu/VX_fpu_sqrt.sv"
+        ],
+        "target_module_or_logic": "DSP 驱动 FPU 的结果合并逻辑以及 RV64F conversion/flag 处理",
+        "commit_fix_summary": "修复在 VX_fpu_dsp.sv 中增加了显式返回类型位，修正了 RV64F 结果的 XLEN 打包方式，并修复了其它 FPU 模块中的 conversion 与 div/sqrt 标志传播。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "删除 VX_fpu_dsp.sv 中的 cvt_ret_int 或 ncp 结果类型处理，使所有 32 位输出再次按同一方式打包；如果需要更强回归，还可以同时回退 VX_fpu_div.sv 与 VX_fpu_sqrt.sv 中的标志传递修复。"
+      },
+      "expected_failure_mode": "RV64F 单精度指令可能返回错误的高 32 位、类型错误的 compare/move 结果，以及缺失或错误的浮点异常标志。",
+      "evidence_for_injection": [
+        "补丁在最终响应仲裁之前引入了专门的结果类型位，这是非常明确的体系结构级分类修复。",
+        "提交之后的输出打包逻辑才显式区分符号扩展、零扩展和浮点格式打包。",
+        "同一提交还修复了 div 和 sqrt 的 DPI 标志传播，说明之前确实存在体系结构状态级回归。"
+      ],
+      "notes": [
+        "高收益触发模式包括 RV64F 的 FCVT.W、FCVT.WU、FCVT.L、FCVT.LU、FCLASS 或 FMV.X.W 一类操作。",
+        "该提交还包含额外的 conversion 边角修复；结果分类错误是其中最适合可移植回注的单点故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

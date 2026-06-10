@@ -1,0 +1,141 @@
+{
+  "dataset_id": 149,
+  "original_review_id": 185,
+  "meta": {
+    "id": 185,
+    "repo": "gemmini",
+    "branch": "rtml",
+    "commit": "9227ac022db7805ecb981ac7980814f1e91fe7e0",
+    "subject": "fixed resadd bug by reverting critical path fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "ordering",
+    "summary": "This commit fixes a resadd correctness regression by restoring write hazard checks and stricter ordering in accumulator-backed read-modify-write paths.",
+    "why_it_counts": [
+      "It changes DUT behavior in AccumulatorMem, LoopMatmul, and Scratchpad rather than tests or tooling.",
+      "AccumulatorMem stops accepting every write unconditionally and again blocks same-address pipelined accumulator writes.",
+      "LoopMatmul and Scratchpad also restore stricter resadd load arbitration and ordered issue sequencing, consistent with a real ordering bug."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "AccumulatorMem.scala changes io.write.ready from true.B back to a predicate that blocks writes on block_write_req and same-address pipelined accumulator writes.",
+      "LoopMatmul.scala adds A_not_done and resadd_forceA so resadd arbitration keeps favoring the A-side until paired loads have drained.",
+      "Scratchpad.scala removes the relaxed write_norm_q bypass, routes accumulator-backed writes through the scale issue path, and updates busy and dmawrite gating accordingly."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorMem.scala",
+      "src/main/scala/gemmini/LoopMatmul.scala",
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Residual-add or accumulator read-modify-write paths rely on strict ordering between reading the old accumulator value, combining it with new data, and writing the result back. A so-called critical-path optimization that removes same-address backpressure or lets paired source streams switch too early can cause stale reads, overwritten partial sums, or mismatched operands. That is the portable bug mechanism here: relaxed ordering in a correctness-sensitive accumulator path.",
+      "portable_injection_spec": {
+        "affected_mechanism": "resadd read-modify-write ordering",
+        "trigger_condition": "A residual-add style workload issues accumulator-backed writes that can overlap in address or depends on tightly paired A/B load streams.",
+        "injection_action": "Drop the same-address write hazard guard and relax the paired-load or issue-queue ordering so accumulator operations can overlap unsafely.",
+        "implementation_pattern": "drop_ordering_backpressure",
+        "portability_notes": [
+          "Map this to any design where an accumulator or partial-sum memory is read, transformed, and written back under DMA or loop-controller control.",
+          "The easiest faithful injection is usually to accept writes unconditionally even when an older write to the same location is still in flight.",
+          "If the target DUT also has paired operand streams for resadd, relaxing the stream-stickiness or pairing rule is an additional faithful mutation."
+        ],
+        "concrete_injection_steps": [
+          "Locate the accumulator memory write-ready or enqueue guard that blocks same-address overlapping writes.",
+          "Remove that guard so writes are accepted even when the same address is still present in a pipeline or write queue.",
+          "Optionally relax any paired-load arbitration or queueing rule that keeps A/B operand streams aligned for residual-add operations.",
+          "Run a resadd workload with repeated writes to the same accumulator region and check for intermittent wrong sums."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorMem.scala",
+          "src/main/scala/gemmini/LoopMatmul.scala",
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "AccumulatorMem write.ready hazard gating, LoopMatmul resadd load arbitration, and Scratchpad ordered write-scale issue path",
+        "commit_fix_summary": "The fix restores AccumulatorMem same-address write blocking, keeps resadd A-side arbitration sticky until outstanding loads drain, and removes the relaxed Scratchpad bypass that had reordered accumulator-backed write processing.",
+        "mutation_strategy": "drop_ordering_backpressure",
+        "source_level_edit_anchor": "Set AccumulatorMem io.write.ready back to true.B or otherwise remove the same-address pipelined write predicate; optionally also revert the resadd_forceA and ordered write-scale queue changes."
+      },
+      "expected_failure_mode": "Residual-add results become intermittently wrong because accumulator values are read or written out of order, or paired resadd operands lose alignment.",
+      "evidence_for_injection": [
+        "The AccumulatorMem change alone is a textbook same-address hazard restoration and is directly injectable.",
+        "The related LoopMatmul and Scratchpad changes all move in the same direction: reintroducing ordering and removing a too-aggressive fast path.",
+        "The commit message explicitly ties the regression to a prior critical-path fix, which matches an ordering/backpressure bug rather than a functional algorithm change."
+      ],
+      "notes": [
+        "For a single portable mutation, the AccumulatorMem write-ready hazard check is the cleanest injection point.",
+        "The broader commit shows the bug family affected multiple ordering points in the resadd pipeline."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "ordering",
+    "summary": "该提交通过恢复写冲突检查和更严格的顺序约束，修复了 accumulator 支持的 resadd 读改写路径中的正确性回归。",
+    "why_it_counts": [
+      "它修改的是 AccumulatorMem、LoopMatmul 和 Scratchpad 中的 DUT 行为，而不是测试或工具链。",
+      "AccumulatorMem 不再无条件接受所有写入，而是重新阻止同地址的流水化 accumulator 写冲突。",
+      "LoopMatmul 和 Scratchpad 也一起恢复了更严格的 resadd load 仲裁与有序 issue 序列，符合真实顺序错误的特征。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "AccumulatorMem.scala 把 io.write.ready 从 true.B 改回一个谓词：在 block_write_req 或同地址流水化 accumulator 写存在时阻止新写入。",
+      "LoopMatmul.scala 新增了 A_not_done 与 resadd_forceA，使 resadd 仲裁会持续优先 A 侧直到成对 load 排空。",
+      "Scratchpad.scala 去掉了放松顺序的 write_norm_q 绕过路径，把 accumulator-backed 写重新路由到 scale issue 路径，并相应更新了 busy 与 dmawrite 门控。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorMem.scala",
+      "src/main/scala/gemmini/LoopMatmul.scala",
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "残差相加或 accumulator 读改写路径依赖严格的顺序：先读取旧 accumulator 值，再与新数据组合，最后把结果写回。所谓的“关键路径优化”如果去掉了同地址回压，或者让成对源流过早切换，就会导致读取陈旧值、部分和被覆盖、或者操作数错配。这里可移植的 bug 机理就是在正确性敏感的 accumulator 路径上放松了顺序约束。",
+      "portable_injection_spec": {
+        "affected_mechanism": "resadd 的读改写顺序约束",
+        "trigger_condition": "residual-add 风格工作负载发出可能同地址重叠的 accumulator 写，或者依赖严格成对对齐的 A/B 载入流。",
+        "injection_action": "删除同地址写冲突保护，并放松成对 load 或 issue 队列的顺序，使 accumulator 操作发生不安全重叠。",
+        "implementation_pattern": "drop_ordering_backpressure",
+        "portability_notes": [
+          "把它映射到任何在 DMA 或 loop-controller 驱动下，对 accumulator 或 partial-sum memory 做读、变换、再写回的设计。",
+          "最容易忠实复现的注入点通常是：即使同一位置的旧写仍在流水或写队列中，也无条件接受新写。",
+          "如果目标 DUT 还存在成对的 resadd 操作数流，那么放松该配对或粘滞仲裁规则也是等价且忠实的变异。"
+        ],
+        "concrete_injection_steps": [
+          "定位 accumulator memory 写入 ready 或入队保护逻辑，它会阻止同地址重叠写。",
+          "删除该保护，使得即便相同地址仍在 pipeline 或写队列中，也继续接受新写入。",
+          "可选地放松保持 resadd A/B 操作数流对齐的成对 load 仲裁或队列规则。",
+          "运行会反复写同一 accumulator 区域的 resadd 工作负载，并检查是否出现间歇性错误求和。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorMem.scala",
+          "src/main/scala/gemmini/LoopMatmul.scala",
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "AccumulatorMem 的 write.ready 冲突门控、LoopMatmul 的 resadd load 仲裁，以及 Scratchpad 的有序 write-scale issue 路径",
+        "commit_fix_summary": "修复恢复了 AccumulatorMem 中同地址写阻塞，保持 resadd A 侧仲裁在 outstanding load 排空前持续生效，并移除了会重排 accumulator-backed 写处理的 Scratchpad 放松旁路。",
+        "mutation_strategy": "drop_ordering_backpressure",
+        "source_level_edit_anchor": "把 AccumulatorMem 的 io.write.ready 改回 true.B，或者删除其中同地址流水写谓词；也可进一步回退 resadd_forceA 和有序 write-scale queue 的修改。"
+      },
+      "expected_failure_mode": "resadd 结果会间歇性出错，因为 accumulator 值发生了乱序读写，或者成对的 resadd 操作数失去了对齐。",
+      "evidence_for_injection": [
+        "仅 AccumulatorMem 这一处变化本身就是典型的同地址 hazard 恢复，且非常适合直接注入。",
+        "相关的 LoopMatmul 和 Scratchpad 改动都朝着同一个方向变化：恢复顺序性，去掉过于激进的 fast path。",
+        "提交信息明确把回归归因于早先的 critical-path 修复，这与顺序/回压 bug 完全吻合，而不是算法本身改变。"
+      ],
+      "notes": [
+        "如果只选择一个可移植变异点，优先使用 AccumulatorMem 的 write-ready 冲突保护。",
+        "从更广的角度看，这个提交表明 resadd 流水线中有多个顺序点都曾被同一类 bug 影响。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

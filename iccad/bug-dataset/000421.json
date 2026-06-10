@@ -1,0 +1,143 @@
+{
+  "dataset_id": 421,
+  "original_review_id": 545,
+  "meta": {
+    "id": 545,
+    "repo": "vortex",
+    "branch": "KMU",
+    "commit": "e7430f0c8b4338da82534096eeb2ab7559ef192d",
+    "subject": "fixed DRL bf16 and tf32 support + regression update"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes DRL numeric behavior for bf16 and tf32 by widening exponent handling, using a negative-infinity sentinel for zero inputs, and comparing exponents as signed values.",
+    "why_it_counts": [
+      "Central DRL RTL logic is changed to correct exponent encoding and comparison behavior",
+      "The commit enables previously disabled bf16 and tf32 regression tests after the RTL fix"
+    ],
+    "disqualifiers": [
+      "The commit also updates unit-test defaults and regression scripts"
+    ],
+    "evidence": [
+      "VX_tcu_fedp_drl.sv increases EXP_W from 9 to 10",
+      "VX_tcu_drl_exp_bias.sv maps zero operands to EXP_NEG_INF instead of 0",
+      "VX_tcu_drl_max_exp.sv changes exponent subtraction to sign-extended signed subtraction"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/drl/VX_tcu_drl_exp_bias.sv",
+      "hw/rtl/tcu/drl/VX_tcu_drl_max_exp.sv",
+      "hw/rtl/tcu/drl/VX_tcu_fedp_drl.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a floating-point reduction/alignment pipeline, zero-valued terms must not win the max-exponent comparison used to align mantissas. This commit fixes a path where zero products were encoded like ordinary low exponents and where the comparator did not preserve signed exponent semantics, so bf16/tf32 reductions could choose the wrong alignment reference. The fix also widens the exponent datapath so the negative-infinity sentinel is representable.",
+      "portable_injection_spec": {
+        "affected_mechanism": "floating-point reduction exponent selection",
+        "trigger_condition": "A reduction includes zero terms or exponent sums that rely on signed ordering, especially bf16/tf32 cases near the minimum effective exponent.",
+        "injection_action": "Make zero inputs look like a normal finite exponent and compare candidate exponents with unsigned or insufficient-width logic.",
+        "implementation_pattern": "remove zero-to-negative-infinity encoding and restore unsigned or truncated exponent comparison",
+        "portability_notes": [
+          "Apply this to the stage that computes the alignment exponent for parallel products, not to the final normalization stage.",
+          "If the design already uses a sentinel for zero, remove the sentinel or prevent the comparator from honoring it.",
+          "If the exponent path was widened only to support this fix, shrinking it back can recreate the same class of error."
+        ],
+        "concrete_injection_steps": [
+          "Identify the reduction or pre-alignment logic that computes per-lane effective exponents before mantissa shifting.",
+          "Change zero-product handling so zero lanes produce exponent 0 or another ordinary value instead of a sentinel below all real exponents.",
+          "In the max-exponent comparator, remove sign extension or reduce the exponent width so negative sentinel values compare incorrectly.",
+          "Keep the rest of the datapath unchanged so failures appear as wrong alignment rather than total pipeline breakage."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/drl/VX_tcu_drl_exp_bias.sv",
+          "hw/rtl/tcu/drl/VX_tcu_drl_max_exp.sv",
+          "hw/rtl/tcu/drl/VX_tcu_fedp_drl.sv"
+        ],
+        "target_module_or_logic": "DRL exponent bias and max-exponent datapath",
+        "commit_fix_summary": "The fix widens EXP_W to 10, introduces EXP_NEG_INF for zero terms in VX_tcu_drl_exp_bias.sv, and changes VX_tcu_drl_max_exp.sv to signed subtraction.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore EXP_W=9 in VX_tcu_fedp_drl.sv, map zero terms back to 0 in VX_tcu_drl_exp_bias.sv, and remove sign-extension in diff_mat subtraction in VX_tcu_drl_max_exp.sv."
+      },
+      "expected_failure_mode": "Reductions can align mantissas to the wrong exponent, so bf16/tf32 outputs become numerically incorrect when zeros or low exponents are present.",
+      "evidence_for_injection": [
+        "The fix adds an explicit negative-infinity encoding for zero terms.",
+        "The comparator changes from unsigned subtraction to signed subtraction.",
+        "EXP_W is widened specifically so the new signed exponent representation is valid."
+      ],
+      "notes": [
+        "Reverting any one of the three edits can reintroduce the bug; reverting all three most closely matches the original failure.",
+        "The portable injection is about exponent ordering, not about a source-specific format decoder."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交通过扩大指数位宽、把零输入映射为负无穷哨兵值、以及按有符号方式比较指数，修复了 DRL 在 bf16 和 tf32 下的数值行为问题。",
+    "why_it_counts": [
+      "核心 DRL RTL 逻辑被修改以修正指数编码和比较行为",
+      "RTL 修复后，提交重新启用了此前被注释掉的 bf16 和 tf32 回归测试"
+    ],
+    "disqualifiers": [
+      "该提交也更新了单元测试默认值和回归脚本"
+    ],
+    "evidence": [
+      "VX_tcu_fedp_drl.sv 将 EXP_W 从 9 增加到 10",
+      "VX_tcu_drl_exp_bias.sv 将零操作数映射为 EXP_NEG_INF，而不是 0",
+      "VX_tcu_drl_max_exp.sv 将指数减法改为带符号扩展的有符号减法"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/drl/VX_tcu_drl_exp_bias.sv",
+      "hw/rtl/tcu/drl/VX_tcu_drl_max_exp.sv",
+      "hw/rtl/tcu/drl/VX_tcu_fedp_drl.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在浮点归约/对齐流水线中，零值项不应在用于尾数对齐的最大指数比较中获胜。该提交修复了这样一条路径：零乘积被编码成普通低指数，且比较器没有保持有符号指数语义，导致 bf16/tf32 归约可能选择错误的对齐基准。补丁同时扩大了指数通路位宽，使负无穷哨兵值能够被正确表示。",
+      "portable_injection_spec": {
+        "affected_mechanism": "浮点归约最大指数选择",
+        "trigger_condition": "归约中包含零项，或者指数和依赖有符号排序，尤其是在 bf16/tf32 接近最小有效指数时。",
+        "injection_action": "让零输入看起来像普通有限指数，并用无符号或位宽不足的逻辑比较候选指数。",
+        "implementation_pattern": "去掉零到负无穷的编码，并恢复无符号或截断后的指数比较",
+        "portability_notes": [
+          "应把故障注入到并行乘积求对齐指数的阶段，而不是最终规格化阶段。",
+          "如果设计已经为零值使用哨兵值，可通过移除哨兵或让比较器忽略该哨兵来复现该类错误。",
+          "如果指数通路扩位只是为这次修复服务，把位宽缩回去也能重现同类问题。"
+        ],
+        "concrete_injection_steps": [
+          "定位在尾数移位前计算各 lane 有效指数的归约或预对齐逻辑。",
+          "把零乘积处理改成输出 0 或其他普通指数，而不是低于所有真实指数的哨兵值。",
+          "在最大指数比较器中去掉符号扩展，或减小指数位宽，使负无穷哨兵值比较错误。",
+          "其余数据通路保持不变，这样故障将表现为对齐错误而不是整条流水线崩溃。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/drl/VX_tcu_drl_exp_bias.sv",
+          "hw/rtl/tcu/drl/VX_tcu_drl_max_exp.sv",
+          "hw/rtl/tcu/drl/VX_tcu_fedp_drl.sv"
+        ],
+        "target_module_or_logic": "DRL 指数偏置与最大指数数据通路",
+        "commit_fix_summary": "补丁把 EXP_W 扩成 10，在 VX_tcu_drl_exp_bias.sv 中为零项引入 EXP_NEG_INF，并把 VX_tcu_drl_max_exp.sv 改为有符号减法。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_tcu_fedp_drl.sv 中把 EXP_W 恢复为 9，在 VX_tcu_drl_exp_bias.sv 中把零项恢复为 0，并在 VX_tcu_drl_max_exp.sv 中去掉 diff_mat 减法的符号扩展。"
+      },
+      "expected_failure_mode": "归约可能使用错误的指数对齐尾数，因此在存在零值或低指数时 bf16/tf32 输出会出现数值错误。",
+      "evidence_for_injection": [
+        "修复显式引入了零项的负无穷编码。",
+        "比较器从无符号减法改成了有符号减法。",
+        "EXP_W 被扩大，说明新的有符号指数表示确实需要更宽位宽。"
+      ],
+      "notes": [
+        "只回退三处改动中的任意一处都可能重新引入该错误；三处同时回退最接近原始故障。",
+        "可移植注入描述关注的是指数排序机制，而不是某个源仓库特定的格式解码器。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

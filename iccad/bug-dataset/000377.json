@@ -1,0 +1,139 @@
+{
+  "dataset_id": 377,
+  "original_review_id": 465,
+  "meta": {
+    "id": 465,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "39688270bd692f4f4874166a09877800cf63fbe3",
+    "subject": "Modified enable for req_pipe_reg to use stall logic correctly"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "memory_streamer",
+    "summary": "This commit fixes a real handshake bug in VX_mem_streamer. The request pipeline, request-sent bookkeeping, and response-valid generation are corrected so partial stalls and partial responses no longer freeze the pipe or suppress a legitimate completion.",
+    "why_it_counts": [
+      "The commit message explicitly says the req_pipe_reg enable was using stall logic incorrectly.",
+      "The patch is localized to one DUT RTL module and changes handshake predicates rather than comments or tracing only.",
+      "The modified conditions directly control when requests advance, how sent subrequests are tracked, and when a caller sees a completed response."
+    ],
+    "disqualifiers": [
+      "The commit fixes several closely related predicates in the same module, not just one line.",
+      "A small amount of the patch is cleanup of now-unused stag_empty."
+    ],
+    "evidence": [
+      "req_pipe_reg enable changed from ~(| mem_req_stall) to mem_req_stall != mreq_valid.",
+      "req_sent_mask is now updated only when mem_req_stall != mem_req_valid, instead of updating on every incomplete request.",
+      "crsp_valid no longer depends on ~stag_empty in either partial-response or full-response mode."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_mem_streamer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A memory streamer often expands one logical request into several lane or shard requests. In that case, backpressure is vector-valued: some subrequests may have been accepted while others still stall. If the pipeline advance condition collapses that vector into a simple reduction-OR stall test, the streamer can hold or advance at the wrong time. The associated sent-mask bookkeeping then drifts, and response-valid logic tied to an empty-tag check can hide a legitimate final response.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-lane request stall bookkeeping",
+        "trigger_condition": "A logical memory request fans out to multiple subrequests and only some of them are backpressured or only some responses have returned.",
+        "injection_action": "Reduce the vector stall state to a scalar OR-style hold condition and reuse that simplified condition for sent-mask bookkeeping or response-valid gating.",
+        "implementation_pattern": "collapse vector stall state to scalar OR",
+        "portability_notes": [
+          "Apply this to streamers, coalescers, or burst generators that manage multiple outstanding subrequests under one logical request.",
+          "If the target DUT issues only one request at a time, the more relevant mutation is to spuriously gate response valid with an empty-tag or empty-queue check.",
+          "The bug is about inconsistent interpretation of partial progress, not about one specific queue implementation."
+        ],
+        "concrete_injection_steps": [
+          "Find the stage that launches several subrequests and tracks which subrequests have already been sent.",
+          "Change the pipeline-enable condition so it simply checks whether any stall bit is asserted, rather than comparing the stall vector against the request-valid vector.",
+          "Use the same oversimplified condition for the 'sent mask' update, or gate completed-response valid with an empty-tag check that can deassert too early.",
+          "Test a case where only part of the request is accepted in one cycle and the rest must retry."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_mem_streamer.sv"
+        ],
+        "target_module_or_logic": "VX_mem_streamer request pipe enable, sent-mask update, and completion valid generation",
+        "commit_fix_summary": "The fix changes req_pipe_reg.enable and req_sent_mask updates to use mem_req_stall != mreq_valid, and it removes the unnecessary stag_empty gating from crsp_valid.",
+        "mutation_strategy": "restore_old_stall_logic",
+        "source_level_edit_anchor": "In VX_mem_streamer.sv, req_pipe_reg.enable changed from ~(| mem_req_stall) to mem_req_stall != mreq_valid, and the same comparison was added around req_sent_mask updates."
+      },
+      "expected_failure_mode": "Under partial backpressure, the streamer can freeze or replay the wrong subset of subrequests, and completed responses can be dropped or delayed even though the underlying memory response arrived.",
+      "evidence_for_injection": [
+        "mreq_valid is a vector of per-subrequest valids, and mem_req_stall is a vector of per-subrequest stalls, so vector-sensitive logic is required.",
+        "The fix updates both the pipeline enable and the sent-mask bookkeeping, showing the bug was not purely local to one register enable.",
+        "crsp_valid was also ungated from stag_empty, confirming there was a completion-visibility problem on the response side."
+      ],
+      "notes": [
+        "The cleanest reinjection is to restore the old request-pipe enable and sent-mask condition together.",
+        "If only one mutation is desired, restoring the old req_pipe_reg enable is the primary fault because it drives the rest of the bookkeeping drift."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "memory_streamer",
+    "summary": "该提交修复了 VX_mem_streamer 中真实的握手错误。修复后，请求流水推进、已发送请求记账和响应有效判定都能正确处理部分 stall 与部分响应，不会再错误冻结流水或隐藏本应可见的完成响应。",
+    "why_it_counts": [
+      "提交信息明确指出 req_pipe_reg 的 enable 使用 stall 逻辑有误。",
+      "补丁局部集中在一个 DUT RTL 模块中，修改的是握手谓词而不是仅改注释或 trace。",
+      "被修改条件直接决定请求何时前进、已发送子请求如何记账，以及调用方何时看到完成响应。"
+    ],
+    "disqualifiers": [
+      "该提交同时修复了同一模块中几个彼此相关的谓词，而不只是单独一行。",
+      "补丁中有少量内容只是把现在不再需要的 stag_empty 标成 unused。"
+    ],
+    "evidence": [
+      "req_pipe_reg 的 enable 从 ~(| mem_req_stall) 改为 mem_req_stall != mreq_valid。",
+      "req_sent_mask 现在只有在 mem_req_stall != mem_req_valid 时才更新，而不是对每个未完成请求都更新。",
+      "在 partial-response 和 full-response 两种模式下，crsp_valid 都不再依赖 ~stag_empty。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_mem_streamer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "memory streamer 往往会把一个逻辑请求扩展为多个 lane 或 shard 子请求。在这种情况下，背压是向量化的：有些子请求可能已经被接收，有些仍然被阻塞。如果流水推进条件把这个向量错误地简化成 reduction-OR 式的单比特 stall 判断，就会在错误的时机停住或推进流水。与之配套的 sent-mask 记账会随之漂移，而把响应 valid 额外绑到 tag 队列是否为空，也可能隐藏本应可见的最终完成响应。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 lane 请求的 stall 记账",
+        "trigger_condition": "一个逻辑内存请求被拆成多个子请求，且只有部分子请求被背压，或只有部分响应先返回。",
+        "injection_action": "把向量 stall 状态错误简化为标量 OR 式 hold 条件，并把这种过度简化的条件复用于 sent-mask 记账或响应 valid 判定。",
+        "implementation_pattern": "把向量 stall 状态折叠成标量 OR",
+        "portability_notes": [
+          "适用于在一个逻辑请求下管理多个子请求的 streamer、coalescer 或 burst generator。",
+          "如果目标 DUT 一次只发一个请求，则更相关的故障是用 empty-tag 或 empty-queue 条件去错误地屏蔽 response valid。",
+          "该 bug 的本质是对“部分进展”的解释不一致，而不是某一种具体队列实现。"
+        ],
+        "concrete_injection_steps": [
+          "找到负责发射多个子请求并记录哪些子请求已发送的那一级逻辑。",
+          "把流水 enable 条件改成只看是否存在任意 stall 位，而不是比较 stall 向量与 request-valid 向量。",
+          "对 sent-mask 更新也复用这个过度简化条件，或者用 empty-tag 检查去错误地屏蔽完成响应 valid。",
+          "测试一个“本周期仅部分子请求被接受、其余必须重试”的场景。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_mem_streamer.sv"
+        ],
+        "target_module_or_logic": "VX_mem_streamer 的请求流水使能、sent-mask 更新和完成响应有效生成",
+        "commit_fix_summary": "修复把 req_pipe_reg.enable 和 req_sent_mask 更新条件统一改成 mem_req_stall != mreq_valid，并去掉了 crsp_valid 对 stag_empty 的不必要依赖。",
+        "mutation_strategy": "restore_old_stall_logic",
+        "source_level_edit_anchor": "在 VX_mem_streamer.sv 中，req_pipe_reg.enable 从 ~(| mem_req_stall) 改成了 mem_req_stall != mreq_valid，同样的比较也被加到了 req_sent_mask 更新逻辑上。"
+      },
+      "expected_failure_mode": "在部分背压场景下，streamer 可能冻结或重放错误的子请求子集，并且即使底层内存响应已经到达，完成响应也可能被丢弃或延后。",
+      "evidence_for_injection": [
+        "mreq_valid 是每个子请求的有效向量，mem_req_stall 也是每个子请求的 stall 向量，因此必须使用向量敏感逻辑。",
+        "修复同时改动了流水 enable 和 sent-mask 记账，说明 bug 并不是某个单独寄存器使能的小问题。",
+        "crsp_valid 也被去掉了 stag_empty 依赖，进一步证明响应侧确实存在完成可见性问题。"
+      ],
+      "notes": [
+        "最干净的回注方式是同时恢复旧的请求流水使能与 sent-mask 条件。",
+        "如果只做一个变异，优先恢复旧的 req_pipe_reg enable，因为它会驱动后续记账漂移。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

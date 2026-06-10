@@ -1,0 +1,131 @@
+{
+  "dataset_id": 52,
+  "original_review_id": 70,
+  "meta": {
+    "id": 70,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "050cbe6a17b6fd5dc197f45af9e52bf8cac69ead",
+    "subject": "fix deadlock"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes a scratchpad DMA writeback deadlock by requiring a real queued write issue before the bank read-response pipe advertises readiness.",
+    "why_it_counts": [
+      "The patch changes ready/valid control in Scratchpad, a central memory-system DUT block.",
+      "It fixes a progress bug, not a test or software issue.",
+      "The one-line condition change directly controls whether DMA read responses are consumed for scratchpad writes."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "dma_read_pipe.ready now includes write_issue_q.io.deq.valid in src/main/scala/gemmini/Scratchpad.scala.",
+      "The changed predicate is on the DMA read-response to writer path inside the per-bank scratchpad logic.",
+      "The commit subject explicitly says fix deadlock."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A memory writeback pipeline that consumes read data and matches it with a queued destination entry must not treat queue payload bits as meaningful unless the queue output is valid. If the response side can assert ready based on stale queue bits when no real destination entry exists, the pipeline can consume or block traffic against a nonexistent transaction and deadlock.",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA response to write-issue queue handshake qualification",
+        "trigger_condition": "A read-response stage checks queue payload fields such as bank or address selection before confirming that a destination/write-issue entry is valid.",
+        "injection_action": "Drop the queue-valid term from the response ready predicate so readiness depends only on decoded queue bits.",
+        "implementation_pattern": "drop handshake-valid qualifier",
+        "portability_notes": [
+          "Apply this to any LSU or scratchpad path that pairs returned read data with a queued write descriptor.",
+          "The bug is about consuming or stalling on invalid queue state, not about the bank-match comparison itself.",
+          "It is most likely to manifest as a forward-progress failure rather than a simple data mismatch."
+        ],
+        "concrete_injection_steps": [
+          "Locate the read-response ready logic that depends on the head entry of a destination or write-issue queue.",
+          "Remove the requirement that the queue head be valid before using its decoded fields in the ready predicate.",
+          "Keep the bank/address match terms intact so the fault specifically comes from trusting invalid queue contents."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Scratchpad per-bank DMA read response to write_issue_q handshake",
+        "commit_fix_summary": "The fix adds write_issue_q.io.deq.valid to dma_read_pipe.ready so the response pipe only accepts data when a matching write issue actually exists.",
+        "mutation_strategy": "drop handshake-valid qualifier",
+        "source_level_edit_anchor": "In the dma_read_pipe.ready expression, remove the write_issue_q.io.deq.valid term while leaving the bank, accumulator, and garbage checks unchanged."
+      },
+      "expected_failure_mode": "The store path can stop making progress because DMA read responses become coupled to a nonexistent queued write issue, causing a deadlock or permanent stall.",
+      "evidence_for_injection": [
+        "The fix is a single ready-condition change on the critical response path.",
+        "The old code explicitly assumed the queue should be valid whenever the SRAM response was valid.",
+        "The patch keeps the same bank and garbage filtering and only adds the missing validity guard."
+      ],
+      "notes": [
+        "This is a progress bug, so validation should include timeout or completion checks.",
+        "The reinjected bug should be observable under DMA traffic that stresses queue occupancy and bank routing."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交通过要求真实存在的 write issue 后才能让 bank 读响应通路宣告 ready，修复了 scratchpad DMA 写回死锁。",
+    "why_it_counts": [
+      "补丁修改的是 Scratchpad 中的 ready/valid 控制逻辑，这是核心存储子系统 DUT 模块。",
+      "它修复的是前进性问题，而不是测试或软件问题。",
+      "这条单行条件改动直接控制 DMA 读响应是否会被用于 scratchpad 写入。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 src/main/scala/gemmini/Scratchpad.scala 中，dma_read_pipe.ready 现在包含 write_issue_q.io.deq.valid。",
+      "被修改的谓词位于每个 bank 的 DMA 读响应到 writer 的路径上。",
+      "提交标题明确写的是 fix deadlock。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一个把读回数据与排队目标项配对的存储写回流水线，只有在队列输出有效时才能把队列负载位当作有意义的信息使用。如果响应侧在不存在真实目标项时，仍然依据陈旧的队列位来拉高 ready，那么流水线就可能针对一个不存在的事务消费或阻塞流量，最终死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA 响应到 write-issue 队列的握手有效性约束",
+        "trigger_condition": "读响应阶段在确认目标或 write-issue 队列有效之前，就先检查其 bank 或地址等字段。",
+        "injection_action": "从响应 ready 谓词中删除队列有效位，使 ready 只依赖解码后的队列字段。",
+        "implementation_pattern": "drop handshake-valid qualifier",
+        "portability_notes": [
+          "适用于任何把返回读数据与排队写描述符配对的 LSU 或 scratchpad 路径。",
+          "该缺陷的核心是使用无效队列状态，而不是 bank 匹配比较本身。",
+          "它更可能表现为前进性丢失，而不是简单的数据错误。"
+        ],
+        "concrete_injection_steps": [
+          "找到依赖目标队列或 write-issue 队列队首项的读响应 ready 逻辑。",
+          "删除在使用这些解码字段前必须先确认队首有效的条件。",
+          "保留 bank 和地址匹配项不变，使故障仅来源于对无效队列内容的信任。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Scratchpad 每个 bank 中 DMA 读响应到 write_issue_q 的握手逻辑",
+        "commit_fix_summary": "修复在 dma_read_pipe.ready 中加入了 write_issue_q.io.deq.valid，使响应通路只有在确实存在匹配写请求时才接收数据。",
+        "mutation_strategy": "drop handshake-valid qualifier",
+        "source_level_edit_anchor": "在 dma_read_pipe.ready 表达式中移除 write_issue_q.io.deq.valid，同时保留 bank、accumulator 和 garbage 相关检查。"
+      },
+      "expected_failure_mode": "存储路径可能停止前进，因为 DMA 读响应会与一个并不存在的排队写请求耦合，导致死锁或永久停滞。",
+      "evidence_for_injection": [
+        "修复只是一处关键响应路径上的 ready 条件修改。",
+        "旧代码明确假设只要 SRAM 响应有效，队列就一定有效。",
+        "补丁保留了 bank 和 garbage 过滤，只新增了缺失的有效位保护。"
+      ],
+      "notes": [
+        "这是前进性缺陷，因此验证时应包含超时或完成性检查。",
+        "重新注入后的故障应能在高压力 DMA 流量和队列占用场景下观察到。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

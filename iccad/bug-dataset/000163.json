@@ -1,0 +1,133 @@
+{
+  "dataset_id": 163,
+  "original_review_id": 202,
+  "meta": {
+    "id": 202,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "953f5e5beabe0bb91bfab46d9014e204239d1c1c",
+    "subject": "fix csc image read jump bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "This commit fixes CSC image read-jump control by distinguishing true intra-stripe address jumps from normal stripe transitions, using delayed stripe count instead of delayed stripe-end flags.",
+    "why_it_counts": [
+      "It modifies only CSC RTL control logic in a DUT datapath file.",
+      "The changed predicate directly decides whether a second CBUF entry is read and shifted into the image stream.",
+      "The commit message explicitly identifies a CSC image read bug."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The patch removes delayed is_stripe_end flops and instead adds a delayed stripe_cnt flop.",
+      "sc2buf_dat_rd_next1_enable changes from ~is_stripe_end_d2 to |stripe_cnt_d1.",
+      "The assignment sits directly in the image read-jump enable path in NV_NVDLA_CSC_dl.v."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An image loader sometimes has to read a second adjacent buffer entry when the next pixel group starts in the middle of a later entry. That extra read must be triggered only for true address jumps inside the current stripe, not for the ordinary discontinuity that happens when the design starts the next stripe. If the boundary detector uses a stale stripe-end flag instead of the delayed stripe index or stripe-progress state, the loader can spuriously fetch or suppress the extra entry at stripe boundaries.",
+      "portable_injection_spec": {
+        "affected_mechanism": "extra-entry read gating across stripe boundaries",
+        "trigger_condition": "An image read reaches a stripe boundary where the next address is discontinuous, but the discontinuity is caused by moving to the next stripe rather than by an intra-stripe jump.",
+        "injection_action": "Gate the extra read with a stale stripe-end condition instead of a delayed stripe-progress indicator.",
+        "implementation_pattern": "use stale boundary predicate",
+        "portability_notes": [
+          "Look for logic that conditionally issues a second read or read-ahead when pixel data spans multiple buffer entries.",
+          "The portable fault is to confuse stripe or line transitions with true jump reads inside the same stripe.",
+          "Any equivalent delayed stripe counter, line index, or stripe-active state can serve as the corrected predicate in another DUT."
+        ],
+        "concrete_injection_steps": [
+          "Find the control expression that enables a second read for jump cases in the image fetch path.",
+          "Replace the current delayed stripe-progress term with a delayed stripe-end or end-of-line flag from the previous cycle.",
+          "Keep the address discontinuity comparison intact so the wrong boundary classification is the only change.",
+          "Do not modify the downstream shift amount logic; let the wrong extra-read decision misalign the data path."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+        ],
+        "target_module_or_logic": "CSC image read jump gating around stripe transitions",
+        "commit_fix_summary": "The fix removes delayed stripe-end flops, adds a delayed stripe_cnt flop, and changes sc2buf_dat_rd_next1_enable to require |stripe_cnt_d1 instead of ~is_stripe_end_d2.",
+        "mutation_strategy": "restore_old_boundary_guard",
+        "source_level_edit_anchor": "In NV_NVDLA_CSC_dl.v, replace |stripe_cnt_d1 in sc2buf_dat_rd_next1_enable with the old ~is_stripe_end_d2 condition and restore the removed delayed stripe-end state if needed."
+      },
+      "expected_failure_mode": "The loader performs an extra buffer read at the wrong stripe boundary or misses a needed jump read, producing misaligned image data at stripe transitions.",
+      "evidence_for_injection": [
+        "The modified signal is the enable for a next-entry read, not a debug or statistic path.",
+        "The commit changes only the stripe-boundary predicate and leaves the shift amount formula in place.",
+        "The removed and added delay elements show the bug is about temporal alignment of stripe state."
+      ],
+      "notes": [
+        "This is a clean restore-old-condition mutation.",
+        "The bug is especially likely to manifest on image layouts with discontinuous addresses between stripes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "该提交通过使用延迟后的 stripe 计数而不是延迟后的 stripe_end 标志，修复了 CSC 图像读路径中把正常条带切换误判为 read-jump 的控制错误。",
+    "why_it_counts": [
+      "它只修改了 CSC 关键数据通路文件中的 RTL 控制逻辑。",
+      "被修改的谓词直接决定是否额外读取第二个 CBUF entry 并送入图像数据流。",
+      "提交信息明确指出这是 CSC image read bug。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "补丁移除了延迟的 is_stripe_end flop，改为新增延迟后的 stripe_cnt flop。",
+      "sc2buf_dat_rd_next1_enable 从 ~is_stripe_end_d2 改成了 |stripe_cnt_d1。",
+      "该赋值位于 NV_NVDLA_CSC_dl.v 的图像 read-jump 使能路径中。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "图像加载器在下一组像素落入后续 entry 中部时，有时必须额外读取相邻的第二个 buffer entry。这个额外读取只应在当前 stripe 内部发生真实地址跳跃时触发，而不应把切换到下一条 stripe 时的正常地址不连续当成 jump。如果边界判断使用了陈旧的 stripe_end 标志，而不是延迟后的 stripe 序号或 stripe 进度状态，就会在条带边界处错误地多读或少读一个 entry。",
+      "portable_injection_spec": {
+        "affected_mechanism": "跨 stripe 边界的额外 entry 读取门控",
+        "trigger_condition": "图像读取到达 stripe 边界，后续地址出现不连续，但这种不连续来自切换到下一条 stripe，而不是当前 stripe 内部的 jump。",
+        "injection_action": "用延迟的 stripe_end 条件替代延迟的 stripe 进度指示信号来控制额外读取。",
+        "implementation_pattern": "use stale boundary predicate",
+        "portability_notes": [
+          "应定位到图像读取路径中，遇到跨 entry 像素时触发第二次读取或预取的控制逻辑。",
+          "可移植的故障本质是把 stripe 或 line 切换误判为同一 stripe 内部的真实 jump read。",
+          "在其他 DUT 中，只要有等价的延迟 stripe 计数、line 序号或 stripe-active 状态，都可映射此修复。"
+        ],
+        "concrete_injection_steps": [
+          "找到图像读取路径中用于 jump 情况下启用第二次读取的控制表达式。",
+          "把当前使用的延迟 stripe 进度项替换成前一拍的 stripe_end 或 end-of-line 标志。",
+          "保留地址不连续比较不变，使唯一变化点就是边界分类错误。",
+          "不要改动下游 shift 量计算，让错误的额外读取决策自然导致数据错位。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+        ],
+        "target_module_or_logic": "CSC 条带切换附近的 image read jump 门控",
+        "commit_fix_summary": "修复移除了延迟的 stripe-end flop，新增延迟后的 stripe_cnt，并把 sc2buf_dat_rd_next1_enable 的条件从 ~is_stripe_end_d2 改为 |stripe_cnt_d1。",
+        "mutation_strategy": "restore_old_boundary_guard",
+        "source_level_edit_anchor": "在 NV_NVDLA_CSC_dl.v 中，把 sc2buf_dat_rd_next1_enable 的 |stripe_cnt_d1 改回旧的 ~is_stripe_end_d2，并在需要时恢复被删除的延迟 stripe-end 状态。"
+      },
+      "expected_failure_mode": "加载器会在错误的条带边界执行额外 buffer read，或漏掉本应发生的 jump read，导致条带切换处图像数据错位。",
+      "evidence_for_injection": [
+        "被修改的是 next-entry read 的使能信号，而不是调试或统计路径。",
+        "该提交只改变了 stripe 边界谓词，保留了 shift 量公式。",
+        "新增和删除的延迟状态表明故障根源是 stripe 状态的时间对齐错误。"
+      ],
+      "notes": [
+        "这是一个很适合通过恢复旧条件来重新注入的故障。",
+        "在条带地址不连续的图像布局上更容易暴露。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

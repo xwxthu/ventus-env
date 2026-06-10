@@ -1,0 +1,141 @@
+{
+  "dataset_id": 29,
+  "original_review_id": 36,
+  "meta": {
+    "id": 36,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "5600a8dd4206dff99184d808c31feb9c4d05a3ec",
+    "subject": "writeback cache fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes flush completion tracking so a cache flush finishes only after all banks report done, while also cleaning up writeback dirty-byte initialization and payload routing.",
+    "why_it_counts": [
+      "The patch changes active cache-control RTL, not tests.",
+      "The flush-controller predicate change is an explicit functional correctness fix.",
+      "Supporting bank/data changes are also about real writeback-cache state, not refactoring only."
+    ],
+    "disqualifiers": [
+      "The commit also removes an obsolete init module and bundles related cache cleanup, but the flush-completion bug is still clear and isolated."
+    ],
+    "evidence": [
+      "In hw/rtl/cache/VX_cache_flush.sv, the flush FSM completion check changes from flush_done_n == 0 to flush_done_n == {NUM_BANKS{1'b1}}.",
+      "The same file also clears flush_done_n when transitioning from WAIT to FLUSH, showing the bitmap is intended to accumulate per-bank completion.",
+      "Bank/data changes in the same commit initialize dirty-byte state on init and route writeback payloads from dirty-line state under WRITEBACK mode."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_flush.sv",
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_data.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A multi-bank cache flush must not report completion until every participating bank has finished its local flush walk or writeback work. If the controller uses an inverted or weakened done predicate, it can release the flush early and expose partially flushed state as if the cache were globally clean.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-bank flush completion aggregation",
+        "trigger_condition": "A flush operation waits on per-bank or per-slice completion bits that arrive over one or more cycles.",
+        "injection_action": "Declare flush complete before all per-bank done bits are set.",
+        "implementation_pattern": "invert or weaken all-banks-done predicate",
+        "portability_notes": [
+          "Apply this to any cache flush controller that tracks completion with a bitmap, counter, or OR-reduced status vector.",
+          "The fault is portable even if the target DUT has no explicit NUM_BANKS parameter; any distributed flush walker can exhibit it.",
+          "Early flush completion is especially damaging in writeback caches because dirty lines may still require eviction or invalidation."
+        ],
+        "concrete_injection_steps": [
+          "Find the controller that aggregates flush-complete indications from multiple banks, ways, or slices.",
+          "Locate the condition that transitions the FSM or status bit from flushing to done.",
+          "Replace the all-complete condition with a weaker predicate such as zero, any-bit, or partial-mask completion.",
+          "Keep the rest of the flush sequence unchanged so the injected bug specifically becomes an early-completion error."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_flush.sv"
+        ],
+        "target_module_or_logic": "Global cache flush FSM completion check",
+        "commit_fix_summary": "The fix clears the completion bitmap on FLUSH entry and only moves to DONE when every bank completion bit is 1.",
+        "mutation_strategy": "invert_completion_check",
+        "source_level_edit_anchor": "Change the STATE_FLUSH completion test back so it can transition when flush_done_n == 0 instead of requiring all bits high."
+      },
+      "expected_failure_mode": "The cache reports flush completion too early, leaving dirty or valid lines resident and causing stale data, missed writebacks, or inconsistent coherence-visible state.",
+      "evidence_for_injection": [
+        "The key control bug is explicit in a single line of the flush FSM.",
+        "The reset of flush_done_n at FLUSH entry proves the bitmap is intended to represent accumulated per-bank completion.",
+        "The surrounding writeback-cache changes are consistent with the interpretation that flush correctness was broken, not just instrumentation."
+      ],
+      "notes": [
+        "This is the cleanest primary injection point in the commit, even though adjacent cache-state fixes are also real.",
+        "A target DUT without banks can map the same bug to any multi-step flush completion aggregator."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 flush 完成状态跟踪：只有所有 bank 都报告完成后，cache flush 才能结束；同时它还顺带修正了 writeback 的 dirty-byte 初始化和 payload 路由。",
+    "why_it_counts": [
+      "补丁修改的是运行中的 cache-control RTL，而不是测试代码。",
+      "flush 控制器中的条件变化是非常明确的功能正确性修复。",
+      "同一提交中配套的 bank/data 改动也都和真实 writeback cache 状态有关，不只是重构。"
+    ],
+    "disqualifiers": [
+      "该提交还删除了一个过时的 init 模块，并夹带了一些相关 cache 清理，但 flush 完成判定这个 bug 仍然清晰且易于隔离。"
+    ],
+    "evidence": [
+      "在 hw/rtl/cache/VX_cache_flush.sv 中，flush FSM 的完成检查从 flush_done_n == 0 改成了 flush_done_n == {NUM_BANKS{1'b1}}。",
+      "同一文件在从 WAIT 进入 FLUSH 时还会清零 flush_done_n，说明这个位图本来就是用来累积各 bank 完成状态的。",
+      "同提交中的 bank/data 改动还会在 init 时清空 dirty-byte 状态，并在 WRITEBACK 模式下从 dirty line 状态生成写回 payload。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_flush.sv",
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_data.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "多 bank cache 的 flush 操作，只有在所有参与 bank 都完成本地 flush walk 或写回工作后，才能对外报告完成。如果控制器使用了反向或过弱的完成条件，就会过早释放 flush，把部分未清理完的状态错误地暴露成“全局已干净”。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 bank flush 完成聚合",
+        "trigger_condition": "flush 操作需要等待来自多个 bank、slice 或子控制器的完成位，这些位会在一拍或多拍内逐步到达。",
+        "injection_action": "在所有完成位都置位之前，就宣布 flush 完成。",
+        "implementation_pattern": "反转或弱化“全部完成”判定",
+        "portability_notes": [
+          "可映射到任何使用位图、计数器或状态向量聚合 flush 完成信息的控制器。",
+          "即使目标 DUT 没有显式 NUM_BANKS 参数，只要存在分布式 flush walker，同类问题仍然成立。",
+          "在 writeback cache 中，这种早完成尤其危险，因为 dirty line 可能仍需 eviction 或 invalidation。"
+        ],
+        "concrete_injection_steps": [
+          "找到聚合多个 bank、way 或 slice flush 完成信号的控制器。",
+          "定位使 FSM 或状态位从 flushing 进入 done 的判定条件。",
+          "把“全部完成”的条件替换成更弱的条件，例如全零、任意一位完成或部分 mask 完成。",
+          "保持其余 flush 流程不变，让注入故障专门表现为“过早完成”。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_flush.sv"
+        ],
+        "target_module_or_logic": "全局 cache flush FSM 的完成检查逻辑",
+        "commit_fix_summary": "修复在进入 FLUSH 时清空完成位图，并且只有在每个 bank 的完成位都变成 1 时才进入 DONE。",
+        "mutation_strategy": "invert_completion_check",
+        "source_level_edit_anchor": "把 STATE_FLUSH 中的完成检查改回旧逻辑，使其在 flush_done_n == 0 时就可能进入完成，而不是要求所有位都为高。"
+      },
+      "expected_failure_mode": "cache 会过早报告 flush 完成，导致脏行或有效行仍然残留，从而出现陈旧数据、漏写回或一致性状态不一致。",
+      "evidence_for_injection": [
+        "核心控制 bug 在 flush FSM 的单行条件中就能直接看到。",
+        "进入 FLUSH 时清零 flush_done_n 的行为证明该位图本来就是用于累积各 bank 完成状态。",
+        "周围的 writeback cache 修补也说明被修复的是 flush 正确性问题，而不是单纯的可视化或日志问题。"
+      ],
+      "notes": [
+        "尽管同一提交中的其他 cache 状态修复也是真实的，这里仍选取了最干净的主注入点。",
+        "如果目标 DUT 没有 bank，也可以把同样的故障思想映射到任何多步 flush 完成聚合器上。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

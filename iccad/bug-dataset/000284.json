@@ -1,0 +1,131 @@
+{
+  "dataset_id": 284,
+  "original_review_id": 341,
+  "meta": {
+    "id": 341,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "582d895204d7fb79671e9b081793746c1a2d5c11",
+    "subject": "rop blender bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fixed_point_rounding",
+    "summary": "Fixes ROP blend normalization by adding the missing 0xff rounding bias before taking the high byte of each 8-bit multiply result.",
+    "why_it_counts": [
+      "The patch changes core pixel-blend arithmetic in DUT RTL.",
+      "The missing bias directly alters produced color and alpha values.",
+      "The fix is localized and maps cleanly to a reusable arithmetic mutation."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only touched DUT file is hw/rtl/rop_unit/VX_rop_blend_multadd.sv.",
+      "Each source and destination channel product changes from color * factor to color * factor + 16'hff.",
+      "The module outputs the high byte of the accumulated 16-bit sums, so the added constant acts as a rounding bias before normalization."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_blend_multadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix corrects fixed-point normalization in a blend datapath. When 8-bit color channels are multiplied by 8-bit blend factors and the high byte is later taken as the normalized result, a small bias term is often added first so the operation rounds instead of always truncating downward. If that bias is missing, the blend result is systematically low for many fractional products.",
+      "portable_injection_spec": {
+        "affected_mechanism": "fixed-point blend normalization",
+        "trigger_condition": "A graphics or image pipeline multiplies color channels by fractional blend factors and then normalizes by discarding low bits.",
+        "injection_action": "Remove the rounding bias before the normalization shift or high-byte extraction.",
+        "implementation_pattern": "remove round-to-nearest bias before truncation",
+        "portability_notes": [
+          "This applies to any color blender or fixed-point DSP block that implements multiply-and-normalize using truncation of low bits.",
+          "The bug does not require changing coefficients or operators; only the pre-normalization bias term needs to be removed.",
+          "Mutate all affected channels consistently so the fault remains a blend-rounding bug rather than a single-channel typo."
+        ],
+        "concrete_injection_steps": [
+          "Locate the per-channel multiply results that feed a later right shift, divide-by-255 approximation, or high-byte extraction.",
+          "Delete the constant bias term that is added immediately after each multiply and before normalization.",
+          "Keep the downstream add/subtract blend modes unchanged so the resulting error is a systematic rounding bias."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_blend_multadd.sv"
+        ],
+        "target_module_or_logic": "VX_rop_blend_multadd per-channel product computation",
+        "commit_fix_summary": "The commit adds +16'hff to the eight per-channel source and destination products before the final high-byte extraction.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_rop_blend_multadd, remove the +16'hff term from product_src_r/g/b/a and product_dst_r/g/b/a."
+      },
+      "expected_failure_mode": "Blended RGB and alpha outputs become systematically biased low because normalization truncates instead of rounding.",
+      "evidence_for_injection": [
+        "Before the fix, all eight products were plain 8x8 multiplies with no bias term.",
+        "The output uses sum_[15:8], so low-bit information is discarded after multiplication and accumulation.",
+        "The same bias is applied to both source and destination channels, indicating an intentional normalization correction rather than a feature change."
+      ],
+      "notes": [
+        "This is a good cross-DUT arithmetic injection because the mechanism is common in pixel blending and fixed-point datapaths.",
+        "If another DUT uses a right shift instead of byte extraction, the same mutation still applies."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fixed_point_rounding",
+    "summary": "该提交修复了 ROP 混合归一化中的舍入错误：在提取每个 8 位乘积的高字节之前补上缺失的 0xff 舍入偏置。",
+    "why_it_counts": [
+      "补丁修改了 DUT RTL 中核心的像素混合算术。",
+      "缺失偏置会直接改变输出的颜色和 alpha 数值。",
+      "该修复局部清晰，能够自然映射成可复用的算术类故障注入。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一被修改的 DUT 文件是 hw/rtl/rop_unit/VX_rop_blend_multadd.sv。",
+      "所有源端和目标端通道乘积都从 color * factor 改成了 color * factor + 16'hff。",
+      "该模块最终输出 16 位和的高字节，因此新增常量实质上是在归一化前加入舍入偏置。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_blend_multadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复纠正的是混合数据通路中的定点归一化问题。当 8 位颜色通道与 8 位混合因子相乘后，再通过取高字节作为归一化结果时，通常会先加一个很小的偏置，使结果按舍入而不是一律向下截断。如果这个偏置缺失，许多带小数部分的乘积都会系统性偏小。",
+      "portable_injection_spec": {
+        "affected_mechanism": "定点混合归一化",
+        "trigger_condition": "图形或图像流水线需要把颜色通道与分数型混合因子相乘，并通过丢弃低位来完成归一化。",
+        "injection_action": "删除归一化移位或取高字节之前用于舍入的偏置项。",
+        "implementation_pattern": "在截断前移除 round-to-nearest 偏置",
+        "portability_notes": [
+          "适用于任何使用乘法后丢弃低位来做归一化的颜色混合器或定点 DSP 数据通路。",
+          "该缺陷不需要改动系数或运算符，只需删除乘法后的偏置常量。",
+          "应同时修改所有相关通道，使其保持为统一的混合舍入错误，而不是单通道笔误。"
+        ],
+        "concrete_injection_steps": [
+          "定位那些在后续右移、除以 255 近似或取高字节之前生成的逐通道乘积。",
+          "删除每个乘积在归一化前紧接着加入的常量偏置。",
+          "保持后续加/减混合模式不变，使故障表现为系统性的舍入偏差。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_blend_multadd.sv"
+        ],
+        "target_module_or_logic": "VX_rop_blend_multadd 的逐通道乘积计算逻辑",
+        "commit_fix_summary": "该提交在最终取高字节之前，为 8 个源/目标通道乘积统一加入了 +16'hff。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_rop_blend_multadd 中，从 product_src_r/g/b/a 和 product_dst_r/g/b/a 中删除 +16'hff。"
+      },
+      "expected_failure_mode": "混合后的 RGB 和 alpha 输出会整体偏小，因为归一化阶段执行了截断而不是舍入。",
+      "evidence_for_injection": [
+        "修复前，8 个乘积都只是简单的 8x8 乘法，没有偏置项。",
+        "模块输出使用的是 sum_[15:8]，说明乘法和累加后低位会被丢弃。",
+        "源端和目标端同时加入相同偏置，说明这是有意的归一化修正，而不是功能扩展。"
+      ],
+      "notes": [
+        "这是一类很适合跨 DUT 复用的算术故障，因为该机制在像素混合和定点数据通路中很常见。",
+        "如果其他 DUT 用的是右移而不是取高字节，仍然可以使用同样的变异方式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

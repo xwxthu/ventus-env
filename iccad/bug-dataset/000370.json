@@ -1,0 +1,143 @@
+{
+  "dataset_id": 370,
+  "original_review_id": 454,
+  "meta": {
+    "id": 454,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "af2bb3b7892f180bc8f8b82f19e519bade4c521d",
+    "subject": "cache fixes and opyimization - fmax moved from 162 mhz to 220 mhz!!!"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit mixes cache optimization with real bug fixes. The cleanest reusable fault is the tag-path fix that prevents tag writes and invalidations from advancing while the cache pipeline is stalled.",
+    "why_it_counts": [
+      "The patch changes central cache-bank and tag-control RTL, not just synthesis scripts.",
+      "At least one hunk clearly repairs functional hazard handling during backpressure.",
+      "The selected tag-stall bug is localized enough for a practical reverse mutation."
+    ],
+    "disqualifiers": [
+      "A large part of the diff is also performance-oriented queue and RAM optimization.",
+      "The commit includes naming and debug-output churn alongside the functional fixes."
+    ],
+    "evidence": [
+      "hw/rtl/cache/VX_tag_access.v adds !stall to both use_write_enable and use_invalidate.",
+      "The same file keeps miss detection and tag matching separate from those gated state updates, indicating the bug is about advancing state under backpressure.",
+      "hw/rtl/cache/VX_bank.v also fixes incoming fill detection and queue conditions, showing the commit contains broader hazard-handling repairs."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v",
+      "hw/rtl/cache/VX_tag_store.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A stalled cache pipeline must freeze control-state updates as well as data movement. If tag valid, dirty, or invalidate state continues to change while the rest of the pipeline is backpressured, the cache can desynchronize tag state from the request that was supposed to own that update. This leads to false hits or misses, repeated miss processing, and hard-to-debug ordering failures.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Tag-state update suppression during stall",
+        "trigger_condition": "The cache pipeline is stalled while a tag write, fill update, or invalidate operation is pending in the tag path.",
+        "injection_action": "Allow tag writes or invalidations to proceed even when the surrounding cache pipeline is stalled.",
+        "implementation_pattern": "allow state update while stalled",
+        "portability_notes": [
+          "Map this to any cache pipeline where tags are updated in a stage that can be backpressured by downstream queues or miss machinery.",
+          "The mutation should preserve the stall itself; only the tag-state gating should be removed.",
+          "Validation should induce stalls during fills, writes, or snoop invalidations and then check for duplicated misses, wrong tag state, or hangs."
+        ],
+        "concrete_injection_steps": [
+          "Locate the tag-array write-enable and invalidate-enable signals in the cache control path.",
+          "Remove the term that blocks those enables when the pipeline reports stall or backpressure.",
+          "Keep the rest of the pipeline stall logic intact so the bug specifically becomes 'tag state advances while the request pipeline is frozen'."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_tag_access.v",
+          "hw/rtl/cache/VX_tag_store.v"
+        ],
+        "target_module_or_logic": "Tag write and invalidate enable generation under stall",
+        "commit_fix_summary": "The fix gates use_write_enable and use_invalidate with !stall in VX_tag_access.v and correspondingly removes the separate stall port from VX_tag_store.v.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Revert use_write_enable and use_invalidate to the pre-fix forms without !stall gating."
+      },
+      "expected_failure_mode": "The cache can mutate tag state while requests are stalled, causing false misses or hits, duplicated miss handling, misordered fill or invalidate behavior, and possible hangs.",
+      "evidence_for_injection": [
+        "The patch adds stall gating exactly at the tag-state enable points, which is the smallest functional change in the commit.",
+        "The same commit also fixes incoming fill detection in VX_bank.v, reinforcing that the broader theme is hazard handling under overlap and backpressure.",
+        "Although the commit includes optimization work, these tag-control changes are directly functional."
+      ],
+      "notes": [
+        "For a minimal functional reinjection, focus on the tag-path stall gating and ignore the RAM or queue optimization parts of the commit.",
+        "This fault is broader and more portable than the specific incoming_fill refactor also present in the patch."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交把 cache 优化与真实 bug 修复混在一起。其中最清晰、最适合复用注入的是 tag 路径修复：在 cache 流水停顿时禁止 tag 写入和 invalidate 继续前进。",
+    "why_it_counts": [
+      "补丁修改的是核心 cache bank 和 tag 控制 RTL，而不仅仅是综合脚本。",
+      "至少有一个 hunk 明确修复了回压期间的功能性冒险处理。",
+      "选定的 tag-stall bug 足够局部，适合做实际的反向突变。"
+    ],
+    "disqualifiers": [
+      "diff 的很大一部分同时也是面向性能的队列和 RAM 优化。",
+      "该提交还混入了命名调整和调试输出变更。"
+    ],
+    "evidence": [
+      "hw/rtl/cache/VX_tag_access.v 为 use_write_enable 和 use_invalidate 都新增了 !stall 限制。",
+      "同一文件保留了 miss 检测和 tag 匹配逻辑，只对状态更新做门控，说明 bug 核心是“回压时状态继续前进”。",
+      "hw/rtl/cache/VX_bank.v 还修复了 incoming fill 检测和队列条件，进一步说明该提交在修补重叠/冒险处理。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v",
+      "hw/rtl/cache/VX_tag_store.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当缓存流水发生停顿时，控制状态更新和数据移动都必须被冻结。如果在其余流水被回压阻塞时，tag 的 valid、dirty 或 invalidate 状态仍然继续改变，cache 就会把 tag 状态与原本拥有该更新的请求解耦，最终导致假 hit、假 miss、重复 miss 处理以及难以定位的时序/顺序错误。",
+      "portable_injection_spec": {
+        "affected_mechanism": "停顿期间的 tag 状态更新抑制",
+        "trigger_condition": "缓存流水正在 stall，而 tag 路径中正好有 tag 写、fill 更新或 invalidate 待执行。",
+        "injection_action": "即使外围 cache 流水已经 stall，也允许 tag 写入或 invalidate 继续进行。",
+        "implementation_pattern": "allow state update while stalled",
+        "portability_notes": [
+          "可映射到任何 tag 更新阶段会受到下游队列或 miss 机制回压的 cache 流水。",
+          "注入时应保留 stall 本身，只移除 tag 状态更新上的门控。",
+          "验证应在人为制造 fill、写入或 snoop invalidate 期间的 stall 后，检查是否出现重复 miss、错误 tag 状态或挂起。"
+        ],
+        "concrete_injection_steps": [
+          "定位 cache 控制路径中驱动 tag array 写使能和 invalidate 使能的信号。",
+          "删除这些使能中用于阻止 stall 期间更新的条件项。",
+          "保持其他流水 stall 逻辑不变，使故障精确表现为“请求流水冻结，但 tag 状态仍继续前进”。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_tag_access.v",
+          "hw/rtl/cache/VX_tag_store.v"
+        ],
+        "target_module_or_logic": "stall 条件下的 tag 写入与 invalidate 使能生成",
+        "commit_fix_summary": "该修复在 VX_tag_access.v 中用 !stall 门控 use_write_enable 和 use_invalidate，并相应移除了 VX_tag_store.v 中单独的 stall 端口。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 use_write_enable 和 use_invalidate 回退为不含 !stall 门控的旧形式。"
+      },
+      "expected_failure_mode": "cache 会在请求停顿期间错误更新 tag 状态，导致假 hit 或假 miss、重复 miss 处理、fill 或 invalidate 次序错误，甚至挂起。",
+      "evidence_for_injection": [
+        "补丁正是在 tag 状态使能点上新增了 stall 门控，这是整个提交中最小也最明确的功能修复。",
+        "同一提交还修复了 VX_bank.v 中的 incoming fill 检测，说明整体主题确实是重叠与回压下的冒险处理。",
+        "虽然提交包含优化内容，但这些 tag 控制修改本身直接影响功能。"
+      ],
+      "notes": [
+        "若想做最小功能性回注，应聚焦 tag 路径的 stall 门控，忽略提交中与 RAM/queue 优化有关的部分。",
+        "相比该补丁中同时出现的 incoming_fill 重构，这个故障更通用、也更便于跨 DUT 复用。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

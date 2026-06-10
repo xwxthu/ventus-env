@@ -1,0 +1,137 @@
+{
+  "dataset_id": 305,
+  "original_review_id": 367,
+  "meta": {
+    "id": 367,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "91a8e65fd54fea453673f8a70915e31aec2b2d6b",
+    "subject": "64-bit RTL bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes two XLEN=64 functional bugs: W-immediate decode was reusing the generic I-type shift-immediate extraction, and duplicated 32-bit load responses were using per-lane selection instead of the duplicated source lane's data and alignment.",
+    "why_it_counts": [
+      "The commit changes core decode and LSU behavior in the DUT.",
+      "Both fixes affect architectural results on a 64-bit core.",
+      "The edited logic corrects width-sensitive special cases that the generic path handled incorrectly."
+    ],
+    "disqualifiers": [
+      "The same decode diff also renames upper-imm wiring, but that rename is not the substantive bug fix."
+    ],
+    "evidence": [
+      "In hw/rtl/core/VX_decode.sv, the fix introduces separate i_imm and iw_imm under XLEN_64, and INST_I_W switches from the shared alu_imm path to iw_imm.",
+      "In the parent decode file, alu_imm used instr[25:20] for func3==3'b001 but used rs2 for other shift-immediate cases, so one generic extractor covered both I-type and I-W cases.",
+      "In hw/rtl/core/VX_lsu_unit.sv, the duplicated-response path for rsp_data32 changes to use mem_rsp_data[0] and rsp_align[0][2] whenever rsp_is_dup or i==0, instead of mixing lane i state into a duplicated response."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_lsu_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This commit bundles two independent 64-bit corner-case fixes. The common pattern is that a word-sized special case was incorrectly folded into a generic path: word-immediate decode reused the wrong immediate extractor, and a duplicated subword load response reused per-lane alignment instead of the duplicated source lane's state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "64-bit word-format special-case handling",
+        "trigger_condition": "A 64-bit core executes W-immediate shift operations, or a duplicated 32-bit load response is broadcast from one source lane to multiple lanes.",
+        "injection_action": "Collapse the special-case path back into the generic path so the wrong immediate field or wrong lane-alignment state is reused.",
+        "implementation_pattern": "reuse generic width path for a word-specific case",
+        "portability_notes": [
+          "You can inject either sub-bug independently; the commit contains two distinct reinjection points.",
+          "For decode, target word-immediate shift extraction on a 64-bit ISA.",
+          "For LSU formatting, target any duplicated or broadcast load-response path that should use one source lane consistently."
+        ],
+        "concrete_injection_steps": [
+          "In decode, make the W-immediate path reuse the generic I-type shift-immediate extractor instead of a dedicated word-immediate extractor.",
+          "In load-response formatting, when one response is duplicated to multiple consumers, keep using each consumer's local subword select instead of the duplicated source lane's select.",
+          "Leave the rest of the 64-bit datapath unchanged so the failure stays localized to these width-sensitive special cases."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/core/VX_lsu_unit.sv"
+        ],
+        "target_module_or_logic": "XLEN_64 word-immediate decode and duplicated 32-bit load-response formatting",
+        "commit_fix_summary": "The commit splits i_imm from iw_imm for XLEN_64 decode and rewrites the duplicate-response rsp_data32 selection so it uses lane 0 data and alignment consistently.",
+        "mutation_strategy": "restore_generic_word_path",
+        "source_level_edit_anchor": "Revert INST_I_W to the old shared alu_imm path and restore the old rsp_data32 expression that used rsp_align[i] and mem_rsp_data[i] inside the duplicate path."
+      },
+      "expected_failure_mode": "W-immediate shift instructions produce wrong results on a 64-bit core, and duplicated 32-bit load responses can return the wrong word half or wrong lane data.",
+      "evidence_for_injection": [
+        "The decode fix is localized to the XLEN_64 immediate extractor and INST_I_W wiring.",
+        "The LSU fix changes only the duplicate-response selection logic for 32-bit data under XLEN_64.",
+        "Both fixes correct places where a generic path was reused for a word-specific or duplicate-specific case."
+      ],
+      "notes": [
+        "This commit contains two independent reinjection points; injecting either one is sufficient for a dataset mutation."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了两个 XLEN=64 的功能性缺陷：W 类立即数解码错误复用了通用 I 型移位立即数提取逻辑，而重复广播的 32 位 load 响应在选字时错误使用了每个 lane 自己的选择状态，而不是源 lane 的数据与对齐状态。",
+    "why_it_counts": [
+      "该提交修改的是 DUT 中核心 decode 与 LSU 的行为逻辑。",
+      "两个修复都会影响 64 位内核上的体系结构级结果。",
+      "被改动的逻辑都是在纠正宽度敏感特殊情况被通用路径错误处理的问题。"
+    ],
+    "disqualifiers": [
+      "同一 decode 补丁里还顺带重命名了 upper-imm 相关信号，但那不是本次实质性 bug 修复。"
+    ],
+    "evidence": [
+      "在 hw/rtl/core/VX_decode.sv 中，修复在 XLEN_64 下引入了独立的 i_imm 与 iw_imm，并让 INST_I_W 从共用的 alu_imm 切换到 iw_imm。",
+      "在父版本 decode 文件中，alu_imm 对 func3==3'b001 使用 instr[25:20]，而对其他移位立即数使用 rs2，因此原先只有一个通用提取器同时覆盖了 I 型与 I-W 型场景。",
+      "在 hw/rtl/core/VX_lsu_unit.sv 中，rsp_data32 的重复响应路径改为在 rsp_is_dup 或 i==0 时统一使用 mem_rsp_data[0] 与 rsp_align[0][2]，不再把 lane i 的状态混入重复响应。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_lsu_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该提交同时修复了两个独立的 64 位边界条件错误。共同模式是：本应单独处理的 word 级特殊情况，被错误地折叠回了通用路径。一个出现在 W 类立即数解码上，另一个出现在重复广播的子字 load 响应上。",
+      "portable_injection_spec": {
+        "affected_mechanism": "64 位 word 格式特殊情况处理",
+        "trigger_condition": "64 位内核执行 W 类移位立即数操作，或者某个 32 位 load 响应从一个源 lane 被重复广播到多个 lane。",
+        "injection_action": "把专用特殊路径重新折叠回通用路径，从而复用错误的立即数字段或错误的 lane 对齐状态。",
+        "implementation_pattern": "对 word 专用场景错误复用通用宽度路径",
+        "portability_notes": [
+          "这两个子缺陷可以分别独立注入；该提交实际包含两个独立回注点。",
+          "对于 decode，目标是 64 位 ISA 中 W 类移位立即数的提取逻辑。",
+          "对于 LSU，目标是任何需要把单个源 lane 的 load 响应一致广播给多个消费者的路径。"
+        ],
+        "concrete_injection_steps": [
+          "在 decode 中，让 W 类立即数路径重新复用通用 I 型移位立即数提取器，而不是专用的 word-immediate 提取器。",
+          "在 load 响应格式化中，当一个响应被重复广播给多个消费者时，继续使用每个消费者本地的子字选择状态，而不是统一使用源 lane 的选择状态。",
+          "保持 64 位数据通路的其余部分不变，使故障局限于这些宽度敏感的特殊情况。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/core/VX_lsu_unit.sv"
+        ],
+        "target_module_or_logic": "XLEN_64 下的 W 类立即数解码与重复 32 位 load 响应格式化",
+        "commit_fix_summary": "该提交在 XLEN_64 下把 i_imm 与 iw_imm 分离，并重写了重复响应时的 rsp_data32 选择逻辑，使其统一使用 lane 0 的数据与对齐状态。",
+        "mutation_strategy": "restore_generic_word_path",
+        "source_level_edit_anchor": "把 INST_I_W 改回旧的共用 alu_imm 路径，并恢复旧版 rsp_data32 表达式，使重复响应路径重新使用 rsp_align[i] 与 mem_rsp_data[i]。"
+      },
+      "expected_failure_mode": "W 类移位立即数指令在 64 位内核上会得到错误结果，而重复广播的 32 位 load 响应可能返回错误的字半部或错误的 lane 数据。",
+      "evidence_for_injection": [
+        "decode 修复集中在 XLEN_64 立即数提取器与 INST_I_W 连接方式上。",
+        "LSU 修复只改动了 XLEN_64 下 32 位数据的重复响应选择逻辑。",
+        "两个修复都在纠正“把通用路径误用于专用 word 或 duplicate 场景”的问题。"
+      ],
+      "notes": [
+        "该提交包含两个独立的回注点，任意一个都足以作为数据集中的一次注入变体。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

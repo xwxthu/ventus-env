@@ -1,0 +1,133 @@
+{
+  "dataset_id": 176,
+  "original_review_id": 215,
+  "meta": {
+    "id": 215,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "1b0d705530813afaf0294654110ceec00719e842",
+    "subject": "fix mcif write ig arb bug for timeout syndrome"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "arbiter",
+    "summary": "Fixes MCIF write-ingress arbitration so beat counters, sticky grants, and source ready signals advance only when downstream data is actually accepted.",
+    "why_it_counts": [
+      "The patch corrects a real DUT handshake bug in the write path arbiter.",
+      "Without downstream-ready gating, the arbiter can retire beats internally before the splitter consumes them.",
+      "That directly matches the timeout-oriented failure mode described in the commit subject."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only touched file is vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v.",
+      "The fix introduces src_dat_rdy = arb2spt_dat_ready and threads it into src_cmd*_rdy and src_dat*_rdy generation.",
+      "The sticky-clear logic now requires src_dat_vld & src_dat_rdy & is_last_beat, instead of src_dat_vld & is_last_beat alone.",
+      "gnt_count also advances only on src_dat_vld & src_dat_rdy, proving the bug was internal beat bookkeeping under backpressure."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A multi-beat write arbiter must hold its grant, beat counter, and source-ready feedback until the downstream stage actually accepts each data beat. If the arbiter advances these internal states on valid alone, downstream backpressure causes the arbiter to think a beat completed when it did not, corrupting grant ownership and eventually stalling or timing out the write path.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-beat arbiter acceptance bookkeeping",
+        "trigger_condition": "Any write burst that experiences downstream backpressure while the arbiter is in the middle of a multi-beat grant.",
+        "injection_action": "Remove downstream-ready gating from the beat counter, sticky-grant release, and source ready feedback paths.",
+        "implementation_pattern": "drop_ready_term_from_beat_accounting",
+        "portability_notes": [
+          "The best target is an arbiter that issues one command and then streams multiple data beats for the granted source.",
+          "Inject the bug into internal bookkeeping rather than command arbitration itself, so the failure appears only under backpressure.",
+          "A realistic mutation should preserve the outward valid signal and only make internal retirement happen too early."
+        ],
+        "concrete_injection_steps": [
+          "Locate the write arbiter logic that tracks granted source, current beat index, and end-of-burst detection.",
+          "Delete the downstream ready term from the conditions that advance the beat counter or clear the sticky grant for the last beat.",
+          "Also remove the same ready term from per-source ready feedback so sources believe beats were consumed even when the downstream stage was stalled."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v"
+        ],
+        "target_module_or_logic": "MCIF write-ingress arbiter beat and grant control",
+        "commit_fix_summary": "The fix adds src_dat_rdy from arb2spt_dat_ready and uses it in source-ready generation, sticky release, and gnt_count updates.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In NV_NVDLA_MCIF_WRITE_IG_arb.v, remove src_dat_rdy from src_cmd*_rdy, src_dat*_rdy, sticky-clear conditions, and gnt_count update logic while keeping arb2spt_dat_valid unchanged."
+      },
+      "expected_failure_mode": "Under data backpressure, the arbiter prematurely retires beats, loses grant/data alignment, and can wedge or timeout the write path.",
+      "evidence_for_injection": [
+        "src_dat_rdy is defined directly from arb2spt_dat_ready, the downstream acceptance signal.",
+        "sticky and gnt_count are the exact state variables updated by the patch.",
+        "is_last_beat depends on gnt_count, so advancing it early can falsely terminate a burst."
+      ],
+      "notes": [
+        "This is a strong reusable injection pattern for any pipelined write arbiter with separate command and data channels.",
+        "To reproduce the fault, the validation environment should introduce backpressure on the downstream data interface."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "arbiter",
+    "summary": "该提交修复了 MCIF 写入口仲裁逻辑，使 beat 计数、sticky grant 和源端 ready 只会在下游数据真正被接收时推进。",
+    "why_it_counts": [
+      "补丁修复了写路径仲裁器中的真实 DUT 握手缺陷。",
+      "如果没有下游 ready 门控，仲裁器会在 splitter 尚未消费数据时就在内部把 beat 提前退休。",
+      "这与提交标题里提到的 timeout 症状直接一致。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一修改文件是 vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v。",
+      "修复新增了 src_dat_rdy = arb2spt_dat_ready，并把它接入 src_cmd*_rdy 和 src_dat*_rdy 的生成。",
+      "sticky 清除条件现在要求 src_dat_vld & src_dat_rdy & is_last_beat，而旧逻辑只要求 src_dat_vld & is_last_beat。",
+      "gnt_count 也只在 src_dat_vld & src_dat_rdy 时递增，说明问题确实是回压下的内部 beat 记账错误。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "多 beat 写仲裁器必须在下游真正接收每个数据 beat 之后，才推进 grant、beat 计数器和源端 ready 反馈。如果仲裁器只看 valid 就推进这些内部状态，那么一旦下游回压，仲裁器就会误以为某个 beat 已经完成，从而破坏 grant 归属，最终把写路径卡死或拖成超时。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 beat 仲裁器的接收记账逻辑",
+        "trigger_condition": "任意写 burst 在仲裁器持有多 beat grant 的过程中遇到下游回压。",
+        "injection_action": "从 beat 计数、sticky grant 释放和源端 ready 反馈路径中去掉下游 ready 门控。",
+        "implementation_pattern": "drop_ready_term_from_beat_accounting",
+        "portability_notes": [
+          "最合适的目标是那种先发一个 command、再为被授予源连续发送多个 data beat 的仲裁器。",
+          "应把故障注入到内部记账逻辑，而不是命令仲裁本身，这样只有在回压下才会暴露。",
+          "较真实的注入方式是保留对外 valid，只让内部退休动作发生得过早。"
+        ],
+        "concrete_injection_steps": [
+          "找到跟踪当前授予源、当前 beat 编号和 burst 结束判定的写仲裁逻辑。",
+          "从推进 beat 计数器或在最后一拍释放 sticky grant 的条件里删除下游 ready 项。",
+          "同时从各源的 ready 反馈中删除同一个 ready 项，使源端在下游阻塞时也误以为该 beat 已被消费。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_arb.v"
+        ],
+        "target_module_or_logic": "MCIF 写入口仲裁器的 beat/grant 控制逻辑",
+        "commit_fix_summary": "该修复从 arb2spt_dat_ready 生成 src_dat_rdy，并将其用于源端 ready、sticky 释放和 gnt_count 更新。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 NV_NVDLA_MCIF_WRITE_IG_arb.v 中，从 src_cmd*_rdy、src_dat*_rdy、sticky 清除条件和 gnt_count 更新逻辑里去掉 src_dat_rdy，同时保持 arb2spt_dat_valid 不变。"
+      },
+      "expected_failure_mode": "在数据回压下，仲裁器会提前退休 beat，破坏 grant/data 对齐，并可能把写路径卡死或拖成超时。",
+      "evidence_for_injection": [
+        "src_dat_rdy 直接来自下游接收信号 arb2spt_dat_ready。",
+        "sticky 和 gnt_count 正是补丁修改的状态变量。",
+        "is_last_beat 依赖 gnt_count，因此过早推进 gnt_count 会错误地提前终止一个 burst。"
+      ],
+      "notes": [
+        "这是一个非常适合复用于其他分离 command/data 通道写仲裁器的故障模式。",
+        "验证该故障时，应在下游 data 接口上主动施加 backpressure。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

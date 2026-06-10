@@ -1,0 +1,141 @@
+{
+  "dataset_id": 19,
+  "original_review_id": 24,
+  "meta": {
+    "id": 24,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "1b0c7655170638a7690f9e17e3c5da19fc0c094a",
+    "subject": "fix: ICache & wrong CSR(0x806)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Mixed DUT fix that repairs ICache MSHR miss-to-memory entry selection by masking invalid entries, and also fixes CSR 0x806 so LDS base includes the required high address bits.",
+    "why_it_counts": [
+      "The ICacheMSHR change fixes a real miss scheduling bug in the instruction cache miss handling path.",
+      "The CSR change corrects the architectural value exposed for LDS base dispatch by prefixing the high address region bits.",
+      "Even though the commit is mixed, it contains at least one clear, isolated DUT bug that is suitable for injection."
+    ],
+    "disqualifiers": [
+      "The commit also includes a brace-only LSU edit that does not materially change behavior.",
+      "FakeCache.scala is a model or helper side change and is not the primary injected bug here."
+    ],
+    "evidence": [
+      "ICacheMSHR.scala changes hasSendStatus.io.valid_list from raw has_send2mem bits to ~(~Reverse(Cat(has_send2mem)) & entry_valid), so empty MSHR slots are no longer selected as unsent work.",
+      "CSR.scala changes lds_base_dispatch from the raw dispatch field to a Cat with fixed high bits, matching the intended LDS address region for CSR 0x806.",
+      "The commit message itself names both ICache and the wrong CSR(0x806) issue."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/ICache/ICacheMSHR.scala",
+      "ventus/src/pipeline/CSR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An MSHR miss-to-memory arbiter must choose among entries that are both allocated and not yet sent downstream. If the selector only looks at sent-status bits and ignores whether the entry is actually valid, empty slots appear indistinguishable from valid unsent requests. The arbiter can then choose a hole instead of a real miss, causing the actual miss to be skipped or delayed indefinitely.",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR valid-entry masking for miss issue selection",
+        "trigger_condition": "At least one valid unsent miss exists, but there are also invalid or empty MSHR entries that precede it in the selector order.",
+        "injection_action": "Feed the issue selector with raw sent-status bits and omit masking by entry validity, so empty entries look eligible.",
+        "implementation_pattern": "drop_valid_mask",
+        "portability_notes": [
+          "Map this to any cache or miss queue that selects the next outstanding miss from a set of allocated entries.",
+          "The selector often treats 0 as available, so invalid entries must be forced to look unavailable before selection.",
+          "This fault is reusable even if the DUT does not use the exact same next-free or next-unsent helper."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that chooses which outstanding miss entry to send to lower memory.",
+          "Remove the gating that excludes invalid entries from that selector input.",
+          "Keep the final ready or valid condition unchanged so the selector can still choose a hole.",
+          "Exercise a case with sparse MSHR occupancy rather than all entries being full."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/ICache/ICacheMSHR.scala"
+        ],
+        "target_module_or_logic": "ICache MSHR miss2mem entry selection",
+        "commit_fix_summary": "The fix changes the miss-to-memory selector input so it masks raw has_send2mem bits with entry_valid, preventing empty MSHR entries from being selected as unsent misses.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore hasSendStatus.io.valid_list := Reverse(Cat(has_send2mem)) instead of masking with entry_valid. The same commit also contains a secondary DUT fix in CSR.scala that prefixes high address bits onto lds_base_dispatch."
+      },
+      "expected_failure_mode": "Instruction-cache misses can fail to issue to lower memory when empty MSHR slots are chosen ahead of real unsent entries, leading to fetch hangs, repeated misses, or starvation of valid requests.",
+      "evidence_for_injection": [
+        "getEntryStatus computes io.next from the first false bit in valid_list, so passing raw has_send2mem alone makes empty entries appear selectable.",
+        "io.miss2mem.valid already checks !has_send2mem(next) and entry_valid(next), which means selecting an invalid next entry suppresses issuing a real miss rather than redirecting it.",
+        "The commit also fixes CSR 0x806 by adding the missing high LDS base bits, confirming the commit is mixed but still DUT-relevant."
+      ],
+      "notes": [
+        "The primary injection target is the ICache MSHR bug because it is more portable than the source-specific CSR address prefix fix.",
+        "If a second mutation is desired, the same commit also supports reinjection of the CSR bug by stripping the fixed high address prefix from lds_base_dispatch."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "这是一个混合型 DUT 修复提交：一方面修复了 ICache MSHR 在向下层内存发起 miss 时的条目选择问题，另一方面修复了 CSR 0x806，使 LDS base 带上必需的高位地址前缀。",
+    "why_it_counts": [
+      "ICacheMSHR 的改动修复了指令缓存 miss 处理路径中的真实调度错误。",
+      "CSR 的改动修复了对外暴露的 LDS base dispatch 架构值，为 CSR 0x806 补上了正确的高位地址区域。",
+      "虽然该提交是 mixed commit，但其中至少包含一个清晰且可隔离的 DUT 缺陷，适合做注入。"
+    ],
+    "disqualifiers": [
+      "该提交还包含一个只改括号形式的 LSU 修改，不构成实质行为变化。",
+      "FakeCache.scala 的改动更像模型或辅助侧修复，不是这里选作主要注入对象的缺陷。"
+    ],
+    "evidence": [
+      "ICacheMSHR.scala 把 hasSendStatus.io.valid_list 从原始 has_send2mem 位改成 ~(~Reverse(Cat(has_send2mem)) & entry_valid)，因此空的 MSHR 槽位不再被当成尚未发送的工作项。",
+      "CSR.scala 把 lds_base_dispatch 从原始 dispatch 字段改成带固定高位前缀的 Cat，符合 CSR 0x806 预期的 LDS 地址区域。",
+      "提交信息本身就同时提到了 ICache 和 wrong CSR(0x806) 两个问题。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/ICache/ICacheMSHR.scala",
+      "ventus/src/pipeline/CSR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "MSHR 向下层内存发出 miss 时，选择器必须在既已分配又尚未发送的条目中进行仲裁。如果选择器只看 sent-status 位，而忽略条目是否真正有效，那么空槽位和有效但未发送的请求都会表现得很像。这样一来，仲裁器就可能选到一个空洞而不是实际 miss，导致真正的 miss 被跳过或长时间延迟。",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR 发射选择中的有效条目掩码",
+        "trigger_condition": "存在至少一个有效且尚未发出的 miss，同时在选择顺序更靠前的位置还有无效或空的 MSHR 条目。",
+        "injection_action": "让发射选择器直接使用原始 sent-status 位，而不再用 entry validity 做掩码，使空条目看起来也可被选择。",
+        "implementation_pattern": "drop_valid_mask",
+        "portability_notes": [
+          "可映射到任何从一组已分配条目中选择下一个待发 miss 的 cache 或 miss queue。",
+          "这类选择器往往把 0 看作可用状态，因此无效条目必须在进入选择器前被强制标记为不可用。",
+          "即使目标 DUT 没有同名的 helper，这个故障机理也可以复用。"
+        ],
+        "concrete_injection_steps": [
+          "找到选择哪一个 outstanding miss 发送到下层内存的逻辑。",
+          "移除把无效条目从该选择器输入中剔除的 gating。",
+          "保持最终 ready 或 valid 条件不变，使选择器仍然可能选中一个空洞。",
+          "用稀疏 MSHR 占用而非所有条目都满的场景来触发该故障。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/ICache/ICacheMSHR.scala"
+        ],
+        "target_module_or_logic": "ICache MSHR 的 miss2mem 条目选择逻辑",
+        "commit_fix_summary": "修复通过在 miss-to-memory 选择器输入中用 entry_valid 掩盖原始 has_send2mem 位，避免空的 MSHR 条目被当成未发送 miss 来选择。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "可通过恢复 hasSendStatus.io.valid_list := Reverse(Cat(has_send2mem)) 而不使用 entry_valid 掩码来回注。该提交还包含一个次级 DUT 修复：在 CSR.scala 中给 lds_base_dispatch 增加高位地址前缀。"
+      },
+      "expected_failure_mode": "当空的 MSHR 槽位先于真实未发出的条目被选中时，指令缓存 miss 可能无法发往下层内存，从而引发取指挂起、重复 miss 或有效请求饥饿。",
+      "evidence_for_injection": [
+        "getEntryStatus 会从 valid_list 中寻找第一个 false 位作为 io.next，因此若只输入原始 has_send2mem，空条目就会被当成可选项。",
+        "io.miss2mem.valid 本身还会检查 !has_send2mem(next) 与 entry_valid(next)，这意味着一旦 next 指到无效条目，就会抑制真正 miss 的发射，而不是自动改发正确条目。",
+        "该提交还通过为 CSR 0x806 补齐 LDS base 高位来修复第二个 DUT 问题，说明它虽然是 mixed commit，但仍然明确与 DUT 行为相关。"
+      ],
+      "notes": [
+        "这里选择 ICache MSHR 缺陷作为主要注入对象，因为它比源代码特定的 CSR 地址前缀修复更具可移植性。",
+        "如果需要第二个变种，也可以对同一提交中的 CSR 缺陷做回注：去掉 lds_base_dispatch 上固定的高位地址前缀。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

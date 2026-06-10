@@ -1,0 +1,131 @@
+{
+  "dataset_id": 273,
+  "original_review_id": 328,
+  "meta": {
+    "id": 328,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "4c5104e96a783d2a48b5f6cf3fc64fcf47a92abb",
+    "subject": "fixed shared memory multi-tag requests bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "Fixes shared-memory read-response assembly so bank replies with different tags are returned in separate batches instead of being merged together.",
+    "why_it_counts": [
+      "The patch is entirely in shared-memory RTL.",
+      "It changes live response selection, batching, and queue-pop timing for read replies.",
+      "Without the fix, data from different tagged requests can be mixed on one response bus."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit introduces bank_rsp_sel state to track which bank replies for the current tag have already been sent.",
+      "core_rsp_tag_in is selected first, then only banks whose CORE_TAG_ID_BITS match that tag are forwarded.",
+      "creq_pop now waits for crsq_in_fire_last instead of popping a read request as soon as the response skid buffer is ready."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A banked shared-memory or scratchpad can produce read data for multiple subrequests in parallel, but a narrow response interface often carries only one logical tag group at a time. If the merge logic forwards all valid bank replies in one shot without first selecting a single tag and holding the request until that tag's banks are drained, the design can mix data from different requests into one response transaction.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-bank read response tag batching",
+        "trigger_condition": "A queued shared-memory read produces same-cycle bank replies belonging to more than one logical response tag.",
+        "injection_action": "Merge all valid bank replies into one response batch and allow the request queue to advance before all banks for the selected tag have been returned.",
+        "implementation_pattern": "drop tag-homogeneity filter and early-pop guard",
+        "portability_notes": [
+          "This applies to banked SRAM or scratchpad designs with per-bank responses and a narrower core response bus.",
+          "The critical property is that only one logical tag group should be emitted per response transaction.",
+          "If your DUT uses thread masks or lane IDs instead of tags, map the same rule onto that grouping field."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that merges per-bank read data onto the shared response bus.",
+          "Remove the check that restricts forwarded bank replies to a single selected tag or request group.",
+          "Make the request queue pop when any read response can advance, instead of waiting until the full selected group is drained."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.v"
+        ],
+        "target_module_or_logic": "Shared-memory bank response batching and creq_pop control",
+        "commit_fix_summary": "The fix adds bank_rsp_sel state, selects one response tag at a time, forwards only matching banks, and delays creq_pop until the final batch for that tag fires.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_shared_mem, the new bank_rsp_sel/crsq_in_fire_last logic and the CORE_TAG_ID_BITS equality check are the functional fix points."
+      },
+      "expected_failure_mode": "Concurrent bank reads with different tags can be merged into one core response, causing wrong data-to-tag association, dropped lanes, or misrouted read results.",
+      "evidence_for_injection": [
+        "Before the fix, every valid bank reply directly contributed to core_rsp_valids_in/core_rsp_data_in and the queue popped as soon as the skid buffer was ready.",
+        "After the fix, tag selection and last-batch tracking explicitly serialize heterogeneous-tag replies.",
+        "The commit message explicitly identifies a multi-tag shared-memory bug."
+      ],
+      "notes": [
+        "A minimal reinjection is to remove the tag-match predicate while keeping the rest of the plumbing intact.",
+        "A second reinjection option is to restore the earlier read-request pop rule so the queue advances before the full response group is emitted."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "该提交修复了 shared-memory 读响应组装逻辑，使不同 tag 的 bank 返回数据按批次分别返回，而不是混合到同一次响应中。",
+    "why_it_counts": [
+      "补丁完全位于 shared-memory RTL 中。",
+      "它修改了读响应的实时选择、分批以及队列出队时机。",
+      "如果没有该修复，不同 tag 请求的数据会被混在同一个响应总线上。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "提交新增 bank_rsp_sel 状态，用来跟踪当前 tag 已经发送了哪些 bank 响应。",
+      "core_rsp_tag_in 会先被选出，然后只转发 CORE_TAG_ID_BITS 与其匹配的 bank。",
+      "creq_pop 现在等待 crsq_in_fire_last，而不是在响应 skid buffer 一 ready 就弹出读请求。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "banked shared-memory 或 scratchpad 可能会并行产生多个子请求的读数据，但更窄的响应接口通常一次只能承载一个逻辑 tag 组。如果合并逻辑在没有先选定单一 tag、也没有等该 tag 的所有 bank 都返回完之前，就把所有有效 bank 响应一起转发，那么不同请求的数据就会被错误地拼进同一个响应事务里。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 bank 读响应的 tag 分批逻辑",
+        "trigger_condition": "一个排队的 shared-memory 读请求在同一周期产生了属于多个逻辑响应 tag 的 bank 返回。",
+        "injection_action": "把所有有效 bank 返回都合并进同一批响应，并允许请求队列在选定 tag 尚未全部返回前就提前前进。",
+        "implementation_pattern": "删除 tag 同质性过滤并恢复过早 pop",
+        "portability_notes": [
+          "适用于具有 per-bank 响应且核心响应总线更窄的 banked SRAM 或 scratchpad 设计。",
+          "关键约束是：一次响应事务只能输出一个逻辑 tag 组。",
+          "如果 DUT 用 thread mask 或 lane ID 而不是 tag，也应把同样规则映射到对应分组字段上。"
+        ],
+        "concrete_injection_steps": [
+          "找到把各个 bank 的读数据合并到共享响应总线的逻辑。",
+          "删除只允许单一选定 tag 通过的检查条件。",
+          "把请求队列的出队条件改成“任意读响应可前进即可”，而不是等完整的选定组全部发完。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.v"
+        ],
+        "target_module_or_logic": "Shared-memory bank 响应分批与 creq_pop 控制",
+        "commit_fix_summary": "修复新增 bank_rsp_sel 状态，一次只选择一个响应 tag，只转发匹配 bank，并把 creq_pop 推迟到该 tag 的最后一批响应发出时。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_shared_mem 中，新增的 bank_rsp_sel/crsq_in_fire_last 逻辑以及 CORE_TAG_ID_BITS 相等判断，就是功能性修复锚点。"
+      },
+      "expected_failure_mode": "并发 bank 读且 tag 不同时，核心侧可能收到被错误合并的响应，表现为数据和 tag 对不上、lane 丢失或读结果被错路由。",
+      "evidence_for_injection": [
+        "修复前，每个有效 bank 回复都会直接参与 core_rsp_valids_in/core_rsp_data_in，且队列在 skid buffer ready 时就弹出。",
+        "修复后，tag 选择和 last-batch 跟踪显式串行化了不同 tag 的回复。",
+        "提交标题明确指出这是 multi-tag shared-memory bug。"
+      ],
+      "notes": [
+        "最小化回注方式是删除 tag 匹配谓词，同时保留其他连线不变。",
+        "另一种回注方式是恢复旧的读请求 pop 规则，让队列在完整响应组输出前就前进。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

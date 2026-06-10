@@ -1,0 +1,135 @@
+{
+  "dataset_id": 277,
+  "original_review_id": 333,
+  "meta": {
+    "id": 333,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "d94dc37cfec3487d5784e7d776ccd360713db646",
+    "subject": "ipdom bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes split/join reconvergence by making the IPDOM stack explicitly track paired pushes and by decoding join state from stack metadata instead of overloaded payload bits.",
+    "why_it_counts": [
+      "The patch changes warp reconvergence state in core scheduler RTL.",
+      "It fixes how divergent control-flow state is pushed, popped, and decoded.",
+      "Wrong join metadata causes incorrect PC or thread-mask restoration."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_ipdom_stack adds a pair input, stores is_part[wr_ptr] as ~pair, and exposes index separately.",
+      "VX_warp_sched stops embedding the else/end selector in the stack payload.",
+      "join_else is now derived from ipdom_index, and q_end uses orig_tmask instead of overloading else_tmask."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_ipdom_stack.sv",
+      "hw/rtl/VX_warp_sched.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A SIMT reconvergence stack must distinguish whether a split pushed one state or a paired set of states, and the join logic must know whether the popped state represents the else path or the final reconvergence point. If that metadata is not tracked explicitly and is instead overloaded into the payload, join handling can restore the wrong PC or thread mask after divergence.",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT reconvergence stack metadata",
+        "trigger_condition": "A divergent split is followed by one or more join operations that pop reconvergence state.",
+        "injection_action": "Stop tracking whether a pushed stack entry is paired, or derive else/end selection from payload contents instead of dedicated stack metadata.",
+        "implementation_pattern": "collapse auxiliary stack metadata into payload",
+        "portability_notes": [
+          "This maps to IPDOM stacks, token stacks, or any hardware reconvergence structure for SIMT/SIMD divergence.",
+          "The bug is about stack metadata semantics, not about the specific payload bit layout in Vortex.",
+          "If your DUT uses a different reconvergence encoding, apply the mutation to the equivalent single-vs-paired-entry bookkeeping."
+        ],
+        "concrete_injection_steps": [
+          "Locate the reconvergence stack or token store that keeps split/join state per warp.",
+          "Remove or neutralize the metadata that records whether a push created a paired entry versus a single entry.",
+          "Make join decode rely on payload contents alone, or force all pushes to look like single-entry pushes."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_ipdom_stack.sv",
+          "hw/rtl/VX_warp_sched.sv"
+        ],
+        "target_module_or_logic": "IPDOM stack pair/index bookkeeping and join decode",
+        "commit_fix_summary": "The fix adds pair/index ports to VX_ipdom_stack and updates VX_warp_sched to use explicit stack metadata rather than embedding the join selector in the payload.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_ipdom_stack, the new pair/index signals and is_part update are the core fix. In VX_warp_sched, join_else now comes from ipdom_index and q_end uses orig_tmask."
+      },
+      "expected_failure_mode": "After divergent branches, a warp can reconverge at the wrong PC or with the wrong active thread mask, causing incorrect control flow and execution results.",
+      "evidence_for_injection": [
+        "The stack width shrinks because the selector bit is no longer overloaded into the payload.",
+        "The join selector is now derived from separate metadata rather than payload contents.",
+        "The commit message explicitly identifies an IPDOM bug."
+      ],
+      "notes": [
+        "A minimal reinjection is to force every push to behave as if it were not paired.",
+        "Another focused reinjection is to ignore ipdom_index and derive join_else from payload bits again."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了 split/join 重汇合逻辑：IPDOM 栈会显式记录一次 push 是否成对，并且 join 状态不再从复用的 payload 位中推导。",
+    "why_it_counts": [
+      "补丁修改的是核心调度器 RTL 中的 warp 重汇合状态。",
+      "它修复了分歧控制流状态的压栈、出栈和解码方式。",
+      "错误的 join 元数据会导致 PC 或 thread mask 恢复错误。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_ipdom_stack 新增 pair 输入，把 is_part[wr_ptr] 设为 ~pair，并单独输出 index。",
+      "VX_warp_sched 不再把 else/end 选择位打包到栈 payload 中。",
+      "join_else 现在来自 ipdom_index，而 q_end 使用 orig_tmask，不再复用 else_tmask。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_ipdom_stack.sv",
+      "hw/rtl/VX_warp_sched.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "SIMT 重汇合栈必须区分一次 split 压入的是单个状态还是成对状态，而且 join 逻辑必须知道当前弹出的状态代表 else 路径还是最终重汇合点。如果这些元数据没有被显式跟踪，而是被挤进 payload 里复用，那么分歧后的 join 就可能恢复错误的 PC 或 thread mask。",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT 重汇合栈元数据",
+        "trigger_condition": "发生分歧 split 后，后续 join 操作需要从重汇合栈弹出状态。",
+        "injection_action": "不再跟踪压栈条目是否成对，或者重新从 payload 内容推导 else/end 选择，而不是使用专门的栈元数据。",
+        "implementation_pattern": "把辅助栈元数据重新折叠进 payload",
+        "portability_notes": [
+          "可映射到 IPDOM 栈、token 栈或任何用于 SIMT/SIMD 分歧重汇合的硬件结构。",
+          "该缺陷关注的是栈元数据语义，而不是 Vortex 的具体 payload 位布局。",
+          "如果 DUT 的重汇合编码不同，应把变异施加到等价的“单条目/成对条目”记账机制上。"
+        ],
+        "concrete_injection_steps": [
+          "定位为每个 warp 保存 split/join 状态的重汇合栈或 token 存储。",
+          "删除或钝化记录“本次 push 是否生成成对条目”的元数据。",
+          "让 join 解码重新依赖 payload 本身，或者把所有 push 都视为单条目 push。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_ipdom_stack.sv",
+          "hw/rtl/VX_warp_sched.sv"
+        ],
+        "target_module_or_logic": "IPDOM 栈的 pair/index 记账与 join 解码",
+        "commit_fix_summary": "修复为 VX_ipdom_stack 新增 pair/index 端口，并让 VX_warp_sched 使用显式栈元数据，而不是把 join 选择位编码进 payload。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_ipdom_stack 中，新增的 pair/index 信号以及 is_part 更新是核心修复；在 VX_warp_sched 中，join_else 改为来自 ipdom_index，q_end 改为使用 orig_tmask。"
+      },
+      "expected_failure_mode": "分歧分支之后，warp 可能在错误的 PC 或错误的活动线程掩码下重汇合，从而造成控制流错误和执行结果错误。",
+      "evidence_for_injection": [
+        "栈宽度缩小，说明选择位不再复用到 payload 中。",
+        "join 选择现在来自独立元数据，而不是 payload 内容。",
+        "提交标题明确指出这是 IPDOM bug。"
+      ],
+      "notes": [
+        "最小化回注方式是把每次 push 都强制看成非成对条目。",
+        "另一种聚焦回注方式是忽略 ipdom_index，再次从 payload 位推导 join_else。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

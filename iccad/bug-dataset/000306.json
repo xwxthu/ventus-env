@@ -1,0 +1,139 @@
+{
+  "dataset_id": 306,
+  "original_review_id": 368,
+  "meta": {
+    "id": 368,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "fdf82842b254ee989b8348d8e16bc8a84fcf9386",
+    "subject": "FPU DSP fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "Fixes two real FPU behaviors: compare and min/max now use floating-point sign-aware ordering with +0 and -0 equality, and conversion range math now uses width-safe signed exponent and shift arithmetic.",
+    "why_it_counts": [
+      "The functional changes are in core FPU execution RTL.",
+      "The modified expressions affect architectural FMIN, FMAX, FCMP, and conversion results.",
+      "The bugs are semantic correctness issues, not performance or tooling issues."
+    ],
+    "disqualifiers": [
+      "The same commit also edits ci/regression.sh and contains comment-formatting changes in div, fma, and sqrt files."
+    ],
+    "evidence": [
+      "In hw/rtl/fpu/VX_fpu_ncomp.sv, a_smaller changes from $signed(dataa) < $signed(datab) to sign-aware floating-point ordering, and ab_equal explicitly treats +0 and -0 as equal.",
+      "In the same file, FMIN and FMAX now select through the corrected comparison result instead of the old ordering.",
+      "In hw/rtl/fpu/VX_fpu_cvt.sv, exponent comparisons and shift computations add explicit INT_EXP_WIDTH and SHAMT_BITS casts in overflow, underflow, and denormal handling."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_ncomp.sv",
+      "hw/rtl/fpu/VX_fpu_cvt.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This commit repairs two independent floating-point semantic boundaries. First, IEEE ordering for compare and min/max cannot be implemented by reusing signed integer ordering on raw encodings, especially for negative values and signed zero. Second, float-int conversion pipelines need carefully sized signed exponent and shift arithmetic; dropping the width discipline can corrupt overflow, underflow, and denormal handling near range boundaries.",
+      "portable_injection_spec": {
+        "affected_mechanism": "floating-point ordering and conversion range arithmetic",
+        "trigger_condition": "Comparisons or min/max involve negative operands or signed zero, or conversions operate near overflow, underflow, or denormal thresholds.",
+        "injection_action": "Reuse integer-style signed comparison on raw FP encodings and remove the explicit width control from conversion exponent and shift math.",
+        "implementation_pattern": "apply integer semantics to FP encodings and drop width casts in signed range math",
+        "portability_notes": [
+          "Either the compare and min-max subpath or the conversion subpath can be injected independently.",
+          "For the compare bug, focus on ordering logic, not only on NaN handling.",
+          "For the conversion bug, target signed threshold checks and shift-distance calculations around denormal and saturation paths."
+        ],
+        "concrete_injection_steps": [
+          "In FPU compare and min-max logic, replace sign-aware floating ordering with a signed integer compare on the raw encoded operands and stop treating +0 and -0 as equal.",
+          "In conversion logic, remove explicit width casts on exponent constants, subtraction operands, and shift-distance calculations so signed arithmetic truncates or extends incorrectly.",
+          "Keep rounding and exception plumbing otherwise unchanged so the injected failure stays tied to ordering and range math."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_ncomp.sv",
+          "hw/rtl/fpu/VX_fpu_cvt.sv"
+        ],
+        "target_module_or_logic": "FPU non-arithmetic compare and min-max ordering plus conversion exponent and shift math",
+        "commit_fix_summary": "The commit rewrites a_smaller and ab_equal for IEEE-aware comparison behavior and adds explicit width-safe casts to conversion exponent and shift arithmetic.",
+        "mutation_strategy": "restore_integer_ordering_and_untyped_range_math",
+        "source_level_edit_anchor": "Revert a_smaller and ab_equal in VX_fpu_ncomp.sv to the old integer-style expressions and remove the explicit INT_EXP_WIDTH and SHAMT_BITS casts added in VX_fpu_cvt.sv."
+      },
+      "expected_failure_mode": "FMIN, FMAX, and FCMP return wrong results for negative values or signed zero, and float-int conversions mis-handle overflow, underflow, denormal, or saturation boundary cases.",
+      "evidence_for_injection": [
+        "The ncomp fix directly replaces integer-style ordering with floating-point-aware ordering.",
+        "The cvt fix is concentrated in threshold comparisons and shift-distance expressions for corner-case conversion behavior.",
+        "Comment-only edits in div, fma, and sqrt are separate from the functional bug payload."
+      ],
+      "notes": [
+        "This commit contains two distinct reinjection targets.",
+        "The CI script change is not part of the DUT bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了两类真实的 FPU 行为错误：比较与 min/max 现在使用符合浮点语义的符号感知排序，并把 +0 与 -0 视为相等；转换路径中的范围判断与移位计算则改为使用位宽安全的有符号指数运算。",
+    "why_it_counts": [
+      "功能性改动位于核心 FPU 执行 RTL 中。",
+      "被修改的表达式会直接影响 FMIN、FMAX、FCMP 以及转换结果。",
+      "这些都是语义正确性缺陷，而不是性能或工具链问题。"
+    ],
+    "disqualifiers": [
+      "同一提交还修改了 ci/regression.sh，并在 div、fma、sqrt 文件中包含注释格式调整。"
+    ],
+    "evidence": [
+      "在 hw/rtl/fpu/VX_fpu_ncomp.sv 中，a_smaller 从 $signed(dataa) < $signed(datab) 改成了浮点语义的符号感知比较，ab_equal 也显式把 +0 和 -0 视为相等。",
+      "同一文件中的 FMIN 与 FMAX 也改为依赖修正后的比较结果。",
+      "在 hw/rtl/fpu/VX_fpu_cvt.sv 中，溢出、下溢和非规格化处理的指数比较与移位计算增加了显式的 INT_EXP_WIDTH 和 SHAMT_BITS 位宽转换。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_ncomp.sv",
+      "hw/rtl/fpu/VX_fpu_cvt.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该提交修复了两个独立的浮点语义边界问题。第一，IEEE 浮点的比较与 min/max 不能通过对原始编码直接做有符号整数比较来实现，尤其是在负数和带符号零场景下。第二，浮点与整数转换流水线中的指数和移位运算必须严格控制位宽；一旦去掉这种位宽约束，溢出、下溢和非规格化边界行为就会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "浮点排序语义与转换范围算术",
+        "trigger_condition": "比较或 min/max 涉及负数或带符号零，或者转换落在溢出、下溢、非规格化等边界附近。",
+        "injection_action": "在浮点比较中重新使用基于原始编码的整数式有符号比较，并去掉转换指数和移位计算中的显式位宽控制。",
+        "implementation_pattern": "把整数语义误用于浮点编码，并移除有符号范围计算中的位宽转换",
+        "portability_notes": [
+          "比较和 min-max 子路径、以及转换子路径都可以独立注入。",
+          "对于比较缺陷，应聚焦排序逻辑，而不仅仅是 NaN 处理。",
+          "对于转换缺陷，应聚焦非规格化与饱和路径附近的有符号阈值比较和移位距离计算。"
+        ],
+        "concrete_injection_steps": [
+          "在 FPU 比较和 min-max 逻辑中，把符号感知浮点排序改回对原始编码做有符号整数比较，并停止把 +0 与 -0 当作相等。",
+          "在转换逻辑中，删掉指数常量、减法操作数和移位距离计算上的显式位宽转换，使有符号算术出现错误的截断或扩展。",
+          "保持舍入与异常标志主流程不变，使注入后的错误仍然集中在排序和范围算术上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_ncomp.sv",
+          "hw/rtl/fpu/VX_fpu_cvt.sv"
+        ],
+        "target_module_or_logic": "FPU 非算术比较与 min-max 排序，以及转换中的指数和移位运算",
+        "commit_fix_summary": "该提交重写了 a_smaller 与 ab_equal 以满足 IEEE 比较语义，并给转换路径中的指数和移位算术补上了显式位宽转换。",
+        "mutation_strategy": "restore_integer_ordering_and_untyped_range_math",
+        "source_level_edit_anchor": "把 VX_fpu_ncomp.sv 中的 a_smaller 与 ab_equal 恢复成旧的整数式表达式，并删除 VX_fpu_cvt.sv 中新增的 INT_EXP_WIDTH 与 SHAMT_BITS 强制转换。"
+      },
+      "expected_failure_mode": "FMIN、FMAX、FCMP 会在负数或带符号零场景下返回错误结果，而浮点与整数转换会在溢出、下溢、非规格化或饱和边界处出现错误。",
+      "evidence_for_injection": [
+        "ncomp 修复直接把整数式排序替换成了符合浮点语义的排序。",
+        "cvt 修复集中在边界条件相关的阈值比较和移位距离表达式上。",
+        "div、fma 和 sqrt 中的改动只是注释层面的，与功能性 bug 载荷无关。"
+      ],
+      "notes": [
+        "该提交包含两个独立的可回注目标。",
+        "CI 脚本改动不是 DUT bug 的一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "dataset_id": 435,
+  "original_review_id": 572,
+  "meta": {
+    "id": 572,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "24471d11c175d04adc958e9a557552f36e6d07e4",
+    "subject": "global barrier fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "barrier",
+    "summary": "Fixes global barrier core-id encoding so per-cluster barrier bookkeeping uses a cluster-local core index instead of the raw global core id.",
+    "why_it_counts": [
+      "The RTL hunk changes barrier control logic in the warp scheduler.",
+      "The paired simx changes update the model to the same cluster-local semantics.",
+      "The subject explicitly identifies a global barrier correctness problem."
+    ],
+    "disqualifiers": [
+      "The commit is not RTL-only because it also updates simulator behavior."
+    ],
+    "evidence": [
+      "VX_warp_sched.sv changes req_core_id from CORE_ID to CORE_ID % NUM_CORES.",
+      "simx adds per-cluster barrier tracking in cluster.cpp and cluster.h.",
+      "sim/simx/core.cpp routes global barrier completion to Cluster::barrier."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_warp_sched.sv",
+      "sim/simx/core.cpp",
+      "sim/simx/cluster.cpp",
+      "sim/simx/cluster.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a hierarchical GPU, global barrier requests may be tracked per cluster while each cluster stores only local-core membership bits. If a requester sends a global core id into logic that expects a cluster-local index, the wrong barrier bit is set and the intended core may never resume correctly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "hierarchical barrier participant indexing",
+        "trigger_condition": "A global barrier executes on a multi-cluster design whose barrier storage is indexed by local core number within each cluster.",
+        "injection_action": "Feed the raw global core id directly into cluster-local barrier bookkeeping instead of remapping it to a local index.",
+        "implementation_pattern": "omit hierarchical id remap",
+        "portability_notes": [
+          "Apply this to any barrier network that aggregates waiters per tile or cluster but receives global ids.",
+          "The reusable bug is missing global-to-local identifier translation at a hierarchy boundary."
+        ],
+        "concrete_injection_steps": [
+          "Find the barrier field that identifies the waiting core.",
+          "Find the local barrier bitmask or table inside a tile or cluster.",
+          "Remove the modulo, subtraction, or local-index extraction before setting the barrier bit."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_warp_sched.sv",
+          "sim/simx/core.cpp",
+          "sim/simx/cluster.cpp"
+        ],
+        "target_module_or_logic": "global barrier request core-id encoding and per-cluster barrier bookkeeping",
+        "commit_fix_summary": "The fix remaps req_core_id to a cluster-local index in RTL and mirrors the same per-cluster barrier handling in simx.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change gbar_if.req_core_id back to raw CORE_ID and remove the cluster-local remap before barrier-bit selection."
+      },
+      "expected_failure_mode": "Global barriers can deadlock or resume the wrong participant on multi-cluster configurations because the wrong local barrier bit is marked.",
+      "evidence_for_injection": [
+        "The only RTL hunk changes req_core_id from global CORE_ID to CORE_ID % NUM_CORES.",
+        "simx now keeps barrier masks per cluster instead of using a processor-wide handler.",
+        "Cluster::barrier explicitly computes local_core_id from core_id % cores_.size()."
+      ],
+      "notes": [
+        "This is a reusable hierarchy-boundary bug pattern.",
+        "If only RTL injection is desired, mutating VX_warp_sched.sv is sufficient."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "barrier",
+    "summary": "该提交修复了 global barrier 的 core-id 编码问题，使 cluster 内部的 barrier 跟踪使用本地 core 索引，而不是原始全局 core id。",
+    "why_it_counts": [
+      "RTL 补丁直接修改了 warp scheduler 中的 barrier 控制逻辑。",
+      "配套的 simx 改动也同步成相同的 cluster-local 语义。",
+      "提交标题明确指出这是 global barrier 的正确性问题。"
+    ],
+    "disqualifiers": [
+      "该提交不是纯 RTL，因为它同时更新了 simulator 行为。"
+    ],
+    "evidence": [
+      "VX_warp_sched.sv 把 req_core_id 从 CORE_ID 改成了 CORE_ID % NUM_CORES。",
+      "simx 在 cluster.cpp 和 cluster.h 中新增了按 cluster 跟踪 barrier 的逻辑。",
+      "sim/simx/core.cpp 把 global barrier 完成路径改成了 Cluster::barrier。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_warp_sched.sv",
+      "sim/simx/core.cpp",
+      "sim/simx/cluster.cpp",
+      "sim/simx/cluster.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在分层 GPU 中，global barrier 可能按 cluster 跟踪，而每个 cluster 内部只保存本地 core 的等待位。如果请求方把全局 core id 直接送入期望本地索引的逻辑，就会设置错误的 barrier bit，导致真正等待的 core 无法被正确恢复。",
+      "portable_injection_spec": {
+        "affected_mechanism": "分层 barrier 参与者索引映射",
+        "trigger_condition": "多 cluster 设计执行 global barrier，而 barrier 存储按 cluster 内本地 core 编号索引。",
+        "injection_action": "把原始全局 core id 直接送入 cluster-local barrier 记录逻辑，而不是先映射成本地索引。",
+        "implementation_pattern": "omit hierarchical id remap",
+        "portability_notes": [
+          "适用于任何按 tile 或 cluster 聚合等待者、但请求方使用全局编号的 barrier 网络。",
+          "可复用缺陷的本质是在分层边界遗漏了全局到局部 id 的转换。"
+        ],
+        "concrete_injection_steps": [
+          "找到 barrier 请求中标识等待 core 的字段。",
+          "找到 tile 或 cluster 内部记录等待者的 barrier bitmask。",
+          "删除设置 barrier bit 之前的取模、减基址或局部索引提取步骤。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_warp_sched.sv",
+          "sim/simx/core.cpp",
+          "sim/simx/cluster.cpp"
+        ],
+        "target_module_or_logic": "global barrier 请求的 core-id 编码与按 cluster 的 barrier 跟踪逻辑",
+        "commit_fix_summary": "修复在 RTL 中把 req_core_id 重新映射为 cluster-local 索引，并在 simx 中同步实现相同的 per-cluster barrier 处理。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 gbar_if.req_core_id 改回原始 CORE_ID，并删除 barrier 位选择前的 cluster-local 重映射。"
+      },
+      "expected_failure_mode": "在多 cluster 配置下，global barrier 可能死锁，或者恢复错误的参与者，因为等待位被记到了错误的本地 bit 上。",
+      "evidence_for_injection": [
+        "唯一的 RTL 改动就是把 req_core_id 从全局 CORE_ID 改成 CORE_ID % NUM_CORES。",
+        "simx 现在按 cluster 维护 barrier mask，而不是统一走 processor 级处理。",
+        "Cluster::barrier 会显式计算 local_core_id = core_id % cores_.size()."
+      ],
+      "notes": [
+        "这是一个可复用的分层边界 bug 模式。",
+        "如果只做 RTL 注入，仅修改 VX_warp_sched.sv 即可。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

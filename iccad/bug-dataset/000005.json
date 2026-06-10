@@ -1,0 +1,131 @@
+{
+  "dataset_id": 5,
+  "original_review_id": 8,
+  "meta": {
+    "id": 8,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "027386dd4b8932b19a8d2b9ae3d04a6f11ba622e",
+    "subject": "writeback bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "Fixes multi-source writeback backpressure so contended commit responses are buffered and acknowledged through one correctly-coupled writeback path.",
+    "why_it_counts": [
+      "The commit message explicitly says this is a writeback bug fix.",
+      "The only touched DUT file is hw/rtl/VX_writeback.sv, the module that arbitrates commit responses from multiple execution units.",
+      "The patch removes a separate output pipe and stall path, increases mux buffering, and rewires ready signals so upstream acknowledgement follows the final writeback handshake."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_stream_mux buffering changes from 1 to 2.",
+      "The old wb_* intermediate wires, rsp_ready bus, stall signal, and trailing VX_pipe_register are removed.",
+      "writeback_if.valid and writeback_if.ready are now connected directly to the buffered mux."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_writeback.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A single architectural writeback port often merges results from several execution units. The old design split arbitration and output buffering into two loosely coupled stages, so downstream backpressure could be seen too late by the selected source. Reintroducing that structure can acknowledge a source before the final sink has safely accepted the response.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-source writeback arbitration backpressure",
+        "trigger_condition": "Two or more writeback sources contend, or the selected writeback response is stalled by the downstream sink.",
+        "injection_action": "Decouple source-ready from final sink-ready by using a shallower mux plus a separate output register or stall path.",
+        "implementation_pattern": "drop coupled backpressure stage",
+        "portability_notes": [
+          "Apply this where several execution units share one writeback or commit port.",
+          "Keep arbitration priority unchanged so the injected fault only affects backpressure correctness."
+        ],
+        "concrete_injection_steps": [
+          "Locate the mux or arbiter that merges execution-unit writeback responses.",
+          "Replace the fully backpressured handoff with a shallower or split buffering scheme.",
+          "Drive source ready from the upstream mux stage rather than from the final sink handshake.",
+          "Leave payload fields and arbitration order unchanged."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_writeback.sv"
+        ],
+        "target_module_or_logic": "rsp_mux buffering and writeback_if handoff in VX_writeback",
+        "commit_fix_summary": "The fix removes the separate wb_* plus pipe_reg stage, raises rsp_mux buffering, and makes upstream ready follow the mux handshake with writeback_if.",
+        "mutation_strategy": "restore_split_backpressure_path",
+        "source_level_edit_anchor": "Recreate the old wb_* intermediate path with rsp_ready, a local stall signal, and a trailing output register after the mux."
+      },
+      "expected_failure_mode": "Under contention or output backpressure, a writeback response can be dropped, overwritten, or delayed until the pipeline hangs.",
+      "evidence_for_injection": [
+        "The patch is entirely localized to the hardware writeback arbiter module.",
+        "Every changed line is about ready or valid wiring, buffering depth, or removal of the extra output stage.",
+        "No software or testbench logic is part of the fix."
+      ],
+      "notes": [
+        "Depending on the target design, the observable failure may be wrong register writeback or a liveness failure.",
+        "If the target uses elastic buffers instead of a parameterized mux, inject the bug by removing one buffer layer or by acknowledging upstream too early."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "该提交修复了多来源 writeback 的背压处理，使竞争中的提交响应通过一个正确耦合的 writeback 路径完成缓存和确认。",
+    "why_it_counts": [
+      "提交说明明确表示这是一个 writeback bug fix。",
+      "唯一被修改的 DUT 文件是 hw/rtl/VX_writeback.sv，它负责仲裁多个执行单元的提交响应。",
+      "补丁删除了分离的输出寄存和 stall 路径，提高了 mux 缓冲深度，并重连了 ready 信号，使上游确认跟随最终 writeback 握手。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_stream_mux 的缓冲深度从 1 改为 2。",
+      "旧的 wb_* 中间信号、rsp_ready 总线、stall 信号以及尾部 VX_pipe_register 被删除。",
+      "writeback_if.valid 和 writeback_if.ready 现在直接连接到带缓冲的 mux。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_writeback.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "单个架构 writeback 端口通常需要合并多个执行单元的结果。旧设计把仲裁和输出缓冲拆成了两个耦合不紧的阶段，导致下游背压可能过晚传回给已选中的来源。重新注入这种结构后，某个来源可能在最终 sink 真正接收响应之前就被过早确认。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多来源 writeback 仲裁背压",
+        "trigger_condition": "多个 writeback 来源发生竞争，或者被选中的 writeback 响应被下游 sink 阻塞。",
+        "injection_action": "通过浅层 mux 加独立输出寄存器或 stall 路径，把 source-ready 与最终 sink-ready 解耦。",
+        "implementation_pattern": "drop coupled backpressure stage",
+        "portability_notes": [
+          "适用于多个执行单元共享单个 writeback 或 commit 端口的设计。",
+          "保持仲裁优先级不变，使故障只影响背压正确性。"
+        ],
+        "concrete_injection_steps": [
+          "定位合并各执行单元 writeback 响应的 mux 或仲裁器。",
+          "把完全背压耦合的交接改成更浅或拆分的缓冲结构。",
+          "让 source ready 来自上游 mux 阶段，而不是最终 sink 的真实握手。",
+          "保持负载字段和仲裁顺序不变。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_writeback.sv"
+        ],
+        "target_module_or_logic": "VX_writeback 中 rsp_mux 的缓冲与 writeback_if 交接逻辑",
+        "commit_fix_summary": "修复删除了独立的 wb_* 加 pipe_reg 阶段，提高了 rsp_mux 缓冲深度，并让上游 ready 跟随 writeback_if 握手。",
+        "mutation_strategy": "restore_split_backpressure_path",
+        "source_level_edit_anchor": "恢复旧的 wb_* 中间路径、rsp_ready、本地 stall，以及 mux 后面的输出寄存器。"
+      },
+      "expected_failure_mode": "在竞争或输出背压下，某个 writeback 响应可能被丢失、覆盖，或者长时间延迟到流水线挂起。",
+      "evidence_for_injection": [
+        "补丁完全局限在硬件 writeback 仲裁模块中。",
+        "所有改动都围绕 ready 或 valid 接线、缓冲深度和额外输出级的移除。",
+        "修复不涉及软件或测试平台逻辑。"
+      ],
+      "notes": [
+        "在不同目标设计中，外部表现可能是寄存器写回错误，也可能是活性失败。",
+        "如果目标设计使用 elastic buffer 而不是参数化 mux，就通过删除一个缓冲层或让上游过早收到 ready 来注入。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

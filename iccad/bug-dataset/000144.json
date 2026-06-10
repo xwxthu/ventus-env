@@ -1,0 +1,57 @@
+{
+  "dataset_id": 144,
+  "original_review_id": 180,
+  "meta": {
+    "id": 180,
+    "repo": "gemmini",
+    "branch": "seah_multi",
+    "commit": "cc1cad6d9a57fc5ab244dc19c24d6ff85d5454ad",
+    "subject": "fixed bug in bit shifting"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This commit is not a reliable standalone DUT bug-fix record because the same direct-DRAM address bit shift is corrected again almost immediately in the next commit.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "A same-day follow-up by the same author, 36600aefb93270b9dee4afe779f0f0b5f4d84db4, changes the exact same constant from 1 << (5+32) to 1 << (4+32).",
+      "That follow-up indicates this commit's new value was itself not the stable corrected aperture bit.",
+      "For fault injection, this intermediate constant is not an honest completed fix target; it is better treated as an incomplete or incorrect repair attempt."
+    ],
+    "evidence": [
+      "cc1cad6 changes the direct_dram address offset in both StreamReaderCore and StreamWriter from 1 << (2+32) to 1 << (5+32).",
+      "Two hours later, commit 36600ae changes those same two sites from 1 << (5+32) to 1 << (4+32).",
+      "No other logic changes explain the delta, so the direct-dram selector constant itself is what remained unsettled."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "该提交不能作为可靠的独立 DUT bug-fix 记录，因为同一个 direct-DRAM 地址位移常量在紧接着的下一次提交中又被再次修正。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "同一天、同一作者的后续提交 36600aefb93270b9dee4afe779f0f0b5f4d84db4 又把完全相同的常量从 1 << (5+32) 改成了 1 << (4+32)。",
+      "这个后续修正表明本提交写入的新值本身也不是稳定的正确 aperture 位。",
+      "对故障注入来说，把这个中间常量当成完整修复是不诚实的；更合理的判断是一次不完整或错误的修补尝试。"
+    ],
+    "evidence": [
+      "cc1cad6 在 StreamReaderCore 和 StreamWriter 中都把 direct_dram 地址偏移从 1 << (2+32) 改成了 1 << (5+32)。",
+      "两小时后，提交 36600ae 又把这两个位置从 1 << (5+32) 改成了 1 << (4+32)。",
+      "没有其他逻辑修改可以解释这一差异，因此真正不稳定的就是 direct-dram 选择常量本身。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

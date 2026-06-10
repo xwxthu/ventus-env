@@ -1,0 +1,141 @@
+{
+  "dataset_id": 396,
+  "original_review_id": 495,
+  "meta": {
+    "id": 495,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "a7b0d8c79b7e4835ddc3cefc47d04e61ab9c8df3",
+    "subject": "Fix conv FSM freeze (#69)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "hazard_tracking",
+    "summary": "This large mixed commit contains a real convolution-control bug-fix: the ROB hazard logic could create false dependencies for convolution micro-ops, especially by treating garbage/sentinel addresses or over-conservative overlapping ranges as real hazards, which could freeze convolution progress.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a conv FSM freeze and lists ROB hazard issues as part of that fix.",
+      "The patch changes ROB address-overlap logic and load/store range calculations that directly govern whether commands can issue.",
+      "False RAW/WAW/WAR dependencies in the command scheduler are a real DUT control bug and can deadlock or stall the accelerator FSM."
+    ],
+    "disqualifiers": [
+      "The commit is heavily mixed with performance work and new features.",
+      "Several independent bug-fix slices are bundled together, so only the hazard-tracking slice is cleanly reusable here."
+    ],
+    "evidence": [
+      "ROB.scala changes overlaps() from <= comparisons to end-exclusive < comparisons and adds !(start.is_garbage() || other.start.is_garbage()).",
+      "ROB.scala fixes load/store footprint calculations so mvin/mvout ranges use true row counts and block strides instead of earlier over-cautious lengths.",
+      "LoopConv.scala fixes a typo in LoopConvLdInput by using ichs instead of ochs when computing K.",
+      "The commit message explicitly lists stopping GARBAGE_ADDR hazards and making block_mvin RAW checks less cautious as part of the freeze fix."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ROB.scala",
+      "src/main/scala/gemmini/LoopConv.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a false-dependency hazard-tracking error in a queued accelerator controller. Convolution micro-ops can carry placeholder addresses, end-exclusive ranges, or multi-block address spans. If the scheduler treats sentinel addresses as real memory locations or uses inclusive overlap checks on ranges that should be end-exclusive, it invents RAW/WAW/WAR hazards that never clear. The visible result is an FSM or ROB that appears frozen because later commands wait forever on nonexistent conflicts.",
+      "portable_injection_spec": {
+        "affected_mechanism": "command-queue hazard detection for local memory ranges",
+        "trigger_condition": "Convolution or loop-unrolled commands include garbage/sentinel addresses, end-exclusive intervals, or block-strided multi-row moves",
+        "injection_action": "Restore over-conservative hazard predicates so sentinel addresses participate in dependency checks and adjacent/non-overlapping ranges are treated as overlapping.",
+        "implementation_pattern": "false hazard due to stale overlap predicate or missing sentinel filter",
+        "portability_notes": [
+          "Map this to any ROB, scoreboard, or command scheduler that tracks local-memory read/write regions.",
+          "The most portable slice is not the exact Gemmini address type; it is the general rule that sentinel placeholders must be excluded from hazards and interval endpoints must be compared consistently.",
+          "False dependencies are especially likely in loop-generated workloads because commands describe ranges rather than single addresses."
+        ],
+        "concrete_injection_steps": [
+          "Locate the helper that decides whether two queued read/write regions overlap.",
+          "Reintroduce inclusive end-point comparisons, or otherwise treat [start,end] as overlapping where the correct logic uses an end-exclusive interval.",
+          "Remove the guard that excludes garbage/sentinel addresses from dependency formation so placeholder operands create permanent hazards."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ROB.scala",
+          "src/main/scala/gemmini/LoopConv.scala"
+        ],
+        "target_module_or_logic": "ROB overlap/dependency logic for loop-generated convolution loads, stores, and execute commands",
+        "commit_fix_summary": "The fix narrows the overlap predicate to end-exclusive comparisons, filters garbage addresses out of hazards, and corrects some load/store footprint calculations used by the ROB during conv scheduling.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Restore the older ROB overlaps() predicate without the is_garbage filter and with the earlier inclusive range comparisons; optionally restore the older overly large load/store extent calculations in ROB.scala."
+      },
+      "expected_failure_mode": "Convolution command issue can stall indefinitely or for very long periods because the scheduler believes there are unresolved memory hazards that are not real.",
+      "evidence_for_injection": [
+        "The commit message ties the freeze directly to ROB hazard checks and garbage-address handling.",
+        "The overlap helper itself is changed, which is the canonical place to inject or remove false dependencies.",
+        "Range-length calculations for mvins/mvouts are corrected in the same file, reinforcing that scheduling footprints were previously too conservative."
+      ],
+      "notes": [
+        "This commit also fixes a LoopConv typo and adds performance changes, but the hazard-tracking slice is the cleanest portable injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "hazard_tracking",
+    "summary": "这个大型混合提交中包含真实的卷积控制缺陷修复：ROB hazard 逻辑可能为卷积微操作制造伪依赖，尤其会把 garbage/sentinel 地址或过于保守的重叠区间当成真实 hazard，从而冻结卷积执行进度。",
+    "why_it_counts": [
+      "提交信息明确写到修复 conv FSM freeze，并把 ROB hazard 问题列为修复内容之一。",
+      "补丁修改了 ROB 的地址重叠判定和 load/store 范围计算，这些逻辑直接决定命令能否发射。",
+      "错误的 RAW/WAW/WAR 依赖属于真实 DUT 控制缺陷，会让加速器 FSM 死锁或长时间停顿。"
+    ],
+    "disqualifiers": [
+      "该提交混入了大量性能改进和新特性。",
+      "多个独立的 bug-fix 被打包在一起，因此这里只能把 hazard-tracking 这一切片作为可复用目标。"
+    ],
+    "evidence": [
+      "ROB.scala 把 overlaps() 从 <= 比较改成 end-exclusive 的 < 比较，并增加了 !(start.is_garbage() || other.start.is_garbage()) 过滤。",
+      "ROB.scala 修正了 load/store 足迹计算，使 mvin/mvout 范围按真实行数和 block stride 计算，而不是旧的过度保守长度。",
+      "LoopConv.scala 在 LoopConvLdInput 中把计算 K 的 ochs 更正为 ichs。",
+      "提交信息明确写到“Stop GARBAGE_ADDRs from being considered as hazards in ROB”和“block_mvin raw checks less cautious”。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ROB.scala",
+      "src/main/scala/gemmini/LoopConv.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该缺陷属于带队列加速器控制器中的伪依赖 hazard 追踪错误。卷积微操作可能携带占位地址、end-exclusive 区间，或者跨多 block 的地址范围。如果调度器把 sentinel 地址当成真实存储位置，或者对本该 end-exclusive 的区间使用 inclusive overlap 检查，就会凭空生成永远不会消失的 RAW/WAW/WAR hazard。外部现象就是 FSM 或 ROB 看起来“卡死”，因为后续命令一直在等待并不存在的冲突。",
+      "portable_injection_spec": {
+        "affected_mechanism": "本地存储地址范围上的命令队列 hazard 检测",
+        "trigger_condition": "卷积或 loop 展开后的命令包含 garbage/sentinel 地址、end-exclusive 区间，或 block-strided 多行搬运范围",
+        "injection_action": "恢复过度保守的 hazard 谓词，让 sentinel 地址参与依赖检查，并把相邻/不重叠区间错误地视为重叠。",
+        "implementation_pattern": "由于错误重叠谓词或缺失 sentinel 过滤导致的伪 hazard",
+        "portability_notes": [
+          "把该缺陷映射到任何跟踪本地存储读写区域的 ROB、scoreboard 或命令调度器。",
+          "最可复用的切片不是 Gemmini 的具体地址类型，而是“占位地址不应形成 hazard，区间端点必须一致比较”这一通用规则。",
+          "在 loop 生成的工作负载里尤其容易出现，因为命令描述的是地址范围而不是单个地址。"
+        ],
+        "concrete_injection_steps": [
+          "定位判断两个排队读写区域是否重叠的辅助逻辑。",
+          "重新引入 inclusive 的端点比较，或把本应 end-exclusive 的区间恢复成更保守的重叠判断。",
+          "删除把 garbage/sentinel 地址排除在依赖之外的保护逻辑，使占位操作数也生成永久 hazard。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ROB.scala",
+          "src/main/scala/gemmini/LoopConv.scala"
+        ],
+        "target_module_or_logic": "卷积 loop 生成 load/store/execute 命令的 ROB 重叠/依赖逻辑",
+        "commit_fix_summary": "修复把重叠判定收紧为 end-exclusive 比较，将 garbage 地址从 hazard 中滤除，并修正了 conv 调度时 ROB 使用的部分 load/store 足迹计算。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "恢复 ROB.scala 中没有 is_garbage 过滤且使用旧 inclusive 区间比较的 overlaps() 逻辑；必要时也恢复 ROB.scala 中旧的过大 load/store 范围计算。"
+      },
+      "expected_failure_mode": "卷积命令发射会因为调度器误以为存在未解决的内存 hazard 而无限期或极长时间停顿。",
+      "evidence_for_injection": [
+        "提交信息把 freeze 直接归因于 ROB hazard 检查和 garbage 地址处理。",
+        "overlap helper 本身被修改，这是注入或移除伪依赖的最核心位置。",
+        "同一文件中 mvin/mvout 的范围长度也被修正，进一步说明先前的调度足迹过度保守。"
+      ],
+      "notes": [
+        "该提交还修复了一个 LoopConv typo 并加入了性能改进，但最干净、最可移植的注入目标仍是 hazard-tracking 这一切片。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

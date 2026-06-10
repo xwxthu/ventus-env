@@ -1,0 +1,131 @@
+{
+  "dataset_id": 291,
+  "original_review_id": 352,
+  "meta": {
+    "id": 352,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "fb1ce5e5aa19776968d5a9b95a423d170a33dfda",
+    "subject": "raster csrs bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "csr_decode",
+    "summary": "Adds the missing CSR decode entries for the fourth barycentric-coordinate component in the raster unit.",
+    "why_it_counts": [
+      "The commit message explicitly says this is a raster CSR bug fix.",
+      "The patch changes a DUT RTL CSR read mux, not software or tests.",
+      "Without the added cases, the stored fourth barycentric component cannot be read correctly through the architectural/debug CSR path."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The diff adds CSR_RASTER_BCOORD_X3, CSR_RASTER_BCOORD_Y3, and CSR_RASTER_BCOORD_Z3 cases in VX_raster_csr.sv.",
+      "Each new case returns rdata[i].bcoord_[x|y|z][3], proving the backing state already existed and only the read decode was missing.",
+      "No non-DUT files are touched."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_csr.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A hardware block stores a multi-component per-sample state vector, but the CSR or debug read mux omits one legal component index. The datapath state is present, yet architectural visibility is incomplete, so software reads of that component return a default or unmapped value instead of the real state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "vector CSR read decode completeness",
+        "trigger_condition": "Software, firmware, or debug logic reads the fourth component of a multi-component raster or interpolation state vector.",
+        "injection_action": "Delete or bypass the decode entries for one valid component index while leaving the storage array intact.",
+        "implementation_pattern": "drop CSR decode cases",
+        "portability_notes": [
+          "Map this to any CSR, MMIO, or debug-status mux that exposes a stored vector element by index.",
+          "The injected fault should affect observability of one component, not the internal computation that produces the vector.",
+          "A default case returning zero, X, or stale data is sufficient if that is how the target DUT behaves for unmapped selectors."
+        ],
+        "concrete_injection_steps": [
+          "Find the read-side case statement or selector mux for the multi-component state.",
+          "Remove the selector entries for the highest component index or redirect them to the default branch.",
+          "Keep the write path and underlying storage unchanged so only reads are corrupted."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_csr.sv"
+        ],
+        "target_module_or_logic": "Raster CSR barycentric-coordinate read mux",
+        "commit_fix_summary": "The fix adds three missing read cases so CSR_RASTER_BCOORD_[XYZ]3 return rdata[i].bcoord_[x|y|z][3].",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In the CSR read case statement, remove the X3/Y3/Z3 case arms that were added by this commit."
+      },
+      "expected_failure_mode": "Reads of the fourth barycentric component return an unmapped value, zero, or stale data even though the internal raster state contains the correct component.",
+      "evidence_for_injection": [
+        "The fix is purely a read-decode addition in one RTL module.",
+        "The patch does not alter barycentric storage or production logic, only the architectural readout path.",
+        "The newly added selectors are exactly the missing component-3 entries."
+      ],
+      "notes": [
+        "This fault targets architectural/debug visibility rather than raster computation itself.",
+        "It is still a DUT bug because the CSR interface is part of the hardware-visible behavior."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "csr_decode",
+    "summary": "该提交为 raster 单元补上了第四个重心坐标分量的 CSR 解码分支。",
+    "why_it_counts": [
+      "提交信息明确说明这是 raster CSR 的 bug 修复。",
+      "补丁修改的是 DUT RTL 中的 CSR 读出多路选择逻辑，而不是软件或测试。",
+      "如果缺少这些分支，已存储的第四个重心坐标分量就无法通过体系结构/调试 CSR 被正确读取。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "补丁在 VX_raster_csr.sv 中新增了 CSR_RASTER_BCOORD_X3、CSR_RASTER_BCOORD_Y3 和 CSR_RASTER_BCOORD_Z3 三个分支。",
+      "每个新分支都返回 rdata[i].bcoord_[x|y|z][3]，说明底层状态原本就存在，缺失的是读出解码。",
+      "没有修改任何非 DUT 文件。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_csr.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "某个硬件模块保存了按分量组织的每采样点状态向量，但 CSR 或调试读出多路选择遗漏了一个合法的分量索引。数据通路中的状态实际存在，但体系结构可见性不完整，因此软件读取该分量时会得到默认值或未映射值，而不是真实状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "向量型 CSR 读解码完整性",
+        "trigger_condition": "软件、固件或调试逻辑读取多分量 raster/插值状态向量的第四个分量时。",
+        "injection_action": "删除或绕过某个合法分量索引的解码分支，但保留底层存储数组。",
+        "implementation_pattern": "删除 CSR 解码分支",
+        "portability_notes": [
+          "可映射到任何按索引暴露已存储向量元素的 CSR、MMIO 或调试状态多路选择器。",
+          "注入后的故障应只影响某一分量的可见性，而不改变产生该向量的内部计算。",
+          "如果目标 DUT 对未映射选择返回零、X 或旧值，也可以采用相同方式。"
+        ],
+        "concrete_injection_steps": [
+          "定位多分量状态的读侧 case 语句或选择器。",
+          "删除最高分量索引对应的选择分支，或让其落入默认分支。",
+          "保持写路径和底层存储不变，使故障只体现在读出结果上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_csr.sv"
+        ],
+        "target_module_or_logic": "Raster CSR 重心坐标读出多路选择逻辑",
+        "commit_fix_summary": "修复通过新增三个读分支，使 CSR_RASTER_BCOORD_[XYZ]3 返回 rdata[i].bcoord_[x|y|z][3]。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 CSR 读 case 语句中，删除本提交新增的 X3/Y3/Z3 三个 case 分支。"
+      },
+      "expected_failure_mode": "读取第四个重心坐标分量时会得到未映射值、零或陈旧数据，即使内部 raster 状态本身是正确的。",
+      "evidence_for_injection": [
+        "该修复仅是在一个 RTL 模块中补充读解码分支。",
+        "补丁不改变重心坐标的存储或生成逻辑，只影响体系结构读出路径。",
+        "新增的选择项恰好对应原先缺失的第 3 号分量。"
+      ],
+      "notes": [
+        "该故障作用于体系结构/调试可见性，而不是 raster 计算本身。",
+        "尽管如此，它仍然是 DUT bug，因为 CSR 接口属于硬件可见行为的一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "dataset_id": 366,
+  "original_review_id": 449,
+  "meta": {
+    "id": 449,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "b2c5341afbb2a9fd0923c0479fdf671b0ec9eee9",
+    "subject": "fix lots of bugs, including tagArray mshr warp_scheduler"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit bundles several real DUT fixes. The clearest reusable injection target is the L1 cache change that adds byte-level dirty tracking so eviction and flush writebacks preserve partial-store granularity.",
+    "why_it_counts": [
+      "Most of the patch is in central L1 cache RTL and the changes affect functional correctness, not formatting.",
+      "The selected bug directly changes writeback semantics for partially modified cache lines.",
+      "The fix is specific enough to re-inject cleanly even though the full commit bundles multiple bugs."
+    ],
+    "disqualifiers": [
+      "The commit mixes several independent bugs in cache and scheduler logic.",
+      "The verilator makefile change is unrelated debug noise."
+    ],
+    "evidence": [
+      "ventus/src/L1Cache/L1TagAccess.scala adds dirtyMaskAccess plus dirtyMask_st1 and replace_dirty_mask_st1 outputs derived from per-lane write addresses.",
+      "ventus/src/L1Cache/DCache/DCache.scala changes invalidation/flush writebacks from TLAOp_PutFull with all-ones masks to TLAOp_PutPart with dirty masks.",
+      "The same DCache patch also uses replace_dirty_mask_st1 on replacement writeback, confirming the new dirty mask affects both flush and eviction paths."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1MSHR.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/warp_schedule.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A write-back cache that supports partial stores must distinguish which bytes of a line were actually modified. If eviction or flush logic treats every dirty line as fully dirty and writes back the entire line, it can overwrite bytes that were not changed locally and should have been preserved from the lower level or another agent. The repair in this commit adds byte-level dirty tracking so writeback masks match the true modified footprint.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Partial-store dirty-byte tracking and masked writeback",
+        "trigger_condition": "A cache line receives one or more partial writes and is later flushed or evicted before being overwritten completely.",
+        "injection_action": "Remove byte-level dirty-mask tracking and force eviction or flush writebacks to behave like full-line writebacks.",
+        "implementation_pattern": "replace partial writeback mask with full-line mask",
+        "portability_notes": [
+          "Apply this to any write-back cache that can observe byte, halfword, or sparse lane writes.",
+          "The bug is especially relevant when the lower memory level can contain valid data in untouched bytes or when coherence allows another agent to modify disjoint bytes.",
+          "A good validation workload performs partial stores to a line, then forces eviction or flush and checks whether untouched bytes were preserved."
+        ],
+        "concrete_injection_steps": [
+          "Find the metadata structure that tracks which bytes or words of a cache line became dirty after partial writes.",
+          "Disable that tracking or stop carrying it into eviction and flush request generation.",
+          "Change the writeback generator to emit a full-line opcode or all-ones byte mask regardless of the true dirty footprint."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1TagAccess.scala",
+          "ventus/src/L1Cache/DCache/DCache.scala"
+        ],
+        "target_module_or_logic": "L1 dirtyMaskAccess metadata and masked writeback request formation",
+        "commit_fix_summary": "The fix adds a dirty-mask SRAM in L1TagAccess and changes DCache flush/replacement writebacks to use dirtyMask_st1 and replace_dirty_mask_st1 with partial-write opcodes.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove dirtyMaskAccess usage and revert DCache writeback requests from dirty-mask-driven PutPart behavior back to full-line PutFull or all-ones masks."
+      },
+      "expected_failure_mode": "Partial-store writebacks overwrite clean bytes or lose the true byte-granular modification pattern, causing stale-byte corruption after cache flush or replacement.",
+      "evidence_for_injection": [
+        "Before the fix, flush and replacement writebacks used full-line masks.",
+        "The new tag-side metadata is explicitly constructed from per-lane block and byte offsets, tying the bug to partial-store granularity.",
+        "The same commit also fixes other issues, but the dirty-mask path is the largest and most directly reusable correctness repair."
+      ],
+      "notes": [
+        "The commit also adds an MSHR release stall and fixes a warp-scheduler counter index, but those are secondary to the chosen injection target.",
+        "Keep the reverse mutation focused on the dirty-mask path so the injected fault remains interpretable."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交打包修复了多个真实 DUT 问题。其中最清晰、最适合复用注入的是 L1 cache 的字节级脏位跟踪修复，使替换和 flush 写回能够保留部分写的粒度信息。",
+    "why_it_counts": [
+      "补丁大部分位于核心 L1 cache RTL 中，修改的是功能正确性而不是格式。",
+      "选定的 bug 会直接改变部分写 cache line 的写回语义。",
+      "虽然整个提交混合了多个 bug，但该修复足够具体，可以干净地单独回注。"
+    ],
+    "disqualifiers": [
+      "该提交把 cache 与 scheduler 里的多个独立 bug 混在了一起。",
+      "verilator makefile 的修改只是无关的调试噪声。"
+    ],
+    "evidence": [
+      "ventus/src/L1Cache/L1TagAccess.scala 新增了 dirtyMaskAccess，以及由每 lane 写地址生成的 dirtyMask_st1 和 replace_dirty_mask_st1 输出。",
+      "ventus/src/L1Cache/DCache/DCache.scala 将 invalidate/flush 写回从全 1 mask 的 TLAOp_PutFull 改为带 dirty mask 的 TLAOp_PutPart。",
+      "同一 DCache 补丁还在替换写回路径中使用了 replace_dirty_mask_st1，说明新的 dirty mask 同时作用于 flush 和 eviction。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1MSHR.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/warp_schedule.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "支持部分写的写回式缓存必须区分 cache line 中哪些字节真正被修改过。如果替换或 flush 逻辑把所有脏行都当成“整行全脏”并整行写回，就会覆盖本地并未修改、原本应该从下层内存或其他 agent 保留下来的字节。本提交的修复新增了字节级脏位跟踪，使写回 mask 与真实修改范围一致。",
+      "portable_injection_spec": {
+        "affected_mechanism": "部分写的脏字节跟踪与掩码写回",
+        "trigger_condition": "某条 cache line 接收了一次或多次部分写，随后在整行未被完全覆盖之前发生 flush 或 eviction。",
+        "injection_action": "移除字节级 dirty-mask 跟踪，并让替换或 flush 写回重新表现为整行写回。",
+        "implementation_pattern": "replace partial writeback mask with full-line mask",
+        "portability_notes": [
+          "可应用于任何能处理 byte、halfword 或稀疏 lane 写入的写回式缓存。",
+          "当下层内存保留了未触碰字节，或一致性允许其他 agent 修改不相交字节时，该错误尤其危险。",
+          "合适的验证负载应先对一行做部分写，再强制 eviction 或 flush，并检查未改动字节是否仍被保留。"
+        ],
+        "concrete_injection_steps": [
+          "找到用于跟踪 cache line 中哪些字节或字被部分写污染的元数据结构。",
+          "关闭该跟踪，或停止把它传递到 eviction 与 flush 请求生成逻辑。",
+          "把写回生成器改回始终发出整行 opcode 或全 1 字节 mask，而不管真实脏位范围。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1TagAccess.scala",
+          "ventus/src/L1Cache/DCache/DCache.scala"
+        ],
+        "target_module_or_logic": "L1 的 dirtyMaskAccess 元数据与掩码写回请求生成",
+        "commit_fix_summary": "该修复在 L1TagAccess 中加入了 dirty-mask SRAM，并让 DCache 的 flush/替换写回使用 dirtyMask_st1 和 replace_dirty_mask_st1 配合部分写 opcode。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "移除 dirtyMaskAccess 的使用，并把 DCache 写回从基于 dirty mask 的 PutPart 恢复为全行 PutFull 或全 1 mask。"
+      },
+      "expected_failure_mode": "部分写形成的写回会错误覆盖干净字节，或丢失真实的字节级修改信息，从而在 cache flush 或替换后造成数据破坏。",
+      "evidence_for_injection": [
+        "修复前，flush 与替换写回使用的是全行 mask。",
+        "新的 tag 侧元数据是根据每 lane 的 block/byte offset 构造的，明确表明 bug 与部分写粒度有关。",
+        "虽然该提交还修复了其他问题，但 dirty-mask 路径是最直接、最可复用的正确性修复。"
+      ],
+      "notes": [
+        "该提交还增加了 MSHR release stall，并修正了 warp-scheduler 计数索引，但它们不是本条选定的注入目标。",
+        "反向突变时应聚焦 dirty-mask 路径，使注入后的故障仍然易于解释。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

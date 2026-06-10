@@ -1,0 +1,139 @@
+{
+  "dataset_id": 123,
+  "original_review_id": 153,
+  "meta": {
+    "id": 153,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "4d1c5c2ebc7b25475f9bdb5d639fc1058160d27e",
+    "subject": "fixed FC layer stalling issue"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "This commit fixes execute-side control logic that was treating im2col readiness as if im2col were always active. The result was false im2col hazards and suppressed operand reads on FC-layer workloads.",
+    "why_it_counts": [
+      "The commit message explicitly describes a stalling bug.",
+      "The patch changes central operand-read and hazard-gating logic inside ExecuteController.scala.",
+      "The key behavioral fix is to gate im2col-specific suppression with im2col_en instead of with the raw im2col ready signal alone."
+    ],
+    "disqualifiers": [
+      "The commit also repacks some decoded fields such as channel and weight_stride, so not every hunk is strictly part of the stall mechanism.",
+      "For reinjection, the im2col hazard gate is a cleaner target than reverting every decode-field adjustment."
+    ],
+    "evidence": [
+      "same_bank() changes is_being_im2colled from can_be_im2colled && im2col_wire to can_be_im2colled && im2col_wire && im2col_en.",
+      "Scratchpad reads, accumulator reads, im2col request generation, and mesh im2colling all switch from raw im2col_wire gating to im2col_wire && im2col_en gating.",
+      "The commit message names FC-layer stalling, matching the fact that FC commands should not be blocked by im2col-only suppression logic."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a control-path mix-up between a feature-specific side path and the normal operand-read path. A controller that supports an im2col or data-reformat engine must only suppress normal operand reads when that feature is actually enabled for the current command. If the controller instead keys off the side engine's ready/busy wiring alone, unrelated dense or FC-like commands can be misclassified as side-path traffic and stall indefinitely.",
+      "portable_injection_spec": {
+        "affected_mechanism": "feature-specific hazard gating in the execute scheduler",
+        "trigger_condition": "The DUT has an optional im2col-like preprocessing path, the side-path interface reports ready, and a non-im2col compute command is issued through the normal execute path.",
+        "injection_action": "Drop the feature-enable term from the hazard/read gating so the controller suppresses normal reads whenever the side-path wiring is observed, even when the current command does not request that feature.",
+        "implementation_pattern": "remove enable qualification from a side-path suppression predicate",
+        "portability_notes": [
+          "Map this to any controller that multiplexes between a normal operand source and an optional preprocessing engine.",
+          "The portable bug is not about FC specifically; FC is just one workload that exposes the false hazard because it should bypass im2col handling.",
+          "A single dropped enable term in the read-suppression or same-bank hazard logic is usually enough to recreate the stall."
+        ],
+        "concrete_injection_steps": [
+          "Identify the predicate that suppresses normal operand reads while a preprocessing path is active.",
+          "Remove the current-command enable term so the predicate depends only on side-path ready or busy state.",
+          "Apply the same weakened predicate to same-bank hazard handling or mesh bookkeeping if the design uses those signals consistently.",
+          "Run a dense or FC-like workload that should not invoke preprocessing and check for lack of forward progress or permanently suppressed A-side reads."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "ExecuteController im2col hazard gating and operand-read suppression",
+        "commit_fix_summary": "The fix adds im2col_en to is_being_im2colled, scratchpad-read gating, accumulator-read gating, im2col request gating, and mesh im2colling bookkeeping so only true im2col commands take the side path.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change predicates of the form im2col_wire && im2col_en back to raw im2col_wire in same_bank(), read_a, read_a_from_acc, io.im2col.req.valid generation, and mesh control enqueue logic."
+      },
+      "expected_failure_mode": "Non-im2col compute commands are falsely treated as if they were using the preprocessing path, causing operand-read suppression and execution stalls.",
+      "evidence_for_injection": [
+        "The same enable qualification is added across multiple control sites, which is consistent with one shared stall root cause.",
+        "The commit message names FC-layer stalling rather than a data-format bug, matching the scheduler interpretation.",
+        "The changed logic sits in ExecuteController, which directly arbitrates operand reads and issue progress."
+      ],
+      "notes": [
+        "The decode repacking in the same commit may be necessary for software compatibility, but it is not the primary portable reinjection site.",
+        "If another DUT uses a busy bit instead of a ready bit, the same false-suppression pattern still applies."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了执行侧控制逻辑错误。旧逻辑把 im2col 接口的 ready 状态误当成“当前一定在做 im2col”，从而在 FC 层工作负载上制造了假的 im2col 冒险并抑制操作数读取。",
+    "why_it_counts": [
+      "提交信息明确指出这是一个 stalling bug。",
+      "补丁修改了 ExecuteController.scala 中核心的操作数读取与冒险门控逻辑。",
+      "关键行为修复是：im2col 相关抑制条件不再只看原始 im2col ready，而是额外由 im2col_en 门控。"
+    ],
+    "disqualifiers": [
+      "该提交还重新打包了 channel 和 weight_stride 等解码字段，因此并非每个 hunk 都直接属于 stall 机制。",
+      "在故障回注时，直接针对 im2col 冒险门控比回退所有解码位段调整更干净。"
+    ],
+    "evidence": [
+      "same_bank() 中的 is_being_im2colled 从 can_be_im2colled && im2col_wire 改为 can_be_im2colled && im2col_wire && im2col_en。",
+      "scratchpad 读取、accumulator 读取、im2col 请求生成以及 mesh 的 im2colling 标记，都从原始 im2col_wire 改为 im2col_wire && im2col_en 门控。",
+      "提交信息明确写出 FC layer stalling，而 FC 命令本不应被 im2col 专属的抑制逻辑阻塞。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误本质上是一个特性专用旁路与正常操作数读取路径之间的控制混淆。支持 im2col 或数据重排引擎的控制器，只有在当前命令真的启用了该特性时，才应该抑制正常操作数读取。如果控制器只根据旁路接口的 ready 或 busy 信号来做判断，那么与该特性无关的密集计算或 FC 类命令也会被误判为旁路流量，从而卡死。",
+      "portable_injection_spec": {
+        "affected_mechanism": "执行调度器中的特性专用冒险门控",
+        "trigger_condition": "DUT 具有可选的 im2col 类预处理路径，旁路接口处于 ready 状态，同时发出一个不应走该预处理路径的普通计算命令。",
+        "injection_action": "移除冒险或读使能条件中的特性使能项，使控制器只要观察到旁路 ready 或 busy，就会抑制正常读取，即使当前命令并未请求该特性。",
+        "implementation_pattern": "从旁路抑制谓词中删除 enable 限定项",
+        "portability_notes": [
+          "把该模式映射到任何在正常操作数来源与可选预处理引擎之间复用的数据通路控制器。",
+          "这个可移植错误并不局限于 FC；FC 只是最容易暴露假冒险的问题场景，因为它本应绕过 im2col 路径。",
+          "通常只需在读取抑制或同 bank 冒险逻辑里删掉一个 enable 项，就足以复现卡死。"
+        ],
+        "concrete_injection_steps": [
+          "定位当预处理路径活跃时用于抑制正常操作数读取的谓词。",
+          "删掉其中的当前命令使能项，让谓词只依赖旁路 ready 或 busy 状态。",
+          "如果设计在 same-bank 冒险或 mesh 记账里也复用了该条件，也同步做同样的弱化。",
+          "运行一个本不应触发预处理的密集计算或 FC 类工作负载，检查是否出现不前进或 A 侧读取被永久抑制。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "ExecuteController 的 im2col 冒险门控与操作数读取抑制",
+        "commit_fix_summary": "该修复在 is_being_im2colled、scratchpad 读取、accumulator 读取、im2col 请求以及 mesh im2colling 记账中统一加入 im2col_en，使只有真正的 im2col 命令才会走旁路。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 same_bank()、read_a、read_a_from_acc、io.im2col.req.valid 生成以及 mesh 控制入队逻辑里的 im2col_wire && im2col_en 改回原始的 im2col_wire。"
+      },
+      "expected_failure_mode": "原本不走 im2col 的计算命令会被错误地当成预处理流量，从而抑制操作数读取并导致执行卡死。",
+      "evidence_for_injection": [
+        "同一个 enable 限定项被补到多个控制点上，符合单一 stall 根因的特征。",
+        "提交信息强调的是 FC-layer stalling，而不是数据格式错误，这与调度器解释一致。",
+        "变更位于直接仲裁操作数读取和发射进度的 ExecuteController 中。"
+      ],
+      "notes": [
+        "同一提交中的解码位段重排可能是软件兼容所需，但它不是主要的跨 DUT 回注点。",
+        "如果另一套 DUT 使用的是 busy 位而不是 ready 位，同样的“去掉 enable 后错误抑制”模式仍然适用。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

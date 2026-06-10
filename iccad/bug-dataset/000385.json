@@ -1,0 +1,145 @@
+{
+  "dataset_id": 385,
+  "original_review_id": 477,
+  "meta": {
+    "id": 477,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "c1163c825e35c639930b78d39aba9035d6175c2d",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "This mixed hardware commit fixes register-file typing and numbering for mixed integer and floating-point instructions, especially floating loads and stores, while also correcting several packed field orderings in pipeline buffers.",
+    "why_it_counts": [
+      "The patch changes decode and global register-number logic inside the DUT pipeline.",
+      "Floating load and store decode now preserves register type instead of treating those operands as plain integer registers.",
+      "The new to_reg_number mapping makes integer and floating-point register spaces distinct in scoreboard and writeback bookkeeping."
+    ],
+    "disqualifiers": [
+      "The commit also contains buffer field-order fixes in multiple units; the injection plan targets the decode and register-routing bug because it is the clearest reusable mechanism."
+    ],
+    "evidence": [
+      "hw/rtl/VX_gpu_pkg.sv changes to_reg_number from a single-type-bit shortcut to rtype * RV_REGS + id.",
+      "hw/rtl/core/VX_decode.sv sets rd_v.rtype from opcode[2] for floating loads and rs2_v.rtype from opcode[2] for floating stores.",
+      "Other files in the same commit adjust packed buffer field ordering, which is consistent with fixing downstream interpretation of typed register metadata."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_pkg.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_fpu_unit.sv",
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/core/VX_wctl_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A core with distinct integer and floating-point register files must preserve register type from decode through scoreboard, operand fetch, execution, and writeback. If decode tags a floating load destination or floating store source as an integer register, or if global register numbering collapses register type into an overlapping namespace, hazards and writebacks can target the wrong register file. The resulting behavior is incorrect even when the instruction opcode itself is decoded correctly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Mixed register-file type routing",
+        "trigger_condition": "Instructions cross register-file domains, especially floating loads, floating stores, or other operations whose source and destination types depend on opcode class.",
+        "injection_action": "Mis-tag floating register operands as integer operands or collapse typed register numbering so integer and floating-point spaces alias.",
+        "implementation_pattern": "swap_register_file_type",
+        "portability_notes": [
+          "Map this to any DUT that has separate integer and FP register files or separate scoreboard namespaces for typed registers.",
+          "The most portable injection point is the decode-to-scoreboard metadata path, not the arithmetic unit itself.",
+          "If the target DUT uses a unified physical file but typed logical namespaces, inject the fault at the logical namespace mapping stage."
+        ],
+        "concrete_injection_steps": [
+          "Force floating-load destinations to be tagged as integer destinations, or floating-store source operands to be tagged as integer sources.",
+          "Change the helper that converts typed register indices into scoreboard or writeback numbers so it ignores the full register-file type offset and aliases multiple register spaces.",
+          "Leave the downstream scoreboard and writeback logic unchanged so the typed-metadata mismatch appears as wrong hazards, wrong operand fetches, or wrong register updates."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_gpu_pkg.sv",
+          "hw/rtl/core/VX_decode.sv"
+        ],
+        "target_module_or_logic": "Typed register decode metadata and global register-number mapping",
+        "commit_fix_summary": "The fix corrects global typed-register numbering and explicitly preserves FP versus integer register type on floating load and store decode paths.",
+        "mutation_strategy": "swap_register_file_type",
+        "source_level_edit_anchor": "In VX_gpu_pkg.sv, revert to a narrower or aliased to_reg_number mapping; in VX_decode.sv, remove the opcode[2]-driven rd_v.rtype and rs2_v.rtype assignments for floating load/store handling."
+      },
+      "expected_failure_mode": "Scoreboarding, operand fetch, or writeback targets the wrong register namespace, causing stale operands, false hazards, or updates landing in the wrong architectural register file.",
+      "evidence_for_injection": [
+        "The decode hunk explicitly changes only the typed metadata for floating load and store paths, which isolates a concrete injection point.",
+        "The global numbering fix in VX_gpu_pkg.sv affects how typed registers are represented in downstream control logic.",
+        "Additional packed-buffer fixes in the same commit are consistent with downstream misinterpretation of typed metadata and do not contradict the primary decode bug."
+      ],
+      "notes": [
+        "This is a mixed fix commit; the dataset entry deliberately focuses on the typed-register routing bug because it is reusable across other DUTs.",
+        "The bug is easiest to expose with workloads that mix integer and floating-point memory operations in the same warp."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该混合硬件提交修复了整数与浮点混合指令的寄存器文件类型标记和编号问题，尤其是浮点 load/store 路径，同时也修正了若干流水线 buffer 的打包字段顺序。",
+    "why_it_counts": [
+      "补丁修改了 DUT 流水线内部的 decode 逻辑和全局寄存器编号逻辑。",
+      "浮点 load/store 的 decode 现在会保留寄存器类型，而不是把这些操作数当成普通整数寄存器。",
+      "新的 to_reg_number 映射让整数与浮点寄存器空间在 scoreboard 和 writeback 记账中真正区分开。"
+    ],
+    "disqualifiers": [
+      "该提交还包含多个单元中的 buffer 字段顺序修正；本条目的注入计划聚焦 decode 与寄存器路由错误，因为这是最清晰、最可复用的机制。"
+    ],
+    "evidence": [
+      "hw/rtl/VX_gpu_pkg.sv 把 to_reg_number 从单 bit 类型捷径改成了 rtype * RV_REGS + id。",
+      "hw/rtl/core/VX_decode.sv 在浮点 load 中按 opcode[2] 设置 rd_v.rtype，在浮点 store 中按 opcode[2] 设置 rs2_v.rtype。",
+      "同一提交中的其他文件还修正了 packed buffer 的字段顺序，这与修复下游对带类型寄存器元数据的解释错误相一致。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_pkg.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_fpu_unit.sv",
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/core/VX_wctl_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "具有独立整数寄存器文件和浮点寄存器文件的核心，必须从 decode 到 scoreboard、操作数读取、执行和写回全过程保留寄存器类型。如果 decode 把浮点 load 的目标寄存器或浮点 store 的源寄存器标记成整数寄存器，或者全局寄存器编号把不同类型的寄存器空间压缩到重叠编号中，hazard 检查和写回就会指向错误的寄存器文件。即便 opcode 本身译码正确，行为仍然会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "混合寄存器文件的类型路由",
+        "trigger_condition": "指令跨越不同寄存器文件域，尤其是浮点 load、浮点 store，或其他源/目的类型依赖 opcode 类别的操作。",
+        "injection_action": "把浮点寄存器操作数错误标记成整数寄存器，或者压缩带类型的寄存器编号，使整数与浮点编号空间发生别名。",
+        "implementation_pattern": "swap_register_file_type",
+        "portability_notes": [
+          "可映射到任何拥有独立整数和浮点寄存器文件、或为不同类型寄存器维护独立 scoreboard 命名空间的 DUT。",
+          "最可移植的注入点是 decode 到 scoreboard 的元数据路径，而不是算术单元本身。",
+          "如果目标 DUT 采用统一物理寄存器文件但保留逻辑类型命名空间，则应在逻辑命名空间映射阶段注入该故障。"
+        ],
+        "concrete_injection_steps": [
+          "把浮点 load 的目的寄存器强制标成整数寄存器，或把浮点 store 的源寄存器强制标成整数寄存器。",
+          "修改把带类型寄存器索引转换成 scoreboard 或 writeback 编号的辅助函数，使其忽略完整的寄存器文件类型偏移，从而让多个寄存器空间发生别名。",
+          "保持下游 scoreboard 和 writeback 逻辑不变，让类型元数据不匹配表现为 hazard 错误、操作数读取错误或寄存器更新错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_gpu_pkg.sv",
+          "hw/rtl/core/VX_decode.sv"
+        ],
+        "target_module_or_logic": "带类型寄存器的 decode 元数据与全局寄存器编号映射",
+        "commit_fix_summary": "该修复纠正了全局带类型寄存器编号方式，并在浮点 load/store 的 decode 路径中显式保留 FP 与整数寄存器类型。",
+        "mutation_strategy": "swap_register_file_type",
+        "source_level_edit_anchor": "在 VX_gpu_pkg.sv 中把 to_reg_number 改回更窄或会发生别名的映射；在 VX_decode.sv 中删除浮点 load/store 处理中由 opcode[2] 驱动的 rd_v.rtype 和 rs2_v.rtype 赋值。"
+      },
+      "expected_failure_mode": "Scoreboard、操作数读取或写回会指向错误的寄存器命名空间，导致操作数陈旧、假冲突，或结果写入错误的体系结构寄存器文件。",
+      "evidence_for_injection": [
+        "decode 的补丁块只修改了浮点 load/store 路径上的类型元数据，因此注入点非常明确。",
+        "VX_gpu_pkg.sv 中的全局编号修复会直接影响下游控制逻辑如何表示带类型寄存器。",
+        "同一提交中的其他 packed-buffer 修复与下游误解释带类型元数据的现象一致，并不否定主要的 decode 错误。"
+      ],
+      "notes": [
+        "这是一个混合修复提交；本条目有意聚焦带类型寄存器路由错误，因为它更容易迁移到其他 DUT。",
+        "在同一个 warp 中混合整数和浮点内存操作的工作负载最容易暴露该故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "dataset_id": 309,
+  "original_review_id": 374,
+  "meta": {
+    "id": 374,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "7b94c983c9f6461b7182eaccefefa3ec05d38042",
+    "subject": "bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "operand_bank",
+    "summary": "Fixes operand-bank collision detection so same-bank concurrent source reads are treated as collisions even when the two sources name the same register.",
+    "why_it_counts": [
+      "The patch changes active operand-read scheduling logic in the core.",
+      "The old logic made an incorrect hazard exception that directly affects when the scoreboard may advance.",
+      "The bug can corrupt operand delivery for real instructions with repeated source registers."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Only hw/rtl/core/VX_operands.sv is changed.",
+      "The old has_collision_n predicate required same bank and different register number, so identical-register same-bank reads were exempted.",
+      "The fix removes the register-number inequality term and leaves only the same-bank test."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A banked register file with limited read ports must treat two simultaneous reads to the same bank as a collision unless it has explicit hardware to share one read result between both consumers. Treating same-register accesses as collision-free assumes a duplicate-read bypass that may not exist, which can let the scheduler advance before all operands are actually available.",
+      "portable_injection_spec": {
+        "affected_mechanism": "same-bank source-read hazard detection",
+        "trigger_condition": "An instruction or micro-op requests two source operands from the same physical bank, including the case where both sources name the same register.",
+        "injection_action": "Reintroduce an exception that suppresses the bank-collision hazard when the register numbers match.",
+        "implementation_pattern": "over-aggressive hazard elision",
+        "portability_notes": [
+          "Apply this to banked operand collectors or banked register files without explicit same-address broadcast support.",
+          "The key bug is assuming same-register means one bank access is enough for two consumers.",
+          "A simple trigger is an instruction whose rs1 and rs2 are the same register and map to the same bank."
+        ],
+        "concrete_injection_steps": [
+          "Locate the source-read collision detector that decides whether multiple register reads can issue in one cycle.",
+          "Add a condition that suppresses the collision when the two requested register numbers are equal.",
+          "Leave the actual banked read hardware unchanged so the scheduler now underestimates the required serialization."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_operands.sv"
+        ],
+        "target_module_or_logic": "has_collision_n accumulation over source-bank requests",
+        "commit_fix_summary": "The commit removes the old same-register exemption from has_collision_n so all same-bank concurrent source reads are treated as collisions.",
+        "mutation_strategy": "restore_same_register_exception",
+        "source_level_edit_anchor": "Reintroduce the removed term that requires src_regs[i][`NR_BITS-1:BANK_SEL_BITS] != src_regs[j+i][`NR_BITS-1:BANK_SEL_BITS] before asserting has_collision_n."
+      },
+      "expected_failure_mode": "Instructions with two same-bank source reads, especially repeated-source forms, can advance without proper serialization, leading to stale, missing, or mismatched operand values.",
+      "evidence_for_injection": [
+        "The fix is a single logical term removal inside the nested source-collision loop.",
+        "The surrounding code uses has_collision_n to block scoreboard_if.ready.",
+        "No sharing or broadcast logic is added elsewhere in the file, so the removed exemption was the functional change."
+      ],
+      "notes": [
+        "This is a localized hazard-detection mutation."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "operand_bank",
+    "summary": "该提交修复了操作数 bank 冲突检测逻辑：只要两个源操作数同时访问同一 bank，就必须判为冲突，即使两个源寄存器编号相同也不能例外。",
+    "why_it_counts": [
+      "补丁修改的是核心中的实际操作数读取调度逻辑。",
+      "旧逻辑给出了错误的冒险豁免条件，会直接影响 scoreboard 何时允许前进。",
+      "对于真实存在重复源寄存器的指令，这个缺陷会破坏操作数交付。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "只修改了 hw/rtl/core/VX_operands.sv。",
+      "旧版 has_collision_n 条件要求“同 bank 且寄存器号不同”才算冲突，因此同寄存器同 bank 的读取会被错误豁免。",
+      "修复删除了寄存器号不等这一条件，只保留同 bank 判断。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "对于读端口受限的 banked 寄存器堆，两个同时命中同一 bank 的读取只有在硬件显式支持“一次读取结果共享给两个消费者”时才可以不算冲突。如果把“同一寄存器”错误地视为天然无冲突，就等于假定存在一个可能并不存在的重复读取旁路，从而让调度器在操作数尚未真正齐备时提前前进。",
+      "portable_injection_spec": {
+        "affected_mechanism": "同 bank 源操作数读取冒险检测",
+        "trigger_condition": "一条指令或微操作在同一周期向同一物理 bank 请求两个源操作数，包括两个源都指向同一寄存器的情况。",
+        "injection_action": "重新加入一个例外：当两个寄存器编号相同时，不再把同 bank 访问视为冲突。",
+        "implementation_pattern": "过度激进的冒险消除",
+        "portability_notes": [
+          "把它映射到任何没有显式同地址广播支持的 banked operand collector 或 banked 寄存器堆。",
+          "关键错误是假定“同寄存器”意味着一次 bank 读取就足够供两个消费者使用。",
+          "一个简单触发场景是 rs1 和 rs2 相同且映射到同一 bank 的指令。"
+        ],
+        "concrete_injection_steps": [
+          "找到决定多个寄存器读取能否同周期发出的源读取冲突检测逻辑。",
+          "加入一个条件：当两个请求的寄存器编号相同，就抑制该 bank 冲突。",
+          "保持实际的 banked 读硬件不变，使调度器由此低估必须串行化的读取。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_operands.sv"
+        ],
+        "target_module_or_logic": "源 bank 请求上的 has_collision_n 累加逻辑",
+        "commit_fix_summary": "该提交从 has_collision_n 中删除了“同寄存器可豁免”的条件，使所有同 bank 的并发源读取都被视为冲突。",
+        "mutation_strategy": "restore_same_register_exception",
+        "source_level_edit_anchor": "重新加入那条被删除的条件，要求在置位 has_collision_n 之前满足 src_regs[i][`NR_BITS-1:BANK_SEL_BITS] != src_regs[j+i][`NR_BITS-1:BANK_SEL_BITS]。"
+      },
+      "expected_failure_mode": "带有两个同 bank 源读取的指令，尤其是重复源寄存器形式，可能在缺乏正确串行化的情况下前进，最终导致操作数陈旧、缺失或错配。",
+      "evidence_for_injection": [
+        "修复只是删除了源冲突双重循环中的一个逻辑项。",
+        "周边代码用 has_collision_n 来阻止 scoreboard_if.ready。",
+        "文件其他位置并没有增加任何共享或广播逻辑，因此被删除的豁免条件就是这次功能修复的核心。"
+      ],
+      "notes": [
+        "这是一个局部且明确的冒险检测回注点。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

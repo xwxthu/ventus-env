@@ -1,0 +1,135 @@
+{
+  "dataset_id": 271,
+  "original_review_id": 326,
+  "meta": {
+    "id": 326,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "244f4b096425e83a8dfa645e8b84ad0be56d1458",
+    "subject": "fixed shared memory write bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "Fixes a shared-memory store commit bug by asserting each bank RAM write-enable only when the queued request is actually dequeued.",
+    "why_it_counts": [
+      "The functional change is in shared-memory RTL, not tooling or tests.",
+      "The patch corrects when the banked scratchpad array is allowed to write.",
+      "The old behavior could write while a request was still stalled in the queue."
+    ],
+    "disqualifiers": [
+      "VX_lsu_unit only has a debug-print formatting change."
+    ],
+    "evidence": [
+      "VX_shared_mem adds a per-bank wren signal.",
+      "The RAM write-enable changes from valid && rw to valid && rw && creq_pop.",
+      "creq_pop is the queue dequeue event for the shared-memory request."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a queued banked scratchpad or shared-memory design, a store must update the RAM array only when the request is actually accepted or dequeued. If the write-enable depends only on the queued request being present, a stalled head entry can rewrite the same location across multiple cycles or write before the control path has committed the operation.",
+      "portable_injection_spec": {
+        "affected_mechanism": "queued shared-memory store commit gating",
+        "trigger_condition": "A banked shared-memory write sits at the head of a request queue while dequeue or response progress is stalled.",
+        "injection_action": "Allow the bank RAM write-enable to assert from queued request valid/rw alone, without requiring the dequeue or commit handshake.",
+        "implementation_pattern": "drop commit/dequeue guard from RAM write-enable",
+        "portability_notes": [
+          "Apply this to any banked SRAM, scratchpad, or shared-memory block with queued requests.",
+          "The key signal is the event that advances or retires the request, not the source-side valid signal.",
+          "If the design uses per-bank write strobes, mutate those strobes instead of unrelated address or data logic."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that generates the per-bank store write-enable after request arbitration or queueing.",
+          "Identify the handshake or dequeue term that proves the request is being consumed this cycle.",
+          "Remove that term so the write-enable remains high whenever the queued entry is a valid store."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.v"
+        ],
+        "target_module_or_logic": "Per-bank shared-memory RAM write-enable generation",
+        "commit_fix_summary": "The fix introduces a local wren signal and adds creq_pop to each bank RAM write-enable so queued stores write only on dequeue.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "In VX_shared_mem, the bank RAM .wren input was changed from per_bank_core_req_valid[i] && per_bank_core_req_rw[i] to a local wren that also requires creq_pop."
+      },
+      "expected_failure_mode": "Shared-memory stores can commit on stalled cycles, causing repeated writes, early writes, or data corruption when backpressure holds a queued store in place.",
+      "evidence_for_injection": [
+        "The only functional RTL change in VX_shared_mem is the added creq_pop term on RAM writes.",
+        "The request queue already exposes creq_pop as the consume event for the queued request.",
+        "The debug-only change in VX_lsu_unit is unrelated to the memory behavior fix."
+      ],
+      "notes": [
+        "This is a clean single-mechanism fault and is directly injectable by a reverse edit.",
+        "The bug is independent of the debug-print hunk in the same commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "shared_memory",
+    "summary": "该提交修复了 shared memory 存储提交时机错误，使每个 bank 的 RAM 写使能只在队列请求真正出队时才触发。",
+    "why_it_counts": [
+      "功能性修改位于 shared-memory RTL，而不是工具或测试。",
+      "补丁修正了 banked scratchpad 阵列何时允许写入。",
+      "旧逻辑会在请求仍停在队列头部时提前写入。"
+    ],
+    "disqualifiers": [
+      "VX_lsu_unit 只有调试打印格式调整。"
+    ],
+    "evidence": [
+      "VX_shared_mem 为每个 bank 新增了局部 wren 信号。",
+      "RAM 写使能从 valid && rw 改成 valid && rw && creq_pop。",
+      "creq_pop 就是 shared-memory 请求的队列出队事件。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_shared_mem.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在带请求队列的 banked scratchpad 或 shared-memory 设计中，store 只有在请求被真正接受或出队时才应更新 RAM。如果写使能只依赖“队列里存在一个有效写请求”，那么队列头被阻塞时会在多个周期重复写同一地址，或者在控制路径尚未提交前就提前写入。",
+      "portable_injection_spec": {
+        "affected_mechanism": "队列化 shared-memory store 的提交门控",
+        "trigger_condition": "一个 banked shared-memory 写请求停在队列头，同时出队或响应前进被阻塞。",
+        "injection_action": "让 bank RAM 的写使能只由队列中的 valid/rw 决定，而不要求出队或提交握手。",
+        "implementation_pattern": "从 RAM 写使能中删除 commit/dequeue 条件",
+        "portability_notes": [
+          "可应用于任何带请求队列的 banked SRAM、scratchpad 或 shared-memory 模块。",
+          "关键是表示“本周期真正消费该请求”的事件，而不是源端 valid。",
+          "如果设计使用 per-bank 写 strobe，应直接修改该 strobe 的门控逻辑。"
+        ],
+        "concrete_injection_steps": [
+          "找到仲裁或排队之后生成每个 bank store 写使能的逻辑。",
+          "识别能证明该请求在本周期被消费的握手或出队项。",
+          "删除该项，使写使能在队列头是有效写请求时持续为高。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_shared_mem.v"
+        ],
+        "target_module_or_logic": "Per-bank shared-memory RAM 写使能生成逻辑",
+        "commit_fix_summary": "修复为每个 bank 引入局部 wren，并在 RAM 写使能中加入 creq_pop，使队列化 store 只在出队时写入。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "在 VX_shared_mem 中，bank RAM 的 .wren 从 per_bank_core_req_valid[i] && per_bank_core_req_rw[i] 改为还要求 creq_pop 的局部 wren。"
+      },
+      "expected_failure_mode": "shared-memory store 会在阻塞周期错误提交，导致重复写、提前写或在背压下损坏数据。",
+      "evidence_for_injection": [
+        "VX_shared_mem 中唯一的功能性 RTL 修复就是在 RAM 写入上增加 creq_pop。",
+        "请求队列本身已经把 creq_pop 作为消费该请求的事件。",
+        "同一提交里的 VX_lsu_unit 改动只是调试输出，不影响存储行为。"
+      ],
+      "notes": [
+        "这是一个很干净的单机制故障，可直接通过反向编辑注入。",
+        "该缺陷与同提交中的调试打印修改无关。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

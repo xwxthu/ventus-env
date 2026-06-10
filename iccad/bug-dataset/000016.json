@@ -1,0 +1,133 @@
+{
+  "dataset_id": 16,
+  "original_review_id": 21,
+  "meta": {
+    "id": 21,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "1dd08aac9c4a72dac47d45b2d89334b38aa4a6fa",
+    "subject": "fix issue inside pdp for data bitwidth"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes a PDP RDMA egress packet-width mismatch by widening the internal pdp_rdma2dp_pd signal so it matches the packed dp_pd payload and metadata bits.",
+    "why_it_counts": [
+      "The patch changes an active DUT datapath signal width inside PDP RDMA egress logic.",
+      "The surrounding code packs dp_pd together with done flags into a pipeline and then unpacks it into pdp_rdma2dp_pd plus control flags.",
+      "A width mismatch on that unpack path can silently drop architectural metadata bits."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The output port pdp_rdma2dp_pd is already declared as NVDLA_PDP_BWPE*NVDLA_PDP_THROUGHPUT+13:0 before the fix.",
+      "Only the internal wire declaration was narrower at +11:0 and is widened by the commit to +13:0.",
+      "dp_pd explicitly assigns bits up to +13 for position and end markers, and eg_out_pipe0_di packs {dp_pd, rdma2wdma_done_f, eg2ig_done_f, dp2reg_done_f}."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_RDMA_eg.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a datapath packs payload data together with location or end-of-transfer metadata, every internal bus that carries the packed record must match the full record width. If one internal signal is narrower than the packed payload, the upper metadata bits are truncated when the record is unpacked or forwarded. That can break downstream state transitions even if the main data bits still look mostly plausible.",
+      "portable_injection_spec": {
+        "affected_mechanism": "packetized data-plus-metadata bus width consistency",
+        "trigger_condition": "Transfers where upper metadata bits of the packed record are asserted, such as split-end or cube-end markers.",
+        "injection_action": "Shrink an internal packed-payload signal so the top metadata bits are dropped during pipeline unpack or forwarding.",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "Target a bus that carries both datapath payload and termination or position metadata, not a pure data-only bus.",
+          "The most faithful mutation is to narrow an internal wire while leaving the upstream packed record width unchanged.",
+          "This bug often shows up as missing end markers rather than obvious payload corruption."
+        ],
+        "concrete_injection_steps": [
+          "Find the packed record type or concatenation that includes payload data and multiple metadata bits.",
+          "Identify an internal signal that holds that record after a pipeline or queue boundary.",
+          "Reduce that internal signal width so its upper metadata bits no longer fit.",
+          "Leave the original pack and unpack concatenation order unchanged so truncation happens naturally."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_RDMA_eg.v"
+        ],
+        "target_module_or_logic": "PDP RDMA egress packed pdp_rdma2dp payload path",
+        "commit_fix_summary": "The fix widens the internal pdp_rdma2dp_pd wire from +11:0 to +13:0 so it matches the output port and the dp_pd bits that are unpacked from eg_out_pipe0_do.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore the internal pdp_rdma2dp_pd declaration to NVDLA_PDP_BWPE*NVDLA_PDP_THROUGHPUT+11:0 while keeping the surrounding dp_pd packing and eg_out_pipe0_di or eg_out_pipe0_do logic unchanged."
+      },
+      "expected_failure_mode": "Upper PDP RDMA metadata bits can be dropped, causing downstream logic to miss split-end or cube-end conditions and mishandle completion or packet boundaries.",
+      "evidence_for_injection": [
+        "dp_pd assigns explicit metadata bits through +13, including end markers above the raw payload field.",
+        "The old internal width only preserved +11:0, so the two highest pdp_rdma2dp_pd bits were vulnerable to truncation.",
+        "The three done flags are unpacked separately after pdp_rdma2dp_pd, which means the truncation specifically affects the upper pdp_rdma2dp_pd record bits."
+      ],
+      "notes": [
+        "This is a compact but very real data-path correctness bug because the high packet bits carry control metadata, not unused padding.",
+        "A targeted test should exercise end-of-split and end-of-cube boundaries to observe the injected fault clearly."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 PDP RDMA 出口包宽度不匹配的问题：扩展内部 pdp_rdma2dp_pd 信号，使其与打包后的 dp_pd 载荷和元数据位宽一致。",
+    "why_it_counts": [
+      "补丁修改的是 PDP RDMA egress 内部一个正在使用的 DUT 数据通路信号位宽。",
+      "周边代码会把 dp_pd 与多个 done flag 一起打入流水线，然后再解包成 pdp_rdma2dp_pd 和控制标志。",
+      "该解包路径上的位宽不匹配会静默丢失具有架构意义的元数据位。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "修复前，输出端口 pdp_rdma2dp_pd 已经声明为 NVDLA_PDP_BWPE*NVDLA_PDP_THROUGHPUT+13:0。",
+      "真正过窄的是内部 wire 声明，它原本只有 +11:0，提交把它扩展为 +13:0。",
+      "dp_pd 会显式赋值到 +13 位，包括位置和结束标记，而 eg_out_pipe0_di 会打包 {dp_pd, rdma2wdma_done_f, eg2ig_done_f, dp2reg_done_f}。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_RDMA_eg.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当数据通路把有效载荷和位置或结束元数据打包在一起时，所有承载这个打包记录的内部总线都必须与完整记录宽度一致。如果某个内部信号比打包记录更窄，那么在记录被转发或解包时，高位元数据会被截断。即便主数据位表面上看起来大体正确，下游状态转换仍可能被破坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "打包 payload 与 metadata 总线的位宽一致性",
+        "trigger_condition": "打包记录的高位元数据被置位的传输场景，例如 split-end 或 cube-end 标志。",
+        "injection_action": "缩窄一个内部打包载荷信号，使高位元数据在流水线解包或转发时被截掉。",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "注入目标应是同时承载数据载荷和结束或位置信息的总线，而不是纯数据总线。",
+          "最贴近原始缺陷的方式，是在保持上游打包记录宽度不变的前提下，只缩窄其中一个内部 wire。",
+          "这种错误通常表现为结束标志丢失，而不一定是明显的数据载荷损坏。"
+        ],
+        "concrete_injection_steps": [
+          "找到包含数据载荷和多个元数据位的打包记录类型或拼接表达式。",
+          "定位一个在流水线或队列边界之后保存该记录的内部信号。",
+          "缩减该内部信号的位宽，使其无法容纳最高位的元数据。",
+          "保持原有的打包和解包拼接顺序不变，让截断自然发生。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_RDMA_eg.v"
+        ],
+        "target_module_or_logic": "PDP RDMA egress 中打包的 pdp_rdma2dp 载荷路径",
+        "commit_fix_summary": "修复把内部 pdp_rdma2dp_pd wire 从 +11:0 扩展到 +13:0，使其与输出端口及从 eg_out_pipe0_do 解包得到的 dp_pd 位宽一致。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "可通过把内部 pdp_rdma2dp_pd 声明恢复为 NVDLA_PDP_BWPE*NVDLA_PDP_THROUGHPUT+11:0，同时保持周边 dp_pd 打包和 eg_out_pipe0_di 或 eg_out_pipe0_do 逻辑不变来回注。"
+      },
+      "expected_failure_mode": "PDP RDMA 的高位元数据会被丢失，导致下游逻辑漏掉 split-end 或 cube-end 条件，并错误处理完成信号或包边界。",
+      "evidence_for_injection": [
+        "dp_pd 会显式赋值到 +13 位，高于原始数据载荷区域的正是结束类元数据位。",
+        "旧的内部位宽只保留到 +11:0，因此 pdp_rdma2dp_pd 的最高两位最容易被截断。",
+        "三个 done flag 会在 pdp_rdma2dp_pd 之后单独解包，因此这次截断具体影响的是 pdp_rdma2dp_pd 记录的高位，而不是这些 done flag。"
+      ],
+      "notes": [
+        "这是一个很小但非常真实的数据通路正确性缺陷，因为高位包字段承载的是控制元数据，而不是无用填充位。",
+        "验证该回注时，最好覆盖 split 结束和 cube 结束边界。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "dataset_id": 307,
+  "original_review_id": 371,
+  "meta": {
+    "id": 371,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "e5b41bcd6648919570d245bd7edd0747189460a7",
+    "subject": "wctl unit bug fix"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "After inspecting the patch and nearby code, this change looks like an internal width-declaration cleanup rather than a substantiated DUT behavior fix.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "The diff only changes a local parameter and the declared width of an internal tid signal.",
+      "No control predicate, state update, datapath expression, or externally visible warp-control action changes in the patch.",
+      "The surrounding code already forces tid to zero when LANE_BITS is zero, so the diff alone does not show a concrete architectural behavior bug."
+    ],
+    "evidence": [
+      "Only hw/rtl/core/VX_wctl_unit.sv is touched.",
+      "The only semantic change is removing localparam LANE_WIDTH = `UP(LANE_BITS) and declaring tid as [LANE_BITS-1:0] instead of [LANE_WIDTH-1:0].",
+      "All later uses of tid remain the same array-index reads of execute_if.data.rs1_data[tid] and rs2_data[tid]."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_wctl_unit.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "在检查补丁和周边代码后，这个改动更像是内部位宽声明清理，而不是被充分证明的 DUT 行为修复。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "差异只改动了一个局部参数以及内部 tid 信号的声明位宽。",
+      "补丁没有改变任何控制条件、状态更新、数据通路表达式或对外可见的 warp-control 行为。",
+      "周边代码在 LANE_BITS 为零时已经把 tid 强制为零，因此仅从该 diff 本身看不出明确的体系结构级行为错误。"
+    ],
+    "evidence": [
+      "只修改了 hw/rtl/core/VX_wctl_unit.sv。",
+      "唯一的语义变化是删除了 localparam LANE_WIDTH = `UP(LANE_BITS)，并把 tid 的声明从 [LANE_WIDTH-1:0] 改为 [LANE_BITS-1:0]。",
+      "之后对 tid 的使用都保持不变，仍然只是 execute_if.data.rs1_data[tid] 和 rs2_data[tid] 这样的数组索引读取。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_wctl_unit.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "dataset_id": 312,
+  "original_review_id": 378,
+  "meta": {
+    "id": 378,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "19d614202327e5b4f610911f82e2ea293a6b1cb7",
+    "subject": "fixed fpu serialization"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "This commit fixes FPU serialization by carrying per-operation control fields with the serialized operand payload and by aligning PE enable timing with that payload; the patch also includes a smaller FMA operand-preparation correction.",
+    "why_it_counts": [
+      "It changes active RTL in several FPU execution units and the shared serializer primitive.",
+      "The modified fields control rounding mode, operation subtype, and conversion behavior, so misalignment produces wrong arithmetic results.",
+      "The fix is clearly about DUT execution semantics rather than tooling."
+    ],
+    "disqualifiers": [
+      "The commit also touches CI and includes a smaller FMA preparation cleanup, but the repeated serializer-control fix is the dominant DUT change."
+    ],
+    "evidence": [
+      "VX_fpu_cvt.sv now packs frm, is_itof, and is_signed into the serializer input and consumes them from pe_data_in.",
+      "VX_fpu_fma.sv now packs frm with serialized operands and uses the serialized frm at the PE side.",
+      "VX_fpu_ncp.sv now serializes frm and op_type together with dataa and datab.",
+      "VX_pe_serializer.sv removes the extra PE_REG-delayed pe_enable register and drives pe_enable directly from enable."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_cvt.sv",
+      "hw/rtl/fpu/VX_fpu_fma.sv",
+      "hw/rtl/fpu/VX_fpu_ncp.sv",
+      "hw/rtl/libs/VX_pe_serializer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When many FPU lanes are time-multiplexed onto fewer processing elements, every batch of operands must travel with its own control metadata such as rounding mode, conversion direction, signedness, or operation subtype. Any PE enable pulse must also align with the same staged batch. If the design reuses top-level control signals instead of serializing them with the operands, or delays the enable on a different schedule, one batch can execute using another batch's control settings.",
+      "portable_injection_spec": {
+        "affected_mechanism": "serialized FPU control and enable alignment",
+        "trigger_condition": "Serialized FPU execution with consecutive operations that differ in frm, op subtype, or conversion controls, especially when lanes are multiplexed onto fewer PEs or PE input registers are used.",
+        "injection_action": "Make the PE consume un-serialized control inputs or reintroduce an independently delayed enable signal.",
+        "implementation_pattern": "drop control fields from serializer payload",
+        "portability_notes": [
+          "This applies to any vector or SIMT FPU that serializes multiple lane operations onto a smaller PE array.",
+          "The bug is easiest to expose when adjacent operations use different rounding modes or different conversion or compare op types.",
+          "You do not need the original module names; focus on the boundary where lane data is packed before entering the shared PE pipeline."
+        ],
+        "concrete_injection_steps": [
+          "Identify the serializer or batching stage between lane inputs and the shared FPU PE array.",
+          "Remove control bits such as rounding mode, op subtype, or conversion flags from the serialized payload so only operand data is staged.",
+          "Feed the PE from the top-level control inputs or another non-batched control path instead of the serialized payload.",
+          "If the design has a registered PE input path, optionally delay the enable independently from the payload to recreate control and timing skew."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_cvt.sv",
+          "hw/rtl/fpu/VX_fpu_fma.sv",
+          "hw/rtl/fpu/VX_fpu_ncp.sv",
+          "hw/rtl/libs/VX_pe_serializer.sv"
+        ],
+        "target_module_or_logic": "FPU lane-to-PE serialization of control fields and PE enable timing",
+        "commit_fix_summary": "The fix packs frm, op_type, is_itof, and is_signed into serializer payloads in multiple FPU units and changes VX_pe_serializer so pe_enable follows enable directly rather than a separate PE_REG-delayed register.",
+        "mutation_strategy": "drop serialized control sideband and restore misaligned enable",
+        "source_level_edit_anchor": "Revert the extra serializer payload fields in VX_fpu_cvt.sv, VX_fpu_fma.sv, and VX_fpu_ncp.sv, and restore the separate delayed pe_enable register in hw/rtl/libs/VX_pe_serializer.sv."
+      },
+      "expected_failure_mode": "Serialized FPU operations use the wrong rounding mode, wrong op subtype, wrong conversion direction or signedness, or otherwise execute under mismatched control relative to their operands.",
+      "evidence_for_injection": [
+        "The same control-serialization pattern is fixed independently in convert, FMA, and non-computational FPU units.",
+        "VX_pe_serializer previously delayed pe_enable through a separate register chain while data used the serializer pipeline.",
+        "The patch repeatedly switches PE-side modules from top-level frm or op_type inputs to control fields extracted from pe_data_in."
+      ],
+      "notes": [
+        "The FMA arithmetic-preparation hunk is real, but the primary reusable injection mechanism here is serializer control misalignment.",
+        "This fault usually needs at least two distinct serialized operations to become obvious."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了 FPU 串行化问题：把每次操作的控制字段随同串行化后的操作数一起传递，并让 PE enable 与该载荷重新对齐；补丁中还包含一个较小的 FMA 操作数准备修正。",
+    "why_it_counts": [
+      "它修改了多个 FPU 执行单元以及共享串行化原语中的实际 RTL。",
+      "被修改的字段控制舍入模式、操作子类型和转换行为，错位会直接产生错误算术结果。",
+      "该修复针对的是 DUT 执行语义，而不是工具链。"
+    ],
+    "disqualifiers": [
+      "提交也改动了 CI，并包含一个较小的 FMA 预处理修正，但主体仍然是重复出现的串行化控制修复。"
+    ],
+    "evidence": [
+      "VX_fpu_cvt.sv 现在把 frm、is_itof、is_signed 打包进串行化输入，并在 PE 侧从 pe_data_in 中取出。",
+      "VX_fpu_fma.sv 现在把 frm 与串行化后的操作数一起传递，并在 PE 侧使用串行化后的 frm。",
+      "VX_fpu_ncp.sv 现在把 frm 和 op_type 与 dataa、datab 一起串行化。",
+      "VX_pe_serializer.sv 删除了额外的 PE_REG 延迟 pe_enable 寄存器，改为直接由 enable 驱动 pe_enable。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_cvt.sv",
+      "hw/rtl/fpu/VX_fpu_fma.sv",
+      "hw/rtl/fpu/VX_fpu_ncp.sv",
+      "hw/rtl/libs/VX_pe_serializer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当多个 FPU lane 被时分复用到更少的处理单元时，每一批操作数都必须携带自己对应的控制元数据，例如舍入模式、转换方向、符号属性或操作子类型。同时，PE enable 也必须与同一批被流水化的载荷严格对齐。如果设计错误地复用顶层控制输入，而不是把这些控制随操作数一起串行化，或者让 enable 走不同的延迟路径，就会出现“这一批数据使用了另一批控制”的情况。",
+      "portable_injection_spec": {
+        "affected_mechanism": "串行化 FPU 的控制与使能对齐",
+        "trigger_condition": "在多 lane 串行化执行中，连续操作的 frm、操作子类型或转换控制不同，且 lane 被复用到更少的 PE 或使用了 PE 输入寄存器时。",
+        "injection_action": "让 PE 使用未串行化的控制输入，或重新引入与数据路径不同步的独立 enable 延迟。",
+        "implementation_pattern": "从串行化载荷中删除控制字段",
+        "portability_notes": [
+          "该模式适用于任何把多个 lane 的 FPU 操作串行化到较小 PE 阵列上的向量或 SIMT FPU。",
+          "当相邻操作使用不同舍入模式，或使用不同转换或比较子类型时，最容易暴露该错误。",
+          "无需依赖原仓库模块名，只需关注 lane 数据打包进入共享 PE 流水线的边界。"
+        ],
+        "concrete_injection_steps": [
+          "定位 lane 输入到共享 FPU PE 阵列之间的串行化或批处理阶段。",
+          "把舍入模式、操作子类型、转换标志等控制位从串行化载荷中移除，仅保留操作数数据。",
+          "让 PE 直接使用顶层控制输入或其他未按批次对齐的控制路径，而不是使用串行化后的控制。",
+          "如果设计中存在注册后的 PE 输入路径，可进一步让 enable 与载荷分开延迟，以重新制造控制和时序错位。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_cvt.sv",
+          "hw/rtl/fpu/VX_fpu_fma.sv",
+          "hw/rtl/fpu/VX_fpu_ncp.sv",
+          "hw/rtl/libs/VX_pe_serializer.sv"
+        ],
+        "target_module_or_logic": "FPU lane 到 PE 的控制字段串行化以及 PE enable 时序",
+        "commit_fix_summary": "修复在多个 FPU 单元中把 frm、op_type、is_itof、is_signed 打包进串行化载荷，并修改 VX_pe_serializer 使 pe_enable 直接跟随 enable，而不是走单独的 PE_REG 延迟寄存器。",
+        "mutation_strategy": "删除串行化控制旁路并恢复错位的 enable",
+        "source_level_edit_anchor": "回退 VX_fpu_cvt.sv、VX_fpu_fma.sv、VX_fpu_ncp.sv 中新增的串行化控制字段，并在 hw/rtl/libs/VX_pe_serializer.sv 中恢复单独延迟的 pe_enable 寄存器。"
+      },
+      "expected_failure_mode": "串行化 FPU 操作会使用错误的舍入模式、错误的操作子类型、错误的转换方向或符号属性，或者总体上出现控制与操作数不匹配的执行结果。",
+      "evidence_for_injection": [
+        "相同的控制串行化修复模式在 convert、FMA 和非计算类 FPU 单元中都被重复应用。",
+        "VX_pe_serializer 之前让 pe_enable 走独立寄存器链，而数据走的是串行化流水线。",
+        "补丁把多个 PE 侧模块从直接使用顶层 frm 或 op_type，改为使用从 pe_data_in 中提取的控制字段。"
+      ],
+      "notes": [
+        "FMA 的算术预处理修改也是真实改动，但这里选择的可复用注入机制是串行化控制错位。",
+        "该故障通常需要至少两条控制不同的串行化操作才能明显暴露。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

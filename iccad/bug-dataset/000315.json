@@ -1,0 +1,143 @@
+{
+  "dataset_id": 315,
+  "original_review_id": 381,
+  "meta": {
+    "id": 381,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "2c940cf509c7b2c222a7c516cad6b14d8178ea65",
+    "subject": "AXI adapter bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "This commit fixes AXI adapter request handling by keeping each internal request's write address, write data, and read metadata tied to one shared crossbar record and one ready decision instead of separate post-arbitration channel buffers.",
+    "why_it_counts": [
+      "It changes central RTL in the DUT memory-interface adapter.",
+      "The patch repairs how a single internal request is decomposed onto AXI AW, W, and AR channels under backpressure.",
+      "The resulting fault is reusable on other adapters that bridge one request stream into split AXI channels."
+    ],
+    "disqualifiers": [
+      "VX_afu_wrap.sv includes only minor trace or cosmetic noise relative to the adapter fix."
+    ],
+    "evidence": [
+      "VX_axi_adapter.sv replaces the per-bank arbiter plus separate AW, W, and AR buffering with a shared req_xbar record.",
+      "AW and W fields now come directly from the same xbar-selected payload, and req_xbar_ready_out is driven from a single write-ready or read-ready decision.",
+      "VX_axi_write_ack now observes the actual channel valids directly instead of intermediate buffered valids.",
+      "VX_mem_bank_adapter.sv is updated to use the same xbar-unpack style, consistent with the request-routing fix."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_mem_bank_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An adapter that converts one internal memory request into AXI transactions must preserve the pairing between write address and write data for each request. If AW and W are buffered, retried, or advanced independently after arbitration, backpressure can let one request's address pair with another request's data, or let one channel progress while the companion channel still belongs to an older request.",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI write address and data coupling",
+        "trigger_condition": "Concurrent writes or backpressure where AW and W handshake in different cycles, especially with multiple upstream ports or banks.",
+        "injection_action": "Decouple AW and W from a single shared request record so the two channels can advance through separate queues or guards.",
+        "implementation_pattern": "split write request into independently buffered channels",
+        "portability_notes": [
+          "Target any bridge that translates one internal request record into separate AXI address and data channels.",
+          "The bug is most visible when channel readiness differs across cycles or different writes contend for the same bank.",
+          "You do not need the original file structure; the key is to break the one-request-to-one-transaction coupling."
+        ],
+        "concrete_injection_steps": [
+          "Locate the stage where one internal request record is unpacked into AXI AW, W, and optionally AR metadata.",
+          "Insert or restore independent buffering or progress control for AW and W so they no longer consume the same request atomically.",
+          "Let the adapter acknowledge request advancement based on per-channel readiness instead of one shared transaction-ready decision.",
+          "Keep AXI response handling intact so failures appear as mismatched or lost write transactions rather than a total dead interface."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "hw/rtl/libs/VX_mem_bank_adapter.sv"
+        ],
+        "target_module_or_logic": "AXI adapter request crossbar and AW/W/AR handshake coupling",
+        "commit_fix_summary": "The fix routes each request through a single req_xbar payload, derives AW and W directly from that shared payload, and uses one req_xbar_ready_out decision driven by either axi_write_ready or m_axi_arready.",
+        "mutation_strategy": "restore independently buffered AW and W handling",
+        "source_level_edit_anchor": "In hw/rtl/libs/VX_axi_adapter.sv, revert to separate post-arbitration AW and W buffering instead of driving both channels from the same req_xbar_data_out record."
+      },
+      "expected_failure_mode": "Write address and write data lose pairing under pressure, causing dropped stores, mis-addressed stores, or reordered writes that violate the adapter's intended semantics.",
+      "evidence_for_injection": [
+        "The old code maintained separate AW and W buffering after arbitration; the fix removes that split.",
+        "The new ready path explicitly advances requests only when the combined write transaction or read address path is ready.",
+        "The fix is centered in the adapter RTL, not in test-only logic."
+      ],
+      "notes": [
+        "The write path is the primary portable fault target; the related packing cleanup in VX_mem_bank_adapter.sv is secondary grounding.",
+        "This is a real DUT bug-fix, but the patch is broader than a single-line edit, so confidence is kept at medium."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "memory_interface",
+    "summary": "该提交修复了 AXI 适配器的请求处理：让每个内部请求的写地址、写数据和读元数据都绑定在同一个共享 crossbar 记录和同一个 ready 判定上，而不是在仲裁后再拆成彼此独立的通道缓冲。",
+    "why_it_counts": [
+      "它修改了 DUT 内存接口适配器中的核心 RTL。",
+      "该补丁修复了单个内部请求在背压下如何被分解到 AXI 的 AW、W、AR 通道上的语义。",
+      "这个故障机制可以迁移到其他把单请求流桥接成 AXI 分裂通道的适配器上。"
+    ],
+    "disqualifiers": [
+      "相较于适配器修复，VX_afu_wrap.sv 中只有少量跟踪或表面性噪声。"
+    ],
+    "evidence": [
+      "VX_axi_adapter.sv 用共享 req_xbar 记录替换了按 bank 的仲裁器以及彼此独立的 AW、W、AR 缓冲。",
+      "AW 和 W 现在直接来自同一个 xbar 选中的载荷，且 req_xbar_ready_out 由统一的写就绪或读就绪判定驱动。",
+      "VX_axi_write_ack 现在直接观察真实的通道 valid，而不是中间缓冲后的 valid。",
+      "VX_mem_bank_adapter.sv 也改成了同样的 xbar 解包风格，与请求路由修复一致。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_mem_bank_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "把一个内部内存请求转换成 AXI 事务的适配器，必须保持每个请求的写地址和写数据一一配对。如果 AW 和 W 在仲裁之后还能分别排队、重试或前进，那么在背压存在时，就可能出现某个请求的地址与另一个请求的数据配对，或者其中一个通道先前进而另一个仍然属于旧请求的情况。",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI 写地址与写数据配对",
+        "trigger_condition": "存在并发写请求或背压，导致 AW 和 W 在不同周期握手，尤其是多上游端口或多 bank 场景。",
+        "injection_action": "把 AW 和 W 从同一个共享请求记录中解耦，使两个通道可以经过独立队列或独立前进条件。",
+        "implementation_pattern": "把写请求拆成可独立缓冲的通道",
+        "portability_notes": [
+          "目标是任何把单个内部请求记录转换成 AXI 地址通道和数据通道的桥接器。",
+          "当各通道 ready 在不同周期波动，或不同写请求争用同一 bank 时，该错误最容易显现。",
+          "无需依赖原仓库文件结构，关键是破坏“一个请求对应一组 AXI 通道事务”的耦合关系。"
+        ],
+        "concrete_injection_steps": [
+          "定位把一个内部请求记录拆成 AXI AW、W 以及可选 AR 元数据的阶段。",
+          "为 AW 和 W 重新加入或恢复独立缓冲、独立前进控制，使两者不再原子地消费同一个请求。",
+          "让适配器根据每个通道自己的 ready 来推进请求，而不是依据统一的事务 ready 判定。",
+          "保持 AXI 响应处理逻辑不变，使表现为写事务错配或丢失，而不是整个接口完全卡死。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "hw/rtl/libs/VX_mem_bank_adapter.sv"
+        ],
+        "target_module_or_logic": "AXI 适配器中的请求交叉开关以及 AW/W/AR 握手耦合路径",
+        "commit_fix_summary": "修复让每个请求都通过单一 req_xbar 载荷流动，AW 和 W 都直接从该共享载荷导出，并用统一的 req_xbar_ready_out 由 axi_write_ready 或 m_axi_arready 驱动。",
+        "mutation_strategy": "恢复彼此独立缓冲的 AW 和 W 处理",
+        "source_level_edit_anchor": "在 hw/rtl/libs/VX_axi_adapter.sv 中，回退到仲裁后分别缓冲 AW 和 W 的做法，而不是从同一个 req_xbar_data_out 记录直接驱动两个通道。"
+      },
+      "expected_failure_mode": "写地址与写数据会在背压下失去配对，导致 store 丢失、写到错误地址，或者写事务出现违反适配器语义的乱序。",
+      "evidence_for_injection": [
+        "旧代码在仲裁之后对 AW 和 W 分别缓冲；修复正是去掉了这种拆分。",
+        "新 ready 路径明确要求只有在组合后的写事务或读地址路径准备好时才推进请求。",
+        "修复集中在适配器 RTL 内部，而不是测试辅助逻辑。"
+      ],
+      "notes": [
+        "可移植的主要故障点是写路径；VX_mem_bank_adapter.sv 中的相关打包清理属于次要佐证。",
+        "这是实质性的 DUT bug-fix，但补丁范围不止一行，因此置信度保守设为 medium。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

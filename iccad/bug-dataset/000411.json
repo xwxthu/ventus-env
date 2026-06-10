@@ -1,0 +1,157 @@
+{
+  "dataset_id": 411,
+  "original_review_id": 520,
+  "meta": {
+    "id": 520,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "5be1d85648081422dad53916ea54f74dba03d917",
+    "subject": "cache refactoring (fixed redundant fill requests, merged fill and writeback queues), optimized priority encoder, fixed crs cycles count"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This refactor-heavy cache commit still contains a real fill-path correctness fix. It removes logic that could suppress a returning fill or clear line dirty state when a miss was only being tracked, which could leave line state inconsistent under repeated misses to the same cache line.",
+    "why_it_counts": [
+      "The subject explicitly says redundant fill requests were fixed.",
+      "The patch changes central cache-bank, tag/data, and miss-reservation RTL.",
+      "The fix removes concrete fill-suppression and early dirty-clear behavior, not just naming or structure."
+    ],
+    "disqualifiers": [
+      "The commit is large and includes broad cache refactoring.",
+      "It also includes unrelated arbiter and CSR-cycle cleanup."
+    ],
+    "evidence": [
+      "VX_tag_data_access.v deletes the old real_writefill guard that blocked writefill when the line already looked valid and tagged.",
+      "VX_tag_data_store.v removes the fill_sent path that previously cleared dirty and dirty-byte state on miss tracking rather than on real fill write.",
+      "VX_bank.v introduces explicit force_miss staging and new miss-reservation ready-state handling around repeated misses and fills.",
+      "The new code emits a warning for redundant fill, showing the bug being targeted is duplicate or mistimed fill handling."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_tag_data_access.v",
+      "hw/rtl/cache/VX_tag_data_store.v",
+      "hw/rtl/cache/VX_cache_miss_resrv.v",
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_cache.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a nonblocking cache, a line can have an outstanding miss while new requests to the same line continue to arrive. A returning fill must still update tag, data, and dirty bookkeeping coherently even if another request has already recreated a valid-looking entry or a miss tracker has been allocated for that address. If the controller treats such a fill as redundant and suppresses the data write, or clears dirty state when the miss is merely launched instead of when the fill actually commits, the cache can retain stale data or lose writeback information.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache fill acceptance and miss-reservation state recovery",
+        "trigger_condition": "Two or more accesses target the same cache line while an earlier miss is outstanding and a fill response returns after intermediate tag or reservation state has changed.",
+        "injection_action": "Suppress a fill when the line already appears allocated, and clear dirty metadata on miss send instead of on actual fill commit.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "Map this to any cache that merges, retries, or reserves repeated misses to the same line.",
+          "The bug is about fill qualification and metadata timing, not about a specific queue name.",
+          "Keep the fill payload and miss tracker structure intact; only change the condition that decides whether the fill is applied and when dirty state is reset."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that handles a memory fill returning to a cache line with an outstanding miss entry.",
+          "Add a guard that drops or disables the fill write when the target line already looks valid with a matching tag.",
+          "Move dirty-bit or dirty-byte clearing from the actual fill-write event to the earlier miss-allocation or miss-send event.",
+          "Leave the rest of the miss queue and data array path unchanged so the reinjected bug stays focused on redundant-fill handling."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_tag_data_access.v",
+          "hw/rtl/cache/VX_tag_data_store.v",
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "bank-local fill qualification, tag/data update, and miss-reservation ready-state logic",
+        "commit_fix_summary": "The fix removed real_writefill and fill_sent behavior, made fill writes explicit, and reworked miss-reservation recovery so repeated misses and returning fills no longer corrupt readiness or dirty state.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Reintroduce the old real_writefill-style guard in VX_tag_data_access.v and the miss-triggered dirty clear in VX_tag_data_store.v, then relax the new miss-reservation recovery logic in VX_bank.v and VX_cache_miss_resrv.v so same-line fills are again treated as redundant."
+      },
+      "expected_failure_mode": "Repeated misses to one line can lead to dropped fill data, stale cache contents, lost dirty-byte tracking, repeated refetches, or misordered writeback behavior.",
+      "evidence_for_injection": [
+        "The removed real_writefill condition explicitly blocked some fill writes.",
+        "The removed fill_sent path explicitly cleared dirty state outside the real fill-write event.",
+        "The rewritten miss-reservation logic now tracks force_miss and ready-state recovery around same-address hazards.",
+        "The added redundant-fill warning ties the fix to exactly this class of miss/fill race."
+      ],
+      "notes": [
+        "This is the most concrete injectable bug in an otherwise broad cache refactor.",
+        "The CSR-cycle and priority-encoder changes in the same commit are not part of this injection plan."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交虽然以 cache 重构为主，但其中确实包含一个真实的 fill 路径正确性修复。它移除了会在重复 miss 同一 cache line 时抑制返回 fill、或仅在 miss 被跟踪时就提前清除 dirty 状态的逻辑，否则会让 cache line 状态失去一致性。",
+    "why_it_counts": [
+      "提交标题明确写了 fixed redundant fill requests。",
+      "补丁修改的是 cache bank、tag/data 和 miss reservation 等核心 RTL。",
+      "修复删除的是具体的 fill 抑制和 dirty 提前清除行为，而不只是重命名或结构整理。"
+    ],
+    "disqualifiers": [
+      "该提交体量很大，并且包含大量 cache 重构。",
+      "同一提交里还混入了与此无关的仲裁器和 CSR cycle 清理。"
+    ],
+    "evidence": [
+      "VX_tag_data_access.v 删除了旧的 real_writefill 条件，该条件会在 cache line 看起来已经 valid 且 tag 匹配时阻止 writefill。",
+      "VX_tag_data_store.v 删除了 fill_sent 路径，旧逻辑会在 miss 被记录时而不是在真实 fill 写入时清除 dirty 和 dirty-byte 状态。",
+      "VX_bank.v 新增了显式的 force_miss 流水级以及新的 miss reservation ready-state 处理，用于处理重复 miss 和 fill。",
+      "新代码增加了 redundant fill 的告警，说明修复目标正是重复或时序错误的 fill 处理。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_tag_data_access.v",
+      "hw/rtl/cache/VX_tag_data_store.v",
+      "hw/rtl/cache/VX_cache_miss_resrv.v",
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_cache.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 nonblocking cache 中，一条 cache line 发生未完成 miss 时，后续对同一 line 的访问仍可能继续进入流水。即使中间已经重新建立了看起来 valid 的条目，返回的 fill 也必须一致地更新 tag、data 和 dirty 元数据。如果控制器把这种 fill 当成“冗余”而直接抑制数据写入，或者在 miss 只是被发出时就清除 dirty 状态，而不是在真实 fill 提交时才清除，那么 cache 可能保留旧数据，或者丢失 writeback 所需的脏状态信息。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache fill 接受条件与 miss reservation 状态恢复",
+        "trigger_condition": "较早的 miss 尚未完成时，又有两个或以上访问命中同一 cache line，并且中途 tag 或 reservation 状态已经发生变化后，fill 响应才返回。",
+        "injection_action": "当目标 line 看起来已经被分配时抑制 fill，并且把 dirty 元数据清除从真实 fill 提交时机提前到 miss 发送时机。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "可映射到任何会对同一 cache line 的重复 miss 进行合并、重试或保留的 cache。",
+          "该缺陷关注的是 fill 判定与元数据更新时间，而不是某个特定队列名。",
+          "保留 fill 数据通路和 miss tracker 结构不变，只修改 fill 是否生效以及 dirty 何时清零的条件。"
+        ],
+        "concrete_injection_steps": [
+          "找到处理内存 fill 返回到存在未决 miss 的 cache line 的逻辑。",
+          "加入一个条件：当目标 line 已经看起来 valid 且 tag 匹配时，直接丢弃或禁用 fill 写入。",
+          "把 dirty bit 或 dirty-byte 的清零从真实 fill 写事件移动到更早的 miss 分配或 miss 发送事件。",
+          "其余 miss 队列和 data array 路径保持不变，使回注故障聚焦在 redundant-fill 处理上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_tag_data_access.v",
+          "hw/rtl/cache/VX_tag_data_store.v",
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "bank 内部 fill 判定、tag/data 更新与 miss reservation ready-state 逻辑",
+        "commit_fix_summary": "该修复删除了 real_writefill 和 fill_sent 旧行为，把 fill 写入改为显式路径，并重写 miss reservation 恢复逻辑，从而避免同地址重复 miss 和返回 fill 破坏 ready 状态或 dirty 状态。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_tag_data_access.v 中恢复类似 real_writefill 的 fill 抑制条件，在 VX_tag_data_store.v 中恢复由 miss 触发的 dirty 清零，并在 VX_bank.v 与 VX_cache_miss_resrv.v 中放松新的 miss reservation 恢复逻辑，使同地址 fill 再次被当成冗余。"
+      },
+      "expected_failure_mode": "对同一 line 的重复 miss 可能导致 fill 数据被丢弃、cache 内容陈旧、dirty-byte 跟踪丢失、重复取数或 writeback 时序异常。",
+      "evidence_for_injection": [
+        "被删除的 real_writefill 条件明确会阻止某些 fill 写入。",
+        "被删除的 fill_sent 路径明确会在真实 fill 写入之外清除 dirty 状态。",
+        "重写后的 miss reservation 逻辑现在会围绕同地址 hazard 跟踪 force_miss 和 ready-state 恢复。",
+        "新增的 redundant fill 告警直接把修复对象指向这一类 miss/fill 竞争。"
+      ],
+      "notes": [
+        "在这个较大的 cache 重构提交中，这是最具体、最适合回注的故障点。",
+        "同提交中的 CSR cycle 和 priority encoder 修改不属于本注入计划。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

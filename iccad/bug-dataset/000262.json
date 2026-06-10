@@ -1,0 +1,137 @@
+{
+  "dataset_id": 262,
+  "original_review_id": 313,
+  "meta": {
+    "id": 313,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "ea890b457dc76c090003abc074d436799307f884",
+    "subject": "fixed msrq regression"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes miss-reservation backpressure so the cache stops earlier instead of overcommitting the miss queue and locking the pipeline.",
+    "why_it_counts": [
+      "The change is in the cache miss-reservation RTL, not in tests or infrastructure.",
+      "The patch directly adjusts the stop threshold that controls when new misses are throttled.",
+      "The inline comment states that the old threshold could cause pipeline lock."
+    ],
+    "disqualifiers": [
+      "VX_bank.v only has whitespace movement in this commit."
+    ],
+    "evidence": [
+      "VX_cache_miss_resrv.v changes miss_resrv_stop from size > MRVQ_SIZE-1 to size > MRVQ_SIZE-5.",
+      "The patched line adds a comment that five cycles of extra headroom are needed to prevent pipeline lock.",
+      "No non-DUT behavioral files are involved in the real fix."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_miss_resrv.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix corrects a classic queue-headroom bug in a miss reservation structure. The buggy form lets upstream stages continue launching misses until the reservation queue is almost or completely full, even though several in-flight pipeline stages can still allocate new entries before the stop signal takes effect. Under sustained miss pressure, that late backpressure can exhaust slack and lock the cache pipeline.",
+      "portable_injection_spec": {
+        "affected_mechanism": "miss reservation queue backpressure margin",
+        "trigger_condition": "A burst of misses arrives while the miss queue is approaching capacity and there are still several pipeline stages that can generate additional allocations before throttling takes effect.",
+        "injection_action": "Reduce or remove the safety headroom so the stop condition only fires at the very end of the queue.",
+        "implementation_pattern": "restore too-late almost-full threshold",
+        "portability_notes": [
+          "This maps to any cache, MSHR, miss queue, or reservation queue that needs early backpressure because allocation is pipelined.",
+          "The important property is the slack between asserting stop and actually preventing all further allocations.",
+          "If the target queue has a different depth or latency, preserve the relative mistake: stop too late for the pipeline depth."
+        ],
+        "concrete_injection_steps": [
+          "Identify the signal that stops new miss allocation when the reservation structure is nearly full.",
+          "Change the threshold so it trips only at full or one-entry-left instead of leaving several entries of pipeline headroom.",
+          "Do not change the actual full detection; only weaken the earlier stop condition.",
+          "Keep the rest of enqueue and dequeue logic unchanged so the fault manifests as late backpressure rather than a structural queue rewrite."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "Miss reservation stop threshold",
+        "commit_fix_summary": "The commit moves miss_resrv_stop earlier, from MRVQ_SIZE-1 to MRVQ_SIZE-5, to restore enough pipeline headroom and avoid lockup.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_cache_miss_resrv, change miss_resrv_stop back to compare size against MRVQ_SIZE-1 instead of MRVQ_SIZE-5."
+      },
+      "expected_failure_mode": "The cache can accept misses too long, overrun its safety margin, and enter a deadlock or severe long stall under miss-heavy traffic.",
+      "evidence_for_injection": [
+        "The only behavioral delta is the stop threshold in VX_cache_miss_resrv.v.",
+        "The added source comment explicitly ties the extra headroom to preventing pipeline lock.",
+        "The commit subject calls this a regression fix rather than a feature change."
+      ],
+      "notes": [
+        "This is a very portable injection because it is just an almost-full threshold error.",
+        "Do not treat the whitespace-only VX_bank.v change as part of the bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该修复把 miss reservation 的反压提前，避免 miss 队列被过度占满并导致流水线锁死。",
+    "why_it_counts": [
+      "改动位于 cache miss reservation RTL，而不是测试或基础设施。",
+      "补丁直接调整了控制何时停止接收新 miss 的阈值。",
+      "源代码注释明确写明旧阈值会导致 pipeline lock。"
+    ],
+    "disqualifiers": [
+      "本提交中的 VX_bank.v 只有空白位置变化。"
+    ],
+    "evidence": [
+      "VX_cache_miss_resrv.v 把 miss_resrv_stop 从 size > MRVQ_SIZE-1 改为 size > MRVQ_SIZE-5。",
+      "修改后的代码行增加了注释，说明需要预留 5 个周期的额外空间来避免流水线锁死。",
+      "真正的修复没有涉及任何非 DUT 的行为文件。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_miss_resrv.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对 miss reservation 结构中非常典型的队列余量错误。缺陷版本让上游在队列几乎满甚至已满时才停止发射 miss，而在 stop 信号生效之前，后续若干级流水线仍然可能继续分配新条目。在持续 miss 压力下，这种过晚的反压会耗尽缓冲余量并锁死 cache pipeline。",
+      "portable_injection_spec": {
+        "affected_mechanism": "miss reservation 队列的反压余量",
+        "trigger_condition": "一串 miss 在 miss 队列接近容量上限时到来，同时前端流水线还有若干级可能继续分配新条目。",
+        "injection_action": "减少或移除安全余量，使 stop 条件直到队列最后阶段才触发。",
+        "implementation_pattern": "恢复过晚触发的 almost-full 阈值",
+        "portability_notes": [
+          "这可映射到任何因为分配路径有流水线延迟，而需要提前反压的 cache、MSHR、miss queue 或 reservation queue。",
+          "关键属性是：从发出 stop 到真正阻止所有后续分配之间存在若干周期的滞后。",
+          "如果目标队列深度或流水线长度不同，也应保持相同类型的错误，即 stop 相对流水线深度触发得过晚。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 reservation 结构接近满时用于停止新 miss 分配的信号。",
+          "把阈值改为只有在队列已满或只剩一个槽位时才触发，而不是提前预留多个条目。",
+          "不要改动真正的 full 检测，只削弱更早的 stop 条件。",
+          "其余 enqueue 和 dequeue 逻辑保持不变，让故障表现为反压过晚而不是队列结构本身被重写。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "Miss reservation stop 阈值",
+        "commit_fix_summary": "该提交把 miss_resrv_stop 从 MRVQ_SIZE-1 提前到 MRVQ_SIZE-5，从而恢复足够的流水线余量并避免锁死。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_cache_miss_resrv 中，把 miss_resrv_stop 改回与 MRVQ_SIZE-1 比较，而不是 MRVQ_SIZE-5。"
+      },
+      "expected_failure_mode": "在 miss 很密集的场景下，cache 会过久地继续接收 miss，最终耗尽安全余量并进入死锁或长时间停顿。",
+      "evidence_for_injection": [
+        "唯一的行为修改就是 VX_cache_miss_resrv.v 中的 stop 阈值。",
+        "新增注释明确说明额外余量是为了防止 pipeline lock。",
+        "提交标题把它定义为 regression fix，而不是功能新增。"
+      ],
+      "notes": [
+        "这个故障注入非常可移植，因为本质上只是一个 almost-full 阈值错误。",
+        "不要把 VX_bank.v 中仅有的空白变化当成缺陷的一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

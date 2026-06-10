@@ -1,0 +1,137 @@
+{
+  "dataset_id": 257,
+  "original_review_id": 308,
+  "meta": {
+    "id": 308,
+    "repo": "ventus-gpgpu-cpp-simulator",
+    "branch": "develop",
+    "commit": "6dc6af456a962290d665accb73467fbc4a614923",
+    "subject": "bug fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes simulator warp-scheduler semantics by delaying warp completion callback and block-slot release until the extra ENDPRG flush cycle has completed.",
+    "why_it_counts": [
+      "The patch changes modeled warp retirement and dispatch timing in the core scheduler.",
+      "It fixes a real conflict between pipeline flush completion and CTA scheduler reuse of the same hardware warp slot.",
+      "The bug can cause overlapping ownership of one warp slot, which is a core execution-semantic error."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "warp_scheduler.cpp moves m_warp_finish_callback and block-slot release out of the ENDPRG case and into the next-cycle endprg_flush_pipe handling.",
+      "The ENDPRG case now only deactivates the warp, calls initwarp(), and requests one extra flush cycle.",
+      "BASE.cpp adds an assertion that a newly received hardware warp is not already active, which matches the reported slot-conflict symptom."
+    ],
+    "touched_dut_files": [
+      "src/sm/BASE.cpp",
+      "src/sm/warp_scheduler.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a warp or thread context reaches program end, many pipelines still require one final flush cycle before the hardware slot is truly reusable. Retirement bookkeeping therefore has to be ordered carefully: the scheduler must not tell the higher-level block or CTA scheduler that the slot is free until the flush has completed. If completion is reported too early, a replacement warp can be allocated into a slot whose previous owner is still draining pipeline state, causing overlapping lifetime, corrupted slot bookkeeping, or direct scheduler assertions.",
+      "portable_injection_spec": {
+        "affected_mechanism": "warp retirement and slot-release timing around post-END flush",
+        "trigger_condition": "A warp executes ENDPRG or equivalent termination and the design requires at least one additional cycle to flush the pipeline before the slot is reusable.",
+        "injection_action": "Release the warp slot and notify the outer scheduler immediately at program end instead of waiting until the flush-complete event.",
+        "implementation_pattern": "move completion bookkeeping before flush completion",
+        "portability_notes": [
+          "Apply this to any SIMT scheduler or thread-context allocator that separates logical end-of-program from physical slot reuse.",
+          "The essential bug is early slot reclamation, not the exact name of the flush flag.",
+          "If the design has a callback, free-list push, or running-count decrement, moving any of those earlier can recreate the fault."
+        ],
+        "concrete_injection_steps": [
+          "Identify the point where a terminating warp or thread is marked inactive and where its slot is returned to the block or CTA scheduler.",
+          "Move the slot-release or completion-notify action from the post-flush path back into the immediate end-of-program path.",
+          "Keep the flush state machine or one-cycle drain behavior intact so the old context still occupies the pipe briefly after being reported finished.",
+          "Exercise back-to-back warp dispatch so a new warp is assigned into the same slot before the prior flush has actually completed."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/sm/BASE.cpp",
+          "src/sm/warp_scheduler.cpp"
+        ],
+        "target_module_or_logic": "BASE::WARP_SCHEDULER ENDPRG handling and post-flush callback/block-slot bookkeeping",
+        "commit_fix_summary": "The commit removes warp-finish callback and block-slot release from the ENDPRG case, keeps one extra flush cycle after initwarp(), and performs the callback plus slot bookkeeping only when endprg_flush_pipe is observed in the next cycle.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Move m_warp_finish_callback and block-slot updates back into the ENDPRG case instead of the top-of-loop endprg_flush_pipe handler."
+      },
+      "expected_failure_mode": "The scheduler can dispatch a new warp into a slot that the previous warp has not finished flushing, causing overlapping slot ownership, inconsistent block-slot counts, or assertion failures.",
+      "evidence_for_injection": [
+        "The old ENDPRG path both deactivated the warp and immediately performed callback plus block-slot release.",
+        "The fix introduces a separate top-of-loop handler keyed by endprg_flush_pipe, proving the completion bookkeeping was intentionally delayed one cycle.",
+        "The added assertion in BASE::receive_warp guards exactly against receiving a new warp into a still-active hardware slot."
+      ],
+      "notes": [
+        "The BASE.cpp assertion is diagnostic evidence; the actual behavioral fault lives in warp_scheduler.cpp timing.",
+        "This injection is portable to any scheduler that reuses execution slots before end-of-pipe cleanup completes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交通过把 warp 完成回调和 block-slot 释放延迟到 ENDPRG 额外冲刷周期结束之后，修复了模拟器中的 warp 调度语义。",
+    "why_it_counts": [
+      "补丁修改了核心调度器中建模的 warp 退休与派发时序。",
+      "它修复的是 pipeline flush 完成与 CTA 调度器复用同一硬件 warp 槽位之间的真实冲突。",
+      "该缺陷会导致一个 warp 槽位出现重叠占用，属于核心执行语义错误。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "warp_scheduler.cpp 将 m_warp_finish_callback 和 block-slot 释放从 ENDPRG 分支移出，改为在下一周期检测到 endprg_flush_pipe 时执行。",
+      "ENDPRG 分支现在只负责关闭 warp、调用 initwarp()，并请求一个额外的冲刷周期。",
+      "BASE.cpp 新增断言，要求新接收的 hardware warp 之前不能已经处于 active 状态，这与槽位冲突症状一致。"
+    ],
+    "touched_dut_files": [
+      "src/sm/BASE.cpp",
+      "src/sm/warp_scheduler.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一个 warp 或线程上下文执行到程序结束时，很多流水线仍需要最后一个 flush 周期，才能真正释放该硬件槽位。因此退休记账必须严格排序：在 flush 完成之前，调度器不能把这个槽位报告给更高层的 block/CTA 调度器为“可复用”。如果完成事件上报过早，新 warp 就可能被分配到一个前任上下文还在冲刷流水线的槽位中，造成生命周期重叠、槽位记账损坏，甚至直接触发调度断言。",
+      "portable_injection_spec": {
+        "affected_mechanism": "END 后冲刷期间的 warp 退休与槽位释放时序",
+        "trigger_condition": "某个 warp 执行 ENDPRG 或等效结束指令，且设计要求至少再过一个周期才能完成冲刷流水线并复用该槽位。",
+        "injection_action": "在程序结束时立刻释放 warp 槽位并通知上层调度器，而不是等到 flush-complete 事件之后。",
+        "implementation_pattern": "把完成记账前移到 flush 完成之前",
+        "portability_notes": [
+          "把该模式映射到任何把逻辑程序结束与物理槽位复用分离开的 SIMT 调度器或线程上下文分配器。",
+          "关键缺陷是“过早回收槽位”，而不是具体的 flush 标志命名。",
+          "如果设计存在 callback、free-list push 或 running-count decrement，将其中任一个提前执行都可以复现该问题。"
+        ],
+        "concrete_injection_steps": [
+          "找到终止 warp/线程被标记为 inactive 的位置，以及把其槽位返还给 block/CTA 调度器的位置。",
+          "把槽位释放或完成通知从 post-flush 路径移回到程序结束的立即路径。",
+          "保留 flush 状态机或一拍 drain 行为不变，使旧上下文在被报告完成后仍短暂占用流水线。",
+          "执行 back-to-back 的 warp 派发，让新 warp 在旧 warp 的 flush 实际完成前就进入同一槽位。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/sm/BASE.cpp",
+          "src/sm/warp_scheduler.cpp"
+        ],
+        "target_module_or_logic": "BASE::WARP_SCHEDULER 的 ENDPRG 处理与 post-flush 回调/block-slot 记账",
+        "commit_fix_summary": "该提交把 warp 完成回调和 block-slot 释放从 ENDPRG 分支中删除，在 initwarp() 之后保留一个额外 flush 周期，并只在下一周期观察到 endprg_flush_pipe 时再执行回调和槽位记账。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "将 m_warp_finish_callback 和 block-slot 更新重新移回 ENDPRG 分支，而不是留在循环开头的 endprg_flush_pipe 处理路径。"
+      },
+      "expected_failure_mode": "调度器可能把新 warp 分配到前一个 warp 还没冲刷完成的槽位中，导致槽位重叠占用、block-slot 计数不一致，或触发断言失败。",
+      "evidence_for_injection": [
+        "旧的 ENDPRG 路径在停用 warp 的同时立即执行 callback 与 block-slot 释放。",
+        "修复引入了基于 endprg_flush_pipe 的独立下一周期处理，说明完成记账被有意延后了一拍。",
+        "BASE::receive_warp 中新增的断言正是为了防止新 warp 被送入仍处于激活状态的硬件槽位。"
+      ],
+      "notes": [
+        "BASE.cpp 中新增的断言只是诊断证据；真正的行为缺陷在 warp_scheduler.cpp 的时序。",
+        "该注入模式可以迁移到任何在管线清理完成前就复用执行槽位的调度器设计。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "dataset_id": 203,
+  "original_review_id": 244,
+  "meta": {
+    "id": 244,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "405ac4fde2fef105910f4fc9ecb86e0852cb4756",
+    "subject": "bug: wrong Cache and SharedMem behavior, wrong ready/valid in ibuffer when flush comes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes vector move semantics and vector load-store opcode dispatch so move-class instructions use pure operand pass-through instead of ADD-style decoding and 12-bit vector memory opcodes enter the correct decode table.",
+    "why_it_counts": [
+      "The patch changes decode and ALU behavior in core DUT files.",
+      "It corrects functional instruction semantics for vector move and vector memory operations rather than adding a feature.",
+      "The decode mistakes are localized and portable enough for direct fault injection."
+    ],
+    "disqualifiers": [
+      "The subject line mentions cache, shared-memory, and ibuffer bugs, but the actual DUT edits are in decode and ALU logic.",
+      "The commit is mixed with build and test-data updates."
+    ],
+    "evidence": [
+      "ALU.scala adds FN_A2ZERO and makes ScalarALU return io.in1 for that function.",
+      "DecodeUnit.scala changes VMV_V_V, VFMV_V_F, VMV_V_X, VMV_X_S, VMV_S_X, VFMV_F_S, and VFMV_S_F away from generic ADD-style operand selection to pass-through forms using FN_A1ZERO or FN_A2ZERO.",
+      "InstrDecodeV2 changes top-level opcode dispatch from exact 0000111 and 0100111 matches to 1111011 and 0?00111 patterns for vector load-store decoding.",
+      "The remaining changed files are build and test collateral, not additional DUT logic."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/ALU.scala",
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Vector move instructions should copy one source operand directly into the destination path. If decode instead routes them through a generic two-input arithmetic operation, the implementation may read an unrelated second operand, combine values incorrectly, or select the wrong immediate path. Separately, vector load-store and shared-memory style opcodes must be classified into the correct decode family; if the opcode-class match is too narrow or stale, legal memory instructions can take the wrong control path or decode as unsupported.",
+      "portable_injection_spec": {
+        "affected_mechanism": "vector move decode semantics and vector memory opcode-family dispatch",
+        "trigger_condition": "Execution of move-class vector instructions or vector memory instructions that rely on the affected opcode family match.",
+        "injection_action": "Map move instructions back to generic ADD-style two-operand semantics and or narrow the opcode-family match so some vector memory opcodes fall into the wrong decode path.",
+        "implementation_pattern": "restore stale decode-table entry; misclassify opcode family at top-level decode select",
+        "portability_notes": [
+          "The move bug applies to any vector or SIMD design where move instructions should be operand pass-through rather than arithmetic.",
+          "The opcode-family bug applies to designs with a top-level decoder that first selects an instruction family before entering a detailed lookup table.",
+          "Inject either sub-bug alone if the target DUT lacks the exact same instruction set extension mix."
+        ],
+        "concrete_injection_steps": [
+          "Find the decode entries for vector move, scalar-to-vector move, vector-to-scalar move, and floating-point move variants.",
+          "Change those entries so they use a normal two-input arithmetic function and restore a live source selection on the operand that should have been ignored.",
+          "Find the top-level opcode-family selector that routes vector memory operations into their dedicated decode table.",
+          "Replace the current family match with the narrower or older pattern so at least one valid vector memory or shared-memory opcode no longer reaches the intended decode table."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/ALU.scala",
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "ScalarALU pass-through functions and DecodeUnit vector move and vector memory decode tables",
+        "commit_fix_summary": "The commit adds FN_A2ZERO in ALU.scala, remaps move-class vector instructions to FN_A1ZERO or FN_A2ZERO with corrected operand selectors, and updates the top-level vector memory opcode-family match in InstrDecodeV2.",
+        "mutation_strategy": "restore stale move decode entries and stale opcode matcher",
+        "source_level_edit_anchor": "Delete or stop using FN_A2ZERO, revert the VMV and VFMV decode rows to ADD-style operand selection, and restore the older opcode-family cases that no longer match the 1111011 and 0?00111 instruction forms."
+      },
+      "expected_failure_mode": "Move instructions read or combine the wrong operand, and some vector memory or shared-memory instructions decode into the wrong execution path or appear unsupported.",
+      "evidence_for_injection": [
+        "Before the fix, move instructions reused FN_ADD semantics with a live second operand field instead of a dedicated pass-through ALU operation.",
+        "The fix explicitly added A1ZERO and A2ZERO style pass-through decode patterns, which is direct evidence of previously wrong source selection.",
+        "The opcode-family selector was updated independently of the detailed table entries, showing that legal vector memory opcodes were being routed to the wrong table."
+      ],
+      "notes": [
+        "A move-semantics injection is the most portable primary mutation.",
+        "Ignore build.sc and the added test-data files when recreating the DUT fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了向量 move 语义和向量 load/store 的操作码分派问题，使 move 类指令使用纯粹的操作数直通而非 ADD 风格解码，并让 12-bit 向量访存操作码进入正确的解码表。",
+    "why_it_counts": [
+      "补丁修改的是核心 DUT 文件中的解码和 ALU 行为。",
+      "它修正的是向量 move 与向量访存操作的真实功能语义，而不是新增功能。",
+      "这些解码错误足够局部，也足够可移植，适合直接进行故障注入。"
+    ],
+    "disqualifiers": [
+      "提交标题提到 cache、shared-memory 和 ibuffer，但实际的 DUT 修改集中在 decode 和 ALU 逻辑。",
+      "该提交混入了 build 与测试数据更新。"
+    ],
+    "evidence": [
+      "ALU.scala 新增 FN_A2ZERO，并让 ScalarALU 在该功能码下直接输出 io.in1。",
+      "DecodeUnit.scala 把 VMV_V_V、VFMV_V_F、VMV_V_X、VMV_X_S、VMV_S_X、VFMV_F_S、VFMV_S_F 等指令从通用 ADD 风格操作数选择改成使用 FN_A1ZERO 或 FN_A2ZERO 的直通形式。",
+      "InstrDecodeV2 把顶层向量访存分派条件从精确匹配 0000111 和 0100111 改成 1111011 与 0?00111 模式。",
+      "其余改动文件属于 build 和测试资产，不是额外的 DUT 逻辑。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/ALU.scala",
+      "ventus/src/pipeline/DecodeUnit.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "向量 move 指令应当把一个源操作数直接复制到目标路径中。如果解码仍把它们当作普通双输入算术运算，硬件就可能错误地读取另一个源操作数、把值做了不该有的组合，或者选错立即数路径。另一个问题是，向量 load/store 与 shared-memory 风格操作码必须先被分派到正确的解码家族；如果顶层操作码家族匹配条件过窄或过时，合法的访存指令就会走错控制路径，甚至被当成不支持指令。",
+      "portable_injection_spec": {
+        "affected_mechanism": "向量 move 解码语义与向量访存操作码家族分派",
+        "trigger_condition": "执行 move 类向量指令，或执行依赖该操作码家族匹配的向量访存指令时。",
+        "injection_action": "把 move 指令重新映射为通用 ADD 风格的双输入语义，和或把操作码家族匹配缩窄，使部分向量访存操作码落入错误的解码路径。",
+        "implementation_pattern": "恢复过时的解码表项；在顶层解码选择中误分类操作码家族",
+        "portability_notes": [
+          "move 缺陷适用于任何把 move 指令实现为直通而非算术的向量或 SIMD 设计。",
+          "操作码家族缺陷适用于先选择大类解码表、再进入细粒度查表的解码结构。",
+          "如果目标 DUT 没有完全相同的扩展指令组合，可以只注入其中一个子缺陷。"
+        ],
+        "concrete_injection_steps": [
+          "找到向量 move、标量到向量 move、向量到标量 move，以及浮点 move 变体的解码项。",
+          "把这些解码项改回普通双输入算术功能，并重新启用本应被忽略的那个源操作数选择。",
+          "找到把向量访存操作分派到专用解码表的顶层操作码家族选择逻辑。",
+          "把当前的家族匹配改回更窄或更旧的模式，使至少一种合法向量访存或 shared-memory 操作码无法进入预期解码表。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/ALU.scala",
+          "ventus/src/pipeline/DecodeUnit.scala"
+        ],
+        "target_module_or_logic": "ScalarALU 直通功能码，以及 DecodeUnit 中向量 move 与向量访存解码表",
+        "commit_fix_summary": "该提交在 ALU.scala 中增加 FN_A2ZERO，把 move 类向量指令重映射到 FN_A1ZERO 或 FN_A2ZERO 并修正操作数选择，同时更新了 InstrDecodeV2 中向量访存的顶层操作码家族匹配。",
+        "mutation_strategy": "恢复旧的 move 解码项和旧的操作码匹配器",
+        "source_level_edit_anchor": "删除或停止使用 FN_A2ZERO，把 VMV 和 VFMV 相关解码行改回 ADD 风格操作数选择，并恢复无法匹配 1111011 与 0?00111 指令形式的旧家族分派条件。"
+      },
+      "expected_failure_mode": "move 指令会读取或组合错误的源操作数，部分向量访存或 shared-memory 指令会进入错误的执行路径，或被错误地视为不支持。",
+      "evidence_for_injection": [
+        "修复前，move 指令复用了 FN_ADD 语义，而且第二个源操作数字段仍然处于激活状态，而不是使用专门的直通 ALU 功能。",
+        "补丁显式加入了 A1ZERO 和 A2ZERO 风格的直通解码模式，这直接说明此前的源操作数选择不正确。",
+        "操作码家族选择器被单独更新，说明原本有合法的向量访存操作码被路由到了错误的解码表。"
+      ],
+      "notes": [
+        "最可移植的主注入方式是恢复 move 语义错误。",
+        "重新构造 DUT 故障时应忽略 build.sc 和新增的测试数据文件。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "dataset_id": 405,
+  "original_review_id": 513,
+  "meta": {
+    "id": 513,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "611ceb000a4e3b35e0d428826a921d347b7d7cd8",
+    "subject": "fixed warp_sched lock bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "This mixed RTL commit clearly fixes a front-end warp-lock release bug. A warp is now unlocked on an accepted I-cache response event instead of on a derived valid-mask condition that was also blocked by local stall state.",
+    "why_it_counts": [
+      "The commit message explicitly names a warp scheduler lock bug.",
+      "The patch changes scheduler/front-end RTL interfaces and the lock-release condition itself.",
+      "The new icache_stage_response signal is generated from a real response-pop event and used to release warp_lock."
+    ],
+    "disqualifiers": [
+      "The commit also bundles several unrelated RTL fixes and large runtime artifacts."
+    ],
+    "evidence": [
+      "VX_warp_sched.v changes unlock from (| icache_stage_valids) && !stall to icache_stage_response.",
+      "VX_icache_stage.v replaces icache_stage_valids with icache_stage_response and defines it as mrq_pop, i.e. an accepted I-cache response.",
+      "VX_fetch.v and VX_front_end.v propagate the new response-based unlock signal through the front-end interface."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_warp_sched.v",
+      "hw/rtl/VX_icache_stage.v",
+      "hw/rtl/VX_fetch.v",
+      "hw/rtl/VX_front_end.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A fetch scheduler that locks an execution context after issuing an instruction fetch must release that lock when the matching fetch response is actually accepted. If unlock is instead tied to a derived decode-valid indication or is suppressed by unrelated stall state, the response can arrive without clearing the lock, leaving the context permanently unschedulable.",
+      "portable_injection_spec": {
+        "affected_mechanism": "fetch-response-driven scheduler lock release",
+        "trigger_condition": "A warp or thread group has been locked after fetch issue, and the instruction-cache response returns while local stall or valid-mask conditions do not match the old derived unlock predicate.",
+        "injection_action": "Replace the accepted-response unlock event with a derived valid-mask signal and/or gate unlock with local stall.",
+        "implementation_pattern": "restore stale unlock condition",
+        "portability_notes": [
+          "Any front-end that tracks outstanding fetches with a per-context lock can exhibit this bug.",
+          "The important distinction is accepted response handshake versus downstream decoded-valid indication.",
+          "If the target DUT uses a queue tag or response-pop event, that event is the correct anchor to mutate."
+        ],
+        "concrete_injection_steps": [
+          "Locate the state bit that prevents a context from being rescheduled while an instruction fetch is outstanding.",
+          "Find the event that clears that bit on fetch completion.",
+          "Replace the completion event with a weaker derived signal such as decoded thread valids, or add an unrelated stall guard to the unlock path.",
+          "Keep the lock-acquire path unchanged so the reinjected failure is specifically an unlock omission."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_warp_sched.v",
+          "hw/rtl/VX_icache_stage.v",
+          "hw/rtl/VX_fetch.v",
+          "hw/rtl/VX_front_end.v"
+        ],
+        "target_module_or_logic": "front-end warp_lock release on I-cache response",
+        "commit_fix_summary": "The fix introduces icache_stage_response as a response-pop event from VX_icache_stage and uses it in VX_warp_sched to clear warp_lock without the old stall-gated valid-mask condition.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change VX_warp_sched back to unlocking on (| icache_stage_valids) && !stall, and propagate a valid-mask-style signal from the I-cache stage instead of the response-pop event."
+      },
+      "expected_failure_mode": "A warp can stay locked after its fetch response arrives, producing front-end stalls or a full forward-progress hang.",
+      "evidence_for_injection": [
+        "The commit creates a dedicated response event solely to fix unlock timing.",
+        "The old and new unlock predicates are both visible in the diff, so the reverse mutation is concrete.",
+        "The interface changes across VX_icache_stage, VX_fetch, and VX_front_end show this is a real protocol correction, not a local cleanup."
+      ],
+      "notes": [
+        "Other RTL fixes in the commit are real but not needed for this injection target.",
+        "This injection is portable to any fetch pipeline that locks contexts until instruction return."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "这个混合 RTL 提交中有一处明确的前端 warp-lock 释放修复。修复后，warp 会在 I-cache 响应真正被接收时解锁，而不是依赖一个从 valid-mask 推导出的条件，并且旧条件还会被本地 stall 状态额外阻塞。",
+    "why_it_counts": [
+      "提交信息明确点名了 warp scheduler lock bug。",
+      "补丁同时修改了调度器/前端 RTL 接口以及 lock-release 条件本身。",
+      "新的 icache_stage_response 由真实的 I-cache 响应 pop 事件生成，并被用于释放 warp_lock。"
+    ],
+    "disqualifiers": [
+      "该提交还捆绑了多个无关 RTL 修复以及大量 runtime 产物。"
+    ],
+    "evidence": [
+      "VX_warp_sched.v 把解锁条件从 (| icache_stage_valids) && !stall 改成了 icache_stage_response。",
+      "VX_icache_stage.v 用 icache_stage_response 替代 icache_stage_valids，并把它定义为 mrq_pop，也就是真实被接收的 I-cache 响应。",
+      "VX_fetch.v 和 VX_front_end.v 把这个基于响应的解锁信号沿前端接口继续向上传递。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_warp_sched.v",
+      "hw/rtl/VX_icache_stage.v",
+      "hw/rtl/VX_fetch.v",
+      "hw/rtl/VX_front_end.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "如果前端调度器在发出取指后会锁住某个执行上下文，那么它必须在对应的取指响应真正被接收时释放该锁。如果解锁依赖的是解码 valid 这类派生信号，或者又被无关的 stall 状态额外门控，那么即使响应已经返回，锁也可能不会清除，导致该上下文永久无法再次调度。",
+      "portable_injection_spec": {
+        "affected_mechanism": "基于取指响应的调度器锁释放",
+        "trigger_condition": "某个 warp 或线程组在发出 fetch 后已被锁住，而 I-cache 响应返回时，本地 stall 或 valid-mask 条件不满足旧的派生解锁谓词。",
+        "injection_action": "把基于真实响应接收的解锁事件改回派生 valid-mask 信号，或重新加上本地 stall 门控。",
+        "implementation_pattern": "restore stale unlock condition",
+        "portability_notes": [
+          "任何使用每上下文 lock 来跟踪未完成 fetch 的前端都可能出现此类缺陷。",
+          "关键区别在于：正确事件是“响应握手已完成”，而不是“下游 decode 看到某些 valid”。",
+          "如果目标 DUT 使用队列 tag 或 response-pop 事件，那就是最合适的注入锚点。"
+        ],
+        "concrete_injection_steps": [
+          "找到用于阻止某个上下文在取指未完成时再次被调度的状态位。",
+          "定位该状态位在 fetch 完成后被清除的事件。",
+          "把该清除事件替换成更弱的派生信号，例如 decoded thread valids，或者在解锁路径上增加无关 stall 条件。",
+          "保持加锁路径不变，使回注缺陷集中表现为“解锁遗漏”。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_warp_sched.v",
+          "hw/rtl/VX_icache_stage.v",
+          "hw/rtl/VX_fetch.v",
+          "hw/rtl/VX_front_end.v"
+        ],
+        "target_module_or_logic": "I-cache 响应驱动的前端 warp_lock 释放",
+        "commit_fix_summary": "修复通过在 VX_icache_stage 中引入代表 response-pop 的 icache_stage_response，并在 VX_warp_sched 中用它替代旧的 stall-gated valid-mask 解锁条件。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 VX_warp_sched 改回用 (| icache_stage_valids) && !stall 解锁，并在 I-cache stage 到前端之间重新传递 valid-mask 风格的信号，而不是 response-pop 事件。"
+      },
+      "expected_failure_mode": "某个 warp 在取指响应到达后仍保持锁定，导致前端停顿，严重时会完全失去前进能力。",
+      "evidence_for_injection": [
+        "该提交专门新增了一个响应事件来修复解锁时机。",
+        "diff 中同时给出了旧解锁谓词和新解锁谓词，因此可逆向注入非常具体。",
+        "VX_icache_stage、VX_fetch、VX_front_end 的接口同步变更说明这是真实协议修复，而不是局部清理。"
+      ],
+      "notes": [
+        "提交中的其他 RTL 修复虽然真实存在，但不是本次注入目标所必需的部分。",
+        "该注入可迁移到任何在指令返回前锁住执行上下文的 fetch 流水线。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

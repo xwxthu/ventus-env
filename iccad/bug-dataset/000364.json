@@ -1,0 +1,145 @@
+{
+  "dataset_id": 364,
+  "original_review_id": 446,
+  "meta": {
+    "id": 446,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "56ea51d5c0f6b2e3081b7a83aaf2252ce69fa6c6",
+    "subject": "fix warp PDS base addr bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "This commit fixes per-wavefront PDS base addressing by carrying the per-wavefront PDS size through CTA scheduling and incrementing the base each time a workgroup is split into successive wavefronts.",
+    "why_it_counts": [
+      "The subject explicitly names a warp PDS base-address bug.",
+      "The fix is in CTA scheduling and CU-interface hardware logic, which directly determines memory base addresses seen by the DUT.",
+      "Reusing one workgroup base for multiple wavefronts can alias private memory regions and corrupt execution."
+    ],
+    "disqualifiers": [
+      "The simulator-side changes are supporting updates, not the primary DUT fix."
+    ],
+    "evidence": [
+      "ventus/src/cta/cta_scheduler.scala adds num_pds_per_wf to the host-to-CU metadata.",
+      "ventus/src/top/GPGPU_top.scala now forwards host_pds_size_per_wf into CTA scheduling metadata.",
+      "ventus/src/cta/cu_interface.scala adds splitter_pds_addr and increments it on each cu_wf_new fire before assigning io.cu_wf_new(i).bits.pds_base."
+    ],
+    "touched_dut_files": [
+      "ventus/src/cta/cta_scheduler.scala",
+      "ventus/src/cta/cu_interface.scala",
+      "ventus/src/top/GPGPU_top.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a workgroup is decomposed into multiple wavefronts, each wavefront needs its own private-data base address window. If the control path forwards only the workgroup-level base and never increments it per wavefront, all wavefronts can address the same private-data segment, causing aliasing and memory corruption in any unit that uses that base for local or per-wave data.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Per-wavefront private-data base propagation",
+        "trigger_condition": "A workgroup with more than one wavefront uses a per-wavefront private data space or scratch region whose base should advance for each dispatched wavefront.",
+        "injection_action": "Keep the base address constant for all wavefronts in the workgroup instead of stepping it by the per-wavefront allocation size.",
+        "implementation_pattern": "remove per-subwave base increment",
+        "portability_notes": [
+          "Map PDS to any per-wavefront private memory, scratchpad window, or base CSR that is derived during wavefront dispatch.",
+          "The bug should live in the scheduler or splitter that expands one workgroup into multiple wavefront launches.",
+          "This is easiest to validate with a multi-wavefront workgroup where each wavefront uses a disjoint private-memory region."
+        ],
+        "concrete_injection_steps": [
+          "Locate the metadata field that carries per-wavefront private-memory size or stride during workgroup dispatch.",
+          "Remove its propagation or ignore it when generating each wavefront's base address.",
+          "Emit the original workgroup-level base for every wavefront instead of base plus wavefront_index times stride."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/cta/cu_interface.scala",
+          "ventus/src/cta/cta_scheduler.scala",
+          "ventus/src/top/GPGPU_top.scala"
+        ],
+        "target_module_or_logic": "CTA splitter logic that derives each cu_wf_new pds_base",
+        "commit_fix_summary": "The fix adds num_pds_per_wf metadata and uses splitter_pds_addr to step pds_base each time a new wavefront is emitted from a workgroup.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove num_pds_per_wf propagation and revert splitter_pds_addr so io.cu_wf_new(i).bits.pds_base always uses the original workgroup base."
+      },
+      "expected_failure_mode": "Different wavefronts in the same workgroup use overlapping or wrong private-data address ranges, causing corrupted private-memory accesses and incorrect execution results.",
+      "evidence_for_injection": [
+        "The fix adds a new per-wavefront PDS size field rather than just renaming existing signals, showing the old metadata was insufficient.",
+        "cu_interface.scala now maintains a dedicated splitter_pds_addr register and increments it on each wavefront dispatch.",
+        "The top-level host interface now passes host_pds_size_per_wf explicitly into CTA scheduling."
+      ],
+      "notes": [
+        "The cleanest reinjection point is the base-address stepper in cu_interface.scala.",
+        "Do not treat the simulator wrapper changes as the primary mutation site."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "该提交修复了每个 wavefront 的 PDS 基地址分配：通过在 CTA 调度路径上传递每-wavefront 的 PDS 大小，并在一个 workgroup 被拆成多个 wavefront 时逐次递增基址。",
+    "why_it_counts": [
+      "提交标题明确指出了 warp PDS base address bug。",
+      "修复位于 CTA 调度和 CU 接口硬件逻辑中，直接决定 DUT 可见的内存基地址。",
+      "若多个 wavefront 重用同一个 workgroup 基址，就会让私有内存区域发生别名和破坏。"
+    ],
+    "disqualifiers": [
+      "仿真器侧修改是配套更新，不是主 DUT 修复。"
+    ],
+    "evidence": [
+      "ventus/src/cta/cta_scheduler.scala 在 host-to-CU 元数据中新增了 num_pds_per_wf。",
+      "ventus/src/top/GPGPU_top.scala 现在会把 host_pds_size_per_wf 传入 CTA 调度元数据。",
+      "ventus/src/cta/cu_interface.scala 新增 splitter_pds_addr，并在每次 cu_wf_new fire 时递增，再写入 io.cu_wf_new(i).bits.pds_base。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/cta/cta_scheduler.scala",
+      "ventus/src/cta/cu_interface.scala",
+      "ventus/src/top/GPGPU_top.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一个 workgroup 被拆分成多个 wavefront 时，每个 wavefront 都需要独立的私有数据基地址窗口。如果控制路径只转发 workgroup 级基址、却不按 wavefront 递增，那么所有 wavefront 都可能访问同一段私有数据区域，进而在任何依赖该基址的本地或每-wave 数据单元中产生别名和内存破坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "每-wavefront 私有数据基址传播",
+        "trigger_condition": "某个包含多个 wavefront 的 workgroup 使用了应按 wavefront 递增的私有数据空间或 scratch 区域。",
+        "injection_action": "让 workgroup 内所有 wavefront 继续使用同一个常量基址，而不是按每-wavefront 分配大小递增。",
+        "implementation_pattern": "remove per-subwave base increment",
+        "portability_notes": [
+          "可将这里的 PDS 映射到任意在 wavefront 派发阶段派生的每-wavefront 私有内存、scratchpad 窗口或基址 CSR。",
+          "该错误应位于把一个 workgroup 展开成多个 wavefront 启动的 scheduler 或 splitter 中。",
+          "最适合用包含多个 wavefront 且每个 wavefront 使用不同私有内存区域的工作负载来验证。"
+        ],
+        "concrete_injection_steps": [
+          "定位在 workgroup 派发过程中承载每-wavefront 私有内存大小或步长的元数据字段。",
+          "删除该字段的传播，或在生成每个 wavefront 的基址时忽略它。",
+          "让所有 wavefront 都输出原始 workgroup 级基址，而不是 base 加上 wavefront_index 乘以 stride。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/cta/cu_interface.scala",
+          "ventus/src/cta/cta_scheduler.scala",
+          "ventus/src/top/GPGPU_top.scala"
+        ],
+        "target_module_or_logic": "为每个 cu_wf_new 生成 pds_base 的 CTA splitter 逻辑",
+        "commit_fix_summary": "该修复新增了 num_pds_per_wf 元数据，并通过 splitter_pds_addr 在每次从一个 workgroup 发出新 wavefront 时递增 pds_base。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 num_pds_per_wf 的传播，并回退 splitter_pds_addr，使 io.cu_wf_new(i).bits.pds_base 始终使用原始 workgroup 基址。"
+      },
+      "expected_failure_mode": "同一 workgroup 内不同 wavefront 会使用重叠或错误的私有数据地址范围，导致私有内存访问损坏和错误执行结果。",
+      "evidence_for_injection": [
+        "修复新增的是每-wavefront 的 PDS 大小字段，而不是简单重命名，说明旧元数据不足以表达正确行为。",
+        "cu_interface.scala 现在维护一个专用的 splitter_pds_addr 寄存器，并在每次 wavefront 派发时递增。",
+        "顶层 host 接口现在显式传入 host_pds_size_per_wf。"
+      ],
+      "notes": [
+        "最直接的回注点是 cu_interface.scala 中的基址递增器。",
+        "不要把仿真包装层修改当作主要突变位置。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

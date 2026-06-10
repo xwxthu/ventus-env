@@ -1,0 +1,139 @@
+{
+  "dataset_id": 423,
+  "original_review_id": 547,
+  "meta": {
+    "id": 547,
+    "repo": "vortex",
+    "branch": "bug_fixes",
+    "commit": "a1db893328c582737bf96089397e09a4f48824b6",
+    "subject": "CTA bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "This commit fixes CTA dispatch semantics. The dispatcher now uses slot-local CTA IDs for CTA CSRs and barriers, corrects local-memory admission and reclaim behavior, and matches scheduler and sim warp-start behavior.",
+    "why_it_counts": [
+      "Central CTA dispatch RTL is changed to correct CTA-local control state",
+      "RTL and simulator are aligned on CTA ID, warp restart behavior, and in-order local-memory reclamation"
+    ],
+    "disqualifiers": [
+      "The commit also adds extensive KMU and dispatcher tracing"
+    ],
+    "evidence": [
+      "VX_cta_dispatch.sv changes cta_csrs.cta_id from the incoming KMU CTA ID to cur_slot_r for local barrier indexing",
+      "VX_cta_dispatch.sv removes pre-registered lmem_ok_r and computes kmu_bus_if.ready from current free_size_r",
+      "VX_scheduler.sv changes reused-warp restart from PC-2 to PC-12, and sim/simx/cta_dispatcher.cpp plus emulator.cpp mirror the same behavior"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv",
+      "hw/rtl/core/VX_scheduler.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When multiple CTAs share a finite pool of execution slots, per-CTA barrier and control state must be indexed by the local slot actually holding the CTA, not by a global launch sequence number. Using a global CTA ID to address slot-local state lets one CTA read or update another CTA's barrier or control context once slots are reused or multiple CTAs are resident.",
+      "portable_injection_spec": {
+        "affected_mechanism": "slot-local CTA and barrier state indexing",
+        "trigger_condition": "More than one CTA is active or slots are recycled while barrier or control lookups still use a global CTA identifier.",
+        "injection_action": "Drive per-CTA control state with the incoming global CTA ID instead of the allocated slot ID.",
+        "implementation_pattern": "source per-slot CSR or barrier index from launch identifier rather than dispatch-slot register",
+        "portability_notes": [
+          "Apply this only where the design stores CTA-local state in a finite slot table or warp-to-CTA mapping.",
+          "If the design separates software-visible CTA ID from hardware slot ID, corrupt only the hardware-slot path.",
+          "The bug can be reproduced even if software-visible CTA numbering still appears correct."
+        ],
+        "concrete_injection_steps": [
+          "Identify the register or field that tags dispatched warps with the CTA identifier used by barrier or local-state logic.",
+          "Replace the slot or allocation index with the incoming CTA launch ID or another non-local identifier.",
+          "Leave warp dispatch, slot allocation, and retirement otherwise unchanged.",
+          "Verify the injected bug under multiple concurrent CTAs or slot reuse, not just single-CTA kernels."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv",
+          "hw/rtl/core/VX_scheduler.sv"
+        ],
+        "target_module_or_logic": "CTA dispatch CSR generation and reused-warp launch context",
+        "commit_fix_summary": "VX_cta_dispatch.sv now assigns cta_csrs.cta_id = cur_slot_r for barrier indexing instead of the incoming KMU CTA ID; the same commit also fixes lmem admission/reclaim and reused-warp restart handling.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore cta_csrs.cta_id to the incoming KMU CTA ID path in VX_cta_dispatch.sv instead of using cur_slot_r."
+      },
+      "expected_failure_mode": "CTA-local barriers or other slot-indexed control state can be routed to the wrong resident CTA, causing synchronization failure or corrupted dispatch state when multiple CTAs are active.",
+      "evidence_for_injection": [
+        "The patched line is explicitly commented as local slot index use for barrier indexing.",
+        "The broken behavior only needs slot reuse or multiple live CTAs; it does not depend on unrelated simulator scaffolding.",
+        "The same commit updates simulator CTA records to use the slot-local identifier, reinforcing that the original semantic mismatch was real."
+      ],
+      "notes": [
+        "This commit contains other real CTA fixes, but the slot-ID bug is the cleanest reusable injection target.",
+        "Injecting the lmem-admission or restart-PC bugs would also be possible, but they are less portable than the slot-indexing error."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了 CTA 分发语义。dispatcher 现在为 CTA CSR 和 barrier 使用槽位本地 CTA ID，修正了本地内存准入与回收行为，并与 scheduler 及模拟器的 warp 启动行为保持一致。",
+    "why_it_counts": [
+      "核心 CTA dispatch RTL 被修改以修正 CTA 本地控制状态",
+      "RTL 与模拟器在 CTA ID、warp 重启行为以及按序回收本地内存方面达成一致"
+    ],
+    "disqualifiers": [
+      "该提交还加入了大量 KMU 和 dispatcher tracing"
+    ],
+    "evidence": [
+      "VX_cta_dispatch.sv 把 cta_csrs.cta_id 从传入的 KMU CTA ID 改成了用于本地 barrier 索引的 cur_slot_r",
+      "VX_cta_dispatch.sv 删除了预寄存的 lmem_ok_r，并直接用当前 free_size_r 计算 kmu_bus_if.ready",
+      "VX_scheduler.sv 把复用 warp 的重启地址从 PC-2 改为 PC-12，sim/simx/cta_dispatcher.cpp 和 emulator.cpp 也做了相同匹配"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv",
+      "hw/rtl/core/VX_scheduler.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当多个 CTA 共享有限的执行槽位池时，每个 CTA 的 barrier 和控制状态必须用实际承载该 CTA 的本地槽位索引，而不是全局发射序号来索引。如果用全局 CTA ID 访问槽位本地状态，那么在槽位复用或多个 CTA 并存时，一个 CTA 就可能读取或改写另一个 CTA 的 barrier 或控制上下文。",
+      "portable_injection_spec": {
+        "affected_mechanism": "槽位本地 CTA 与 barrier 状态索引",
+        "trigger_condition": "存在多个活动 CTA，或者槽位被回收复用，而 barrier 或控制状态查询仍然使用全局 CTA 标识。",
+        "injection_action": "让每个 CTA 的控制状态继续使用传入的全局 CTA ID，而不是实际分配的槽位 ID。",
+        "implementation_pattern": "把每槽位 CSR 或 barrier 索引从分发槽位寄存器改回发射标识来源",
+        "portability_notes": [
+          "只应在设计把 CTA 本地状态放进有限槽位表或 warp-to-CTA 映射时应用该故障。",
+          "如果设计把“软件可见 CTA ID”和“硬件槽位 ID”分开，应只破坏后者的硬件路径。",
+          "即使软件可见的 CTA 编号看起来仍然正确，这个错误也能被复现。"
+        ],
+        "concrete_injection_steps": [
+          "定位给已分发 warp 打标签、并被 barrier 或本地状态逻辑使用的 CTA 标识寄存器或字段。",
+          "把该标识从槽位/分配索引改回传入的 CTA 发射 ID 或其他非本地标识。",
+          "其余 warp 分发、槽位分配与回收逻辑保持不变。",
+          "在多个 CTA 并发或槽位复用场景下验证注入后的错误，而不是只跑单 CTA kernel。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv",
+          "hw/rtl/core/VX_scheduler.sv"
+        ],
+        "target_module_or_logic": "CTA 分发 CSR 生成与复用 warp 的启动上下文",
+        "commit_fix_summary": "VX_cta_dispatch.sv 现在用 cur_slot_r 给 cta_csrs.cta_id 赋值以进行 barrier 索引，而不再使用传入的 KMU CTA ID；同一提交还修复了 lmem 准入/回收以及复用 warp 的重启处理。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_cta_dispatch.sv 中，把 cta_csrs.cta_id 从 cur_slot_r 恢复为传入的 KMU CTA ID 路径。"
+      },
+      "expected_failure_mode": "CTA 本地 barrier 或其他按槽位索引的控制状态可能被路由到错误的活动 CTA，在多 CTA 并发时导致同步失败或分发状态损坏。",
+      "evidence_for_injection": [
+        "补丁后的代码行明确注释了该值是 barrier 索引所用的本地槽位索引。",
+        "该错误只需要槽位复用或多个 CTA 并存即可触发，不依赖无关的模拟器脚手架。",
+        "同一提交还把模拟器里的 CTA 记录改成使用槽位本地标识，进一步说明原始语义不匹配是真实存在的。"
+      ],
+      "notes": [
+        "该提交还包含其他真实 CTA 修复，但槽位 ID 错误是最干净、最可移植的注入目标。",
+        "lmem 准入或重启 PC 相关错误也可注入，但它们不如槽位索引错误通用。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "dataset_id": 188,
+  "original_review_id": 227,
+  "meta": {
+    "id": 227,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "771bad295f340b952b7893a4b75ec6e3828584d7",
+    "subject": "fixed last bug in a better way"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes remaining L2 miss-completion bugs by decoding the full bank-ready index, retaining refill data across the sink-D handshake, and returning stored miss data instead of always reading the banked store on Get completion.",
+    "why_it_counts": [
+      "The patch touches only core L2 cache implementation files.",
+      "Each modified line changes functional miss-path behavior rather than tests, tooling, or formatting.",
+      "The fixes directly affect bank conflict handling, refill-data retention, and the data source used for final Get responses."
+    ],
+    "disqualifiers": [
+      "The commit message is vague and does not name the failure mode."
+    ],
+    "evidence": [
+      "`BankedStore.scala` changes `b.ready` from `ready(a(0))` to `ready(a(bankBits-1,0))`, fixing bank-ready decode when more than one bank-select bit exists.",
+      "`MSHR.scala` replaces direct use of the live sink-D bus with `RegEnable(io.sinkd.bits.data, io.sinkd.valid)`, preserving refill data across a cycle boundary.",
+      "`SourceD.scala` changes Get completion data from unconditional `io.bs_rdat.data` to `Mux(s_final_req.hit, io.bs_rdat.data, s_final_req.data)`, so a miss completion can return stored miss data.",
+      "All touched files are under `ventus/src/L2cache/`, with no mixed test or build changes in this commit."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/BankedStore.scala",
+      "ventus/src/L2cache/MSHR.scala",
+      "ventus/src/L2cache/SourceD.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "After a cache miss, refill data is often accepted on one interface and reused later when the miss completes. That data must be latched, and the response path must know whether to return newly refilled data or data read from the banked array on a hit. If the design instead reuses a live refill bus, always selects the banked-read path, or decodes bank readiness with too few select bits, certain miss/refill sequences return stale data or falsely report bank availability.",
+      "portable_injection_spec": {
+        "affected_mechanism": "refill-data retention and bank-ready decode on L2 miss completion",
+        "trigger_condition": "Miss/refill sequences where refill payload arrives before the final response cycle, especially in designs with multiple bank-select bits.",
+        "injection_action": "Use only the low bank-select bit for ready decode, feed miss completion from the live refill bus instead of a retained register, and always source Get completion data from the banked-array read path.",
+        "implementation_pattern": "swap_registered_data_for_live_bus",
+        "portability_notes": [
+          "The most portable sub-fault is removing the refill-data latch; the bank-ready decode regression matters when bank selection spans multiple bits.",
+          "Apply the response-data mux mutation only where miss completion can legitimately return either hit-array data or previously stored refill data.",
+          "These edits model a controller that loses track of miss payload provenance across cycles."
+        ],
+        "concrete_injection_steps": [
+          "Locate the miss-tracking structure that captures refill data from a return channel before the final response is generated.",
+          "Replace the retained refill-data register with direct use of the live return bus, or bypass the register when forming the completion payload.",
+          "In the final response mux, force Get completions to read from the normal banked-array data path even for miss cases that should return stored refill data.",
+          "If bank conflict readiness is indexed by multiple bank-select bits, regress the decode so it uses only the least significant select bit."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/BankedStore.scala",
+          "ventus/src/L2cache/MSHR.scala",
+          "ventus/src/L2cache/SourceD.scala"
+        ],
+        "target_module_or_logic": "L2 `BankedStore` ready decode, `MSHR` sink-D data capture, and `SourceD` Get response-data selection",
+        "commit_fix_summary": "The fix uses the full bank-select field in `BankedStore`, latches sink-D refill data in `MSHR`, and makes `SourceD` return stored miss data for miss completions instead of always using `io.bs_rdat.data`.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore `ready(a(0))` in `BankedStore.scala`, replace `RegEnable(io.sinkd.bits.data, io.sinkd.valid)` with the live sink-D bus in `MSHR.scala`, and change `SourceD.scala` back to always returning `io.bs_rdat.data` on Get completion."
+      },
+      "expected_failure_mode": "Some miss/refill completions return stale or incorrect data, and multi-bank configurations may also mis-handle ready/backpressure, leading to data corruption or intermittent stalls.",
+      "evidence_for_injection": [
+        "The patch separately fixes data retention, final data selection, and bank-ready decode, all in the L2 miss path.",
+        "The `MSHR` change is a classic live-bus to registered-data correction, indicating the old design lost refill payload across cycles.",
+        "The `SourceD` mux change proves miss completions were not supposed to use the hit-data path unconditionally."
+      ],
+      "notes": [
+        "This is a follow-up to the earlier consecutive-read-miss fix and bundles several tightly related miss-path corrections into one commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了剩余的 L2 miss 完成路径缺陷：正确解码完整的 bank-ready 索引、跨 sink-D 握手保留 refill 数据，并在 Get 完成时返回保存下来的 miss 数据，而不是始终读取 banked store。",
+    "why_it_counts": [
+      "补丁只修改了核心 L2 cache 实现文件。",
+      "每一处修改都改变了功能性 miss 路径行为，而不是测试、工具或格式。",
+      "这些修复直接影响 bank 冲突处理、refill 数据保留，以及最终 Get 响应的数据来源。"
+    ],
+    "disqualifiers": [
+      "提交信息较为含糊，没有直接说明失败模式。"
+    ],
+    "evidence": [
+      "`BankedStore.scala` 将 `b.ready` 从 `ready(a(0))` 改为 `ready(a(bankBits-1,0))`，修复了存在多个 bank 选择位时的 ready 解码错误。",
+      "`MSHR.scala` 用 `RegEnable(io.sinkd.bits.data, io.sinkd.valid)` 替代对实时 sink-D 总线的直接使用，从而跨周期保留 refill 数据。",
+      "`SourceD.scala` 把 Get 完成时的数据从无条件 `io.bs_rdat.data` 改为 `Mux(s_final_req.hit, io.bs_rdat.data, s_final_req.data)`，使 miss 完成可以返回已保存的数据。",
+      "所有修改文件都位于 `ventus/src/L2cache/` 下，本提交没有混入测试或构建修改。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/BankedStore.scala",
+      "ventus/src/L2cache/MSHR.scala",
+      "ventus/src/L2cache/SourceD.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 cache miss 之后，refill 数据通常会先在一个接口上到达，然后在稍后的 miss 完成阶段被再次使用。该数据必须被锁存，同时响应路径必须知道在命中完成时返回 banked array 读出的数据，还是在 miss 完成时返回新 refill 的数据。如果设计改为直接复用实时 refill 总线、始终选择 banked-read 路径，或者在 ready 解码时只看了过少的 bank 选择位，那么某些 miss/refill 序列就会返回陈旧数据，或错误地宣称 bank 可用。",
+      "portable_injection_spec": {
+        "affected_mechanism": "L2 miss 完成中的 refill 数据保留与 bank-ready 解码",
+        "trigger_condition": "refill 载荷早于最终响应周期到达的 miss/refill 序列；在 bank 选择位超过 1 位的设计中尤为明显。",
+        "injection_action": "只使用最低 bank 选择位做 ready 解码，miss 完成时直接取实时 refill 总线而不使用保留寄存器，并强制 Get 完成总是从 banked-array 读路径取数据。",
+        "implementation_pattern": "swap_registered_data_for_live_bus",
+        "portability_notes": [
+          "最可移植的子故障是移除 refill 数据锁存；bank-ready 解码回退则主要在多 bank 选择位设计中重要。",
+          "只有在 miss 完成路径本来就可能返回“命中阵列数据”或“先前保存的 refill 数据”二者之一时，才实施响应 mux 变异。",
+          "这些修改模拟的是控制器跨周期丢失 miss 载荷来源信息。"
+        ],
+        "concrete_injection_steps": [
+          "定位在最终响应生成之前用于接收并保存 refill 数据的 miss 跟踪结构。",
+          "把保存 refill 数据的寄存器替换成对实时返回总线的直接使用，或在形成完成载荷时绕过该寄存器。",
+          "在最终响应 mux 中，即使是应该返回保存 refill 数据的 miss 情况，也强制 Get 完成走普通 banked-array 数据路径。",
+          "如果 bank 冲突 ready 使用多位 bank 选择索引，再把该解码回退成只看最低位。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/BankedStore.scala",
+          "ventus/src/L2cache/MSHR.scala",
+          "ventus/src/L2cache/SourceD.scala"
+        ],
+        "target_module_or_logic": "L2 中 `BankedStore` 的 ready 解码、`MSHR` 的 sink-D 数据锁存，以及 `SourceD` 的 Get 响应数据选择",
+        "commit_fix_summary": "修复让 `BankedStore` 使用完整 bank 选择字段，在 `MSHR` 中锁存 sink-D refill 数据，并让 `SourceD` 在 miss 完成时返回保存的 miss 数据，而不是始终使用 `io.bs_rdat.data`。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 `BankedStore.scala` 中恢复 `ready(a(0))`，在 `MSHR.scala` 中把 `RegEnable(io.sinkd.bits.data, io.sinkd.valid)` 改回实时 sink-D 总线，并在 `SourceD.scala` 中改回 Get 完成时始终返回 `io.bs_rdat.data`。"
+      },
+      "expected_failure_mode": "某些 miss/refill 完成会返回陈旧或错误数据，多 bank 配置下还可能出现 ready/backpressure 处理错误，表现为数据损坏或间歇性停顿。",
+      "evidence_for_injection": [
+        "该补丁分别修复了数据保留、最终数据选择和 bank-ready 解码，且都位于 L2 miss 路径上。",
+        "`MSHR` 的修改是典型的“实时总线改为寄存数据”修复，说明旧设计会跨周期丢失 refill 载荷。",
+        "`SourceD` 的 mux 修改证明 miss 完成时不应该无条件走命中数据路径。"
+      ],
+      "notes": [
+        "这是前一个连续读 miss 修复的后续提交，并把几个紧密相关的 miss 路径修复打包在一起。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

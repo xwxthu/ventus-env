@@ -1,0 +1,149 @@
+{
+  "dataset_id": 247,
+  "original_review_id": 296,
+  "meta": {
+    "id": 296,
+    "repo": "ventus-gpgpu",
+    "branch": "develop",
+    "commit": "c3e59f3602d86fc066ceffcb5bcaf7d57941ad18",
+    "subject": "bug fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "The patch fixes CTA allocation and CU-interface thread-index bookkeeping so wavefront dispatch uses the right window, indexing base, and pipeline alignment.",
+    "why_it_counts": [
+      "cu_interface.scala changes local thread-index fullness gating and the base used to write threadIdxL_result signals.",
+      "cu_interface.scala also adjusts global thread-index input and output timing, including an extra register stage for alignment.",
+      "allocator.scala fixes multiplier sizing and default operands used in thread-index calculations."
+    ],
+    "disqualifiers": [
+      "The commit also changes testbench code and the emitVerilog helper entry point.",
+      "The fix spans multiple CTA files, so the smallest injectable slice is less isolated than the one-line cache fixes."
+    ],
+    "evidence": [
+      "THREADIDX_CTRL_EXTRA changes from min(NUM_THREAD, 3*THREADIDX_STEP) to CONFIG.GPU.NUM_THREAD.",
+      "threadIdxL_ctrl_full is now gated by wf_sent, and writes use select_base instead of threadIdxL_ctrl_cnt directly.",
+      "threadIdxG_calc2_x gains an extra register stage, and the input and output select windows shrink to THREADIDX_STEP.",
+      "Tests are updated to randomize num_wg values and validate the corrected global 1D thread-index formula."
+    ],
+    "touched_dut_files": [
+      "ventus/src/cta/allocator.scala",
+      "ventus/src/cta/cu_interface.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/cta/cu_interface.scala",
+        "ventus/src/cta/allocator.scala"
+      ],
+      "target_module_or_logic": "CTA CU thread-index local and global generation control",
+      "mutation_strategy": "reverse_patch",
+      "suggested_edit": "Revert the threadIdxL control gating and select_base indexing in cu_interface.scala; optionally also restore the old multiplier width and default operands in allocator.scala.",
+      "expected_failure_mode": "Later wavefronts in the same work-group receive wrong local or global thread IDs, causing duplicates, skips, wrong 1D linearization, or premature full-window behavior.",
+      "notes": [
+        "Prefer the stale-base slice in cu_interface for reinjection; it is smaller and clearer than reverting the full commit."
+      ],
+      "portable_bug_context": "A CTA dispatcher often precomputes local and global thread indices in a sliding window while wavefronts are being issued. If the window writeback base is not adjusted when one wavefront is consumed, or one arithmetic subpath is one cycle out of alignment, later wavefronts receive duplicated, skipped, or mismatched thread IDs.",
+      "portable_injection_spec": {
+        "affected_mechanism": "wavefront thread-index window bookkeeping",
+        "trigger_condition": "A work-group spans multiple wavefronts, so dispatch shifts buffered thread-index state while generating the next wavefront.",
+        "injection_action": "Use a stale pre-shift base or stale pipeline alignment when writing new thread IDs back into the dispatch window.",
+        "implementation_pattern": "stale base index or missing pipeline alignment stage",
+        "portability_notes": [
+          "A good reusable slice is the sliding-window base: fail to subtract the just-issued wavefront before placing new generated indices."
+        ],
+        "concrete_injection_steps": [
+          "Locate the buffer window that stores precomputed local/global IDs ahead of issue.",
+          "On the cycle a wavefront is sent, keep using the old producer base for the next writeback.",
+          "Trigger with a multi-wavefront work-group and check for duplicated or skipped IDs."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/cta/cu_interface.scala",
+          "ventus/src/cta/allocator.scala"
+        ],
+        "target_module_or_logic": "threadIdxL/threadIdxG generation window control",
+        "commit_fix_summary": "The fix changes local-ID writeback to use select_base, adjusts wf_sent-related control, narrows selection windows, and adds an alignment stage on threadIdxG_calc2_x.",
+        "mutation_strategy": "restore_stale_thread_index_base_or_alignment",
+        "source_level_edit_anchor": "The cleanest reinjection point is cu_interface.scala: revert the select_base-based writeback or remove the extra alignment stage on threadIdxG_calc2_x."
+      },
+      "evidence_for_injection": [
+        "Several changes compensate for wf_sent while moving the control window.",
+        "Tests in the same commit were updated to validate corrected global 1D indices."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该补丁修复了 CTA 分配与 CU 接口中的 thread-index 记账逻辑，使 wavefront 分发使用正确的窗口、索引基址和流水线对齐。",
+    "why_it_counts": [
+      "cu_interface.scala 修改了本地 thread-index 的满窗口判定，以及写入 threadIdxL_result 信号时使用的索引基址。",
+      "cu_interface.scala 还调整了全局 thread-index 的输入输出时序，并增加了一个用于对齐的寄存级。",
+      "allocator.scala 修复了 thread-index 计算所用乘法器的位宽和默认操作数。"
+    ],
+    "disqualifiers": [
+      "该提交还修改了测试代码和 emitVerilog 辅助入口。",
+      "修复跨越多个 CTA 文件，因此最小可注入片段没有一行 cache 修复那样独立。"
+    ],
+    "evidence": [
+      "THREADIDX_CTRL_EXTRA 从 min(NUM_THREAD, 3*THREADIDX_STEP) 改为 CONFIG.GPU.NUM_THREAD。",
+      "threadIdxL_ctrl_full 现在会参考 wf_sent，写入时也从直接使用 threadIdxL_ctrl_cnt 改为使用 select_base。",
+      "threadIdxG_calc2_x 增加了一层寄存器级，输入输出选择窗口也缩小为 THREADIDX_STEP。",
+      "测试同时更新为随机化 num_wg，并校验修正后的全局 1D thread-index 公式。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/cta/allocator.scala",
+      "ventus/src/cta/cu_interface.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/cta/cu_interface.scala",
+        "ventus/src/cta/allocator.scala"
+      ],
+      "target_module_or_logic": "CTA CU 的本地与全局 thread-index 生成控制逻辑",
+      "mutation_strategy": "reverse_patch",
+      "suggested_edit": "回退 cu_interface.scala 中的 threadIdxL 控制门控和 select_base 索引逻辑；如需更完整复现，也可恢复 allocator.scala 中旧的乘法器位宽和默认操作数。",
+      "expected_failure_mode": "同一 work-group 后续 wavefront 会拿到错误的 local/global thread ID，表现为重复、跳号、1D 线性化错误或过早判满。",
+      "notes": [
+        "做注入时优先选择 cu_interface 中的 stale-base 切片，比整提交回退更小也更清晰。"
+      ],
+      "portable_bug_context": "CTA 分发器通常会在发射 wavefront 的同时，用滑动窗口预计算本地和全局 thread index。如果消费掉一个 wavefront 后没有同步调整写回基址，或者某条算术子路径少了一拍对齐，那么后续 wavefront 就会拿到重复、跳号或错位的 thread ID。",
+      "portable_injection_spec": {
+        "affected_mechanism": "wavefront thread-index 窗口记账",
+        "trigger_condition": "一个 work-group 需要拆成多个 wavefront，分发器必须在发射当前 wavefront 的同时平移已缓冲的 thread-index 状态。",
+        "injection_action": "在把新 thread ID 写回分发窗口时，继续使用平移前的旧基址，或保留过期的流水对齐。",
+        "implementation_pattern": "stale base index 或缺失流水对齐级",
+        "portability_notes": [
+          "最容易复用的切片是滑动窗口基址：发射一个 wavefront 后，不减去刚发出的那一组线程。"
+        ],
+        "concrete_injection_steps": [
+          "找到发射前缓存 local/global ID 的缓冲窗口。",
+          "在某个 wavefront 发出时，继续用旧基址写回下一批索引。",
+          "用多 wavefront 的 work-group 触发，检查 thread ID 是否重复或跳号。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/cta/cu_interface.scala",
+          "ventus/src/cta/allocator.scala"
+        ],
+        "target_module_or_logic": "threadIdxL/threadIdxG 生成窗口控制",
+        "commit_fix_summary": "该修复把 local-ID 写回改为使用 select_base，调整了围绕 wf_sent 的控制，并给 threadIdxG_calc2_x 增加了对齐级。",
+        "mutation_strategy": "restore_stale_thread_index_base_or_alignment",
+        "source_level_edit_anchor": "最适合 reinject 的位置在 cu_interface.scala：回退基于 select_base 的写回，或去掉 threadIdxG_calc2_x 上新增的对齐寄存器。"
+      },
+      "evidence_for_injection": [
+        "多处改动都在围绕 wf_sent 调整控制窗口。",
+        "同提交中的测试也更新为验证修正后的全局 1D 索引。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

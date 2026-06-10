@@ -1,0 +1,135 @@
+{
+  "dataset_id": 292,
+  "original_review_id": 353,
+  "meta": {
+    "id": 353,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "ede0d567ffb816c4d6ab79a7a74a33fe28ae03dc",
+    "subject": "fixed imadd signed multiplication bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "signedness",
+    "summary": "Fixes signed IMADD result formation by making the multiply stage signed and wide enough, and by using only the intended low shift-control bits.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a signed multiplication bug.",
+      "The substantive behavioral change is in hw/rtl/VX_imadd.sv, a DUT arithmetic block.",
+      "The patch directly changes multiplier signedness, product width, and post-multiply shift decoding, which all affect arithmetic correctness."
+    ],
+    "disqualifiers": [
+      "Other touched files are trace or formatting cleanups and are not the basis for classification."
+    ],
+    "evidence": [
+      "VX_multiplier changes from WIDTHP=48 and SIGNED=0 to WIDTHP=56 and SIGNED=1.",
+      "The output shift no longer uses the full op_mod field; it now uses shift_s = op_mod[1:0] and applies {shift_s, 3'b0}.",
+      "The pipeline register is narrowed to carry only the 2-bit shift control instead of the whole modifier field."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_imadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A signed integer multiply-add datapath must preserve sign information and enough product bits before applying an encoded post-multiply shift. If the multiplier is treated as unsigned, the product is too narrow, or the shift amount is decoded from the wrong control bits, negative products and scaled results are corrupted before the add stage.",
+      "portable_injection_spec": {
+        "affected_mechanism": "signed multiply-add product formation and scaling",
+        "trigger_condition": "Signed IMADD-style operations with negative operands, large intermediate products, or encoded shift modes.",
+        "injection_action": "Reintroduce unsigned or truncated product generation and/or decode the result shift from the wrong modifier bits.",
+        "implementation_pattern": "restore unsigned narrow multiplier",
+        "portability_notes": [
+          "Map this to the stage that computes the product before the addend is accumulated.",
+          "The bug is not tied to a specific ISA name; any fixed-point or integer MAC with signed operands and shift encoding is a valid target.",
+          "Using either the wrong signedness or the wrong shift-field extraction can recreate the bug; restoring both most closely matches the source commit."
+        ],
+        "concrete_injection_steps": [
+          "Configure the multiply path or casting so 32-bit operands are treated as unsigned instead of signed.",
+          "Reduce the internal product width so sign-preserving high bits are discarded before the final 32-bit extraction.",
+          "Decode the right-shift amount from the full modifier field, or from more bits than the ISA intends, instead of the dedicated low shift field."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_imadd.sv"
+        ],
+        "target_module_or_logic": "IMADD multiply stage and post-multiply shift control",
+        "commit_fix_summary": "The fix changes the multiplier to a signed 56-bit product and replaces op_mod_s-based shifting with a dedicated 2-bit shift field carried through the pipeline.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore WIDTHP=48/SIGNED=0 and change the result shift back to use op_mod_s * 8 instead of $signed({shift_s, 3'b0})."
+      },
+      "expected_failure_mode": "Signed multiply-add instructions return incorrect values, especially for negative operands or shift-encoded variants that rely on the correct product width and shift decode.",
+      "evidence_for_injection": [
+        "The only arithmetic RTL change is in VX_imadd.sv and directly affects the product and shift expressions.",
+        "The fix introduces a dedicated 2-bit shift path, showing the old full-field shift decode was wrong.",
+        "The widened signed product is explicitly annotated as preserving the 32-bit result after shifting."
+      ],
+      "notes": [
+        "This is a datapath correctness bug, not a performance-only change.",
+        "Reverting both the multiplier configuration and the shift decode best recreates the original faulty behavior."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "signedness",
+    "summary": "该提交修复了有符号 IMADD 的结果生成：乘法级改为有符号且位宽足够，并且只使用真正应当参与移位的低位控制位。",
+    "why_it_counts": [
+      "提交信息明确指出修复的是有符号乘法 bug。",
+      "真正影响行为的修改位于 hw/rtl/VX_imadd.sv，这是一处 DUT 算术模块。",
+      "补丁直接修改了乘法器的符号属性、乘积位宽以及乘后移位控制的解码方式，这些都会影响算术正确性。"
+    ],
+    "disqualifiers": [
+      "其余被修改文件主要是 trace 或格式整理，不是本次分类的依据。"
+    ],
+    "evidence": [
+      "VX_multiplier 从 WIDTHP=48、SIGNED=0 改为 WIDTHP=56、SIGNED=1。",
+      "输出移位不再使用完整 op_mod 字段，而是改为 shift_s = op_mod[1:0]，并按 {shift_s, 3'b0} 使用。",
+      "流水寄存器也改为只携带 2 位 shift 控制，而不是整个 modifier 字段。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_imadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "有符号整数乘加数据通路在进行编码移位之前，必须保留符号信息以及足够的乘积位宽。如果乘法器被当成无符号、乘积位宽过窄，或者移位量从错误的控制位中解码，那么在进入加法级之前，负数乘积和缩放后的结果就会被破坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "有符号乘加的乘积生成与缩放",
+        "trigger_condition": "带负数操作数、大中间乘积，或带编码移位模式的有符号 IMADD 类操作。",
+        "injection_action": "重新引入无符号或截断的乘积生成，并/或从错误的 modifier 位解码结果移位量。",
+        "implementation_pattern": "恢复无符号且位宽过窄的乘法器",
+        "portability_notes": [
+          "可映射到加数累加之前的乘积生成阶段。",
+          "该 bug 不依赖具体 ISA 名称；任何带有符号操作数和移位编码的定点/整数 MAC 都适用。",
+          "只恢复错误的符号属性或错误的移位字段都可能复现问题；两者同时回退最接近原始提交前行为。"
+        ],
+        "concrete_injection_steps": [
+          "将乘法路径或相关强制类型转换改回把 32 位操作数按无符号处理。",
+          "缩小内部乘积位宽，使保留符号所需的高位在最终取 32 位结果前被截断。",
+          "把右移量重新从完整 modifier 字段，或从超出 ISA 规定的位宽中解码，而不是只用专用低位字段。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_imadd.sv"
+        ],
+        "target_module_or_logic": "IMADD 乘法级与乘后移位控制",
+        "commit_fix_summary": "修复将乘法器改为有符号 56 位乘积，并把依赖 op_mod_s 的移位改为只通过流水线传递专用 2 位 shift 字段。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复 WIDTHP=48/SIGNED=0，并把结果移位从 $signed({shift_s, 3'b0}) 改回 op_mod_s * 8。"
+      },
+      "expected_failure_mode": "有符号乘加指令会返回错误结果，尤其是在负数操作数或依赖正确乘积位宽与移位解码的移位变体上。",
+      "evidence_for_injection": [
+        "唯一的算术 RTL 行为修改集中在 VX_imadd.sv，且直接作用于乘积与移位表达式。",
+        "修复引入了专门的 2 位 shift 通路，说明旧的完整字段移位解码有误。",
+        "补丁明确通过扩大有符号乘积位宽来保证移位后仍能得到正确的 32 位结果。"
+      ],
+      "notes": [
+        "这是数据通路正确性 bug，不是单纯的性能修改。",
+        "同时回退乘法器配置和移位解码，最能复现原始错误行为。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

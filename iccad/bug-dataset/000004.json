@@ -1,0 +1,131 @@
+{
+  "dataset_id": 4,
+  "original_review_id": 7,
+  "meta": {
+    "id": 7,
+    "repo": "ventus-gpgpu",
+    "branch": "yffcache",
+    "commit": "05503f8b9950c3b69c5730a65807332d3761dbb4",
+    "subject": "Fixed the issue in LSU where the  bit-width for shared memory requests was incorrect"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes shared-memory request indexing in the LSU so the shared-memory row index uses shared-memory depth bits instead of dcache set bits.",
+    "why_it_counts": [
+      "The commit message explicitly says the shared-memory request bit-width in the LSU was wrong.",
+      "The patch changes both the ShareMemCoreReq_np.setIdx field width and the address slice used to populate it.",
+      "The modified logic is in the LSU path that decodes shared-memory requests."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "ShareMemCoreReq_np.setIdx changes from dcache_SetIdxBits to log2Ceil(sharedmem_depth).",
+      "The patch adds a dedicated setIdx_shared slice extracted from the shared-memory address bits.",
+      "io.to_shared.bits.setIdx is changed to use setIdx_shared, while the dcache path keeps using the old setIdx logic."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/LSU.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Shared memory and data cache often use different address decomposition. The old logic reused the cache set-index width and slice for shared-memory requests, which can truncate or mis-slice the shared-memory row or bank index and make accesses alias onto the wrong shared-memory location.",
+      "portable_injection_spec": {
+        "affected_mechanism": "shared-memory row or bank index extraction",
+        "trigger_condition": "A shared-memory access needs a different index width or address slice than the cache set field.",
+        "injection_action": "Compute the shared-memory request index from the cache set field width or cache slice instead of the shared-memory depth.",
+        "implementation_pattern": "truncate width",
+        "portability_notes": [
+          "Apply this only where shared memory and cache use different address layouts.",
+          "You can inject the bug by narrowing the index field width or by slicing the wrong address bits."
+        ],
+        "concrete_injection_steps": [
+          "Locate the LSU logic that forms the row or bank index for shared-memory requests.",
+          "Replace the dedicated shared-memory index width with the cache set-index width.",
+          "Extract the shared-memory index from the cache-oriented address partition instead of the shared-memory row partition.",
+          "Leave the cache request decode path unchanged."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/LSU.scala"
+        ],
+        "target_module_or_logic": "ShareMemCoreReq_np.setIdx width and io.to_shared.bits.setIdx generation in AddrCalculate",
+        "commit_fix_summary": "The fix widens the shared-memory index field and computes a dedicated setIdx_shared for io.to_shared.bits.setIdx.",
+        "mutation_strategy": "restore_wrong_index_width",
+        "source_level_edit_anchor": "Change ShareMemCoreReq_np.setIdx back to the dcache set width and assign io.to_shared.bits.setIdx from the dcache-oriented setIdx path again."
+      },
+      "expected_failure_mode": "Shared-memory accesses alias onto the wrong rows or banks and return or store incorrect data.",
+      "evidence_for_injection": [
+        "The patch changes the actual field width of ShareMemCoreReq_np.setIdx.",
+        "The fix adds a dedicated shared-memory index extraction path instead of reusing dcache setIdx.",
+        "Both changes sit in the LSU path that issues requests to shared memory."
+      ],
+      "notes": [
+        "This is both an address-decode bug and a bit-width bug.",
+        "It is most visible when shared-memory depth and dcache set count differ."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 LSU 的共享内存请求索引生成，使 shared-memory 行索引使用 shared-memory 深度对应的位，而不是 dcache 的 set 位。",
+    "why_it_counts": [
+      "提交说明明确指出 LSU 中 shared-memory request 的位宽错误。",
+      "补丁同时修改了 ShareMemCoreReq_np.setIdx 的字段位宽，以及生成该字段时使用的地址切片。",
+      "被修改的逻辑位于 LSU 生成 shared-memory 请求的路径上。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "ShareMemCoreReq_np.setIdx 从 dcache_SetIdxBits 改为 log2Ceil(sharedmem_depth)。",
+      "补丁新增了从 shared-memory 地址位中提取的专用 setIdx_shared。",
+      "io.to_shared.bits.setIdx 改为使用 setIdx_shared，而 dcache 路径仍然沿用旧的 setIdx 逻辑。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/LSU.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "共享内存和数据缓存的地址分解通常不同。旧逻辑错误复用了 cache 的 set-index 位宽和地址切片来生成 shared-memory 请求索引，这会截断或切错 shared-memory 的行或银行索引，让访问错误别名到其他位置。",
+      "portable_injection_spec": {
+        "affected_mechanism": "共享内存行或银行索引提取",
+        "trigger_condition": "某次 shared-memory 访问需要使用与 cache set 字段不同的索引位宽或地址切片。",
+        "injection_action": "不要按 shared-memory 深度生成请求索引，而是沿用 cache set 字段的位宽或地址切片。",
+        "implementation_pattern": "truncate width",
+        "portability_notes": [
+          "只在 shared memory 与 cache 地址布局不同的设计中注入该故障。",
+          "既可以通过缩窄索引位宽来注入，也可以通过切取错误地址位来注入。"
+        ],
+        "concrete_injection_steps": [
+          "定位 LSU 中负责生成 shared-memory 行或银行索引的逻辑。",
+          "把专用的 shared-memory 索引位宽改成 cache set-index 位宽。",
+          "按 cache 的地址分区来切 shared-memory 索引，而不是按 shared-memory 行地址分区。",
+          "保持 cache 请求解码路径不变。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/LSU.scala"
+        ],
+        "target_module_or_logic": "AddrCalculate 中 ShareMemCoreReq_np.setIdx 的位宽以及 io.to_shared.bits.setIdx 的生成逻辑",
+        "commit_fix_summary": "修复后，shared-memory 索引字段被扩展，并为 io.to_shared.bits.setIdx 单独生成了 setIdx_shared。",
+        "mutation_strategy": "restore_wrong_index_width",
+        "source_level_edit_anchor": "把 ShareMemCoreReq_np.setIdx 改回 dcache set 位宽，并让 io.to_shared.bits.setIdx 再次使用面向 dcache 的 setIdx 路径。"
+      },
+      "expected_failure_mode": "shared-memory 访问会错误别名到其他行或银行，导致 load 或 store 数据错误。",
+      "evidence_for_injection": [
+        "补丁确实修改了 ShareMemCoreReq_np.setIdx 的字段位宽。",
+        "修复新增了专用的 shared-memory 索引提取路径，而不是继续复用 dcache setIdx。",
+        "这两处变化都位于 LSU 发出 shared-memory 请求的路径上。"
+      ],
+      "notes": [
+        "这同时是地址解码 bug 和位宽 bug。",
+        "当 shared-memory 深度与 dcache set 数明显不同的时候最容易暴露。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "dataset_id": 6,
+  "original_review_id": 9,
+  "meta": {
+    "id": 9,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "d07266b1f152c1a0c94a0238b2891c9393f809f5",
+    "subject": "cache mshr replay bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes cache-bank replay data selection so a replayed write uses replay data rather than the low word of a simultaneous memory fill response.",
+    "why_it_counts": [
+      "The commit message explicitly says this is an MSHR replay bug fix.",
+      "The patch changes the cache-bank data-source mux in hw/rtl/cache/VX_cache_bank.sv.",
+      "The new logic gives replay data priority over mem_rsp_data for the writable word when WRITE_ENABLE is active."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Before the fix, the low writable word preferred mem_rsp_data whenever mem_rsp_valid was true, even if replay_valid was also true.",
+      "After the fix, the WRITE_ENABLE case explicitly selects replay_data before mem_rsp_data.",
+      "The upper words of the line still come from mem_rsp_data, matching the intended merge of replay-word data with fill-line data."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A replayed store or partial-line update must use the data saved with that replay entry, even if a fill response arrives in the same cycle. The old logic still took the writable low word from the fill response whenever mem_rsp_valid was asserted, which overwrote the replayed store payload with stale fill data.",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR replay write-data source priority",
+        "trigger_condition": "A replayed write reaches the cache bank in the same cycle as a memory fill response.",
+        "injection_action": "Prefer fill-response data over replay data for the writable word of the replayed operation.",
+        "implementation_pattern": "swap data-source priority",
+        "portability_notes": [
+          "Apply this in caches that merge replay, core-request, and fill data before writing a line.",
+          "The bug usually affects only the word or byte lanes that the replayed store intends to update."
+        ],
+        "concrete_injection_steps": [
+          "Locate the data mux that selects between replay data, core request data, and fill data before the cache-array write.",
+          "On the write-enabled path, reorder the mux so fill data wins over replay data when both are valid in the same cycle.",
+          "Leave the rest of the fill-line merge logic unchanged.",
+          "Do not alter replay arbitration or MSHR bookkeeping."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv"
+        ],
+        "target_module_or_logic": "data_sel low-word mux in VX_cache_bank replay and fill arbitration",
+        "commit_fix_summary": "The fix makes replay_valid override mem_rsp_valid for the writable word when WRITE_ENABLE is enabled.",
+        "mutation_strategy": "restore_wrong_mux_priority",
+        "source_level_edit_anchor": "Restore the old low-word priority so mem_rsp_data overrides replay_data whenever mem_rsp_valid is asserted."
+      },
+      "expected_failure_mode": "A replayed store writes stale or incorrect data into the cache line, which later appears as wrong load results or corrupted cache state.",
+      "evidence_for_injection": [
+        "The changed logic is the low-word data mux that feeds the cache-bank pipeline.",
+        "Replay already has highest arbitration priority, so the old mem_rsp-first data choice was inconsistent with the selected request source.",
+        "Only the cache-bank RTL file is touched."
+      ],
+      "notes": [
+        "This bug needs a concurrency trigger: replay_valid and mem_rsp_valid must overlap.",
+        "If the target cache updates bytes rather than words, inject the same wrong priority at byte granularity."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 cache bank 的 replay 数据选择逻辑，使 replay 写入使用 replay 保存的数据，而不是同时到达的内存 fill 响应低字。",
+    "why_it_counts": [
+      "提交说明明确指出这是一个 MSHR replay bug fix。",
+      "补丁修改的是 hw/rtl/cache/VX_cache_bank.sv 中的 cache-bank 数据源 mux。",
+      "修复后的逻辑在 WRITE_ENABLE 打开时，让 replay_data 在可写字上优先于 mem_rsp_data。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "修复前，只要 mem_rsp_valid 为真，低位可写字就优先选择 mem_rsp_data，即使 replay_valid 同时为真。",
+      "修复后，在 WRITE_ENABLE 场景下，代码显式让 replay_data 先于 mem_rsp_data。",
+      "cache line 其余高位字仍然来自 mem_rsp_data，说明预期是“低字来自 replay，其余字来自 fill”。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "replay 的 store 或部分行更新必须使用 replay 项中保存的数据，即使同周期有 fill 响应到达。旧逻辑在 mem_rsp_valid 为真时仍然从 fill 响应中取低位可写字，从而用陈旧 fill 数据覆盖了 replay 的 store 负载。",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR replay 写数据源优先级",
+        "trigger_condition": "一次 replay 写入与一次内存 fill 响应在同一个周期到达 cache bank。",
+        "injection_action": "在 replay 操作的可写字上，让 fill-response 数据优先于 replay 数据。",
+        "implementation_pattern": "swap data-source priority",
+        "portability_notes": [
+          "适用于在写入 cache line 前需要在 replay、core 请求和 fill 数据之间做合并选择的缓存。",
+          "该 bug 通常只影响 replay store 真正要覆盖的字或字节 lane。"
+        ],
+        "concrete_injection_steps": [
+          "定位 cache-array 写入前，在 replay、core 和 fill 三类数据之间做选择的数据 mux。",
+          "在写路径上调整优先级，使 replay 和 fill 同时有效时由 fill 获胜。",
+          "保持其余 fill-line 合并逻辑不变。",
+          "不要改动 replay 仲裁或 MSHR 记账逻辑。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv"
+        ],
+        "target_module_or_logic": "VX_cache_bank 中 replay 与 fill 仲裁阶段的 data_sel 低字 mux",
+        "commit_fix_summary": "修复后，在 WRITE_ENABLE 打开时，低位可写字由 replay_valid 优先覆盖 mem_rsp_valid。",
+        "mutation_strategy": "restore_wrong_mux_priority",
+        "source_level_edit_anchor": "恢复旧的低字优先级，让 mem_rsp_data 只要有效就覆盖 replay_data。"
+      },
+      "expected_failure_mode": "一次 replay 的 store 会把陈旧或错误的数据写入 cache line，后续表现为 load 返回错误值或 cache 状态损坏。",
+      "evidence_for_injection": [
+        "补丁修改的位置正是送入 cache-bank 流水线的低字数据 mux。",
+        "replay 已经具有更高仲裁优先级，因此旧的 mem_rsp-first 数据选择明显不一致。",
+        "只修改了 cache-bank RTL 文件。"
+      ],
+      "notes": [
+        "该 bug 需要 replay_valid 与 mem_rsp_valid 重叠。",
+        "如果目标缓存按字节更新，就在字节粒度上注入相同的错误优先级。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

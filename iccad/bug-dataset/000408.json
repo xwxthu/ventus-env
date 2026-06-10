@@ -1,0 +1,143 @@
+{
+  "dataset_id": 408,
+  "original_review_id": 516,
+  "meta": {
+    "id": 516,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "cd29362d108dbb5b5887909d77a43f66f4695549",
+    "subject": "fixed FPU handshake, optimized writeback's critical path"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "Fixes a real FPU decoupled-handshake bug. The FPU input now reports ready while idle, instead of mirroring only the internal backend-ready signal and spuriously appearing busy.",
+    "why_it_counts": [
+      "The commit message explicitly says the FPU handshake is fixed.",
+      "The patch changes FPU RTL plus related issue/scheduler/writeback control logic.",
+      "The key hunk corrects the ready condition itself, which directly affects forward progress."
+    ],
+    "disqualifiers": [
+      "The commit also contains scheduler/writeback restructuring and interface type cleanup."
+    ],
+    "evidence": [
+      "VX_fpnew.v changes in_ready from fpu_in_ready to fpu_in_ready || ~in_valid, with an inline comment describing it as a handshake fix.",
+      "VX_issue.v and VX_scheduler.v rework busy/stall handling around execution-unit readiness in the same commit.",
+      "VX_writeback.v is restructured to keep metadata and writeback data coherent, showing the commit is control-correctness oriented, not only timing-oriented."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fp_cores/VX_fpnew.v",
+      "hw/rtl/VX_issue.v",
+      "hw/rtl/VX_scheduler.v",
+      "hw/rtl/VX_writeback.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a ready/valid interface, a unit that is currently idle must advertise readiness even before a new input arrives. If ready is tied only to a deeper backend-ready signal, the unit can look busy while holding no work, creating false backpressure and, in some pipelines, deadlock because upstream logic waits for ready before asserting valid.",
+      "portable_injection_spec": {
+        "affected_mechanism": "idle-state ready semantics on a decoupled FPU input",
+        "trigger_condition": "The FPU input stage is empty, but the internal backend-ready signal is low or participates in a handshake loop with upstream issue logic.",
+        "injection_action": "Remove the idle-case from the ready equation so input ready depends only on backend readiness.",
+        "implementation_pattern": "tie ready only to downstream ready",
+        "portability_notes": [
+          "This maps to any decoupled or ready/valid execution unit with an internal input register or pipeline stage.",
+          "The bug is about forward-progress semantics, not floating-point arithmetic itself.",
+          "If the target design has a skid buffer or implicit holding register, treat the empty-buffer case as the portable analogue of ~in_valid."
+        ],
+        "concrete_injection_steps": [
+          "Find the ready output on the FPU or long-latency execution unit input interface.",
+          "Identify the local state bit that says whether that interface already holds a valid request.",
+          "Delete the part of the ready equation that keeps ready high while no request is currently held.",
+          "Leave the internal compute pipeline unchanged so the reinjected failure is pure handshake/backpressure behavior."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fp_cores/VX_fpnew.v"
+        ],
+        "target_module_or_logic": "input ready generation in VX_fpnew",
+        "commit_fix_summary": "The fix changes in_ready to fpu_in_ready || ~in_valid so the FPU advertises readiness when it is not currently holding a valid input.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change assign in_ready = fpu_in_ready || ~in_valid back to assign in_ready = fpu_in_ready."
+      },
+      "expected_failure_mode": "Floating-point requests experience false backpressure, can stop issuing under specific handshake dependencies, and may deadlock or stall even though the FPU input stage is idle.",
+      "evidence_for_injection": [
+        "The functional fix is a single ready-equation change on the FPU input interface.",
+        "The inline source comment explicitly identifies the line as the handshake fix.",
+        "The associated issue/scheduler changes in the same commit are consistent with a forward-progress problem around execution-unit readiness."
+      ],
+      "notes": [
+        "The chosen injection target is the cleanest isolated sub-fix in a broader control-path commit.",
+        "This bug is highly reusable on any ready/valid unit that can falsely look busy while empty."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了真实的 FPU decoupled 握手缺陷。修复后，FPU 输入在空闲时会正确报告 ready，而不再只镜像内部 backend-ready 信号并错误地表现为忙碌。",
+    "why_it_counts": [
+      "提交信息明确写明修复了 FPU handshake。",
+      "补丁同时修改了 FPU RTL 以及相关的 issue/scheduler/writeback 控制逻辑。",
+      "关键 hunk 直接修正了 ready 条件本身，这会直接影响前进性。"
+    ],
+    "disqualifiers": [
+      "该提交还包含 scheduler/writeback 重构以及接口类型清理。"
+    ],
+    "evidence": [
+      "VX_fpnew.v 把 in_ready 从 fpu_in_ready 改成了 fpu_in_ready || ~in_valid，并在行内注释里明确说这是 handshake fix。",
+      "同一提交中的 VX_issue.v 和 VX_scheduler.v 也重构了执行单元 ready 周围的 busy/stall 处理。",
+      "VX_writeback.v 被重构以保证元数据与写回数据一致，说明该提交关心的是控制正确性，而不仅是时序。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fp_cores/VX_fpnew.v",
+      "hw/rtl/VX_issue.v",
+      "hw/rtl/VX_scheduler.v",
+      "hw/rtl/VX_writeback.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 ready/valid 接口中，一个当前空闲的执行单元必须在新输入到来之前就宣告 ready。如果 ready 只绑定到更深层的 backend-ready 信号，那么单元在没有持有任何工作时也会看起来像忙碌，从而产生错误背压；在某些流水线中，如果上游要等 ready 才会拉高 valid，甚至会形成死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "decoupled FPU 输入在空闲态的 ready 语义",
+        "trigger_condition": "FPU 输入级为空，但内部 backend-ready 为低，或者它参与了与上游发射逻辑的握手回环。",
+        "injection_action": "删除 ready 方程中的空闲分支，使输入 ready 只取决于 backend 是否 ready。",
+        "implementation_pattern": "tie ready only to downstream ready",
+        "portability_notes": [
+          "适用于任何带内部输入寄存器或流水级的 decoupled/ready-valid 执行单元。",
+          "该缺陷是前进性/握手语义问题，不是浮点运算本身错误。",
+          "如果目标设计使用 skid buffer 或隐式 holding register，可把“缓冲区为空”视作这里的 ~in_valid 对应物。"
+        ],
+        "concrete_injection_steps": [
+          "找到 FPU 或长延迟执行单元输入接口上的 ready 输出。",
+          "确定表示该接口当前是否已经持有有效请求的本地状态位。",
+          "删除 ready 方程中“当前没有持有请求时也保持 ready 为高”的那一部分。",
+          "保持内部计算流水线不变，使回注故障只表现为握手/背压问题。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fp_cores/VX_fpnew.v"
+        ],
+        "target_module_or_logic": "VX_fpnew 中输入 ready 的生成逻辑",
+        "commit_fix_summary": "修复把 in_ready 改为 fpu_in_ready || ~in_valid，使 FPU 在当前未持有有效输入时仍然报告 ready。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 assign in_ready = fpu_in_ready || ~in_valid 改回 assign in_ready = fpu_in_ready。"
+      },
+      "expected_failure_mode": "浮点请求会遭遇错误背压，在特定握手依赖下无法继续发射，即使 FPU 输入级实际处于空闲状态，也可能出现死锁或长时间停顿。",
+      "evidence_for_injection": [
+        "功能性修复就是 FPU 输入接口上一条 ready 方程的改动。",
+        "源码行内注释明确指出这就是握手修复点。",
+        "同一提交中 issue/scheduler 的相关改动也与执行单元 ready 周围的前进性问题一致。"
+      ],
+      "notes": [
+        "在一个较大的控制路径提交中，这里选取的是最干净、最容易隔离回注的子修复。",
+        "该缺陷非常适合迁移到任何“空闲时却错误显示 busy”的 ready/valid 单元。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 173,
+  "original_review_id": 212,
+  "meta": {
+    "id": 212,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "d90e9d3015e6fa85ad728b8aae06f27a25ecd919",
+    "subject": "fix mcif signal state Z for bug 200415205"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes MCIF burst-partition arithmetic by fully driving offset vectors and by replacing hardcoded split scaling with parameter-dependent logic.",
+    "why_it_counts": [
+      "The patch corrects DUT burst-splitting logic in MCIF read/write ingress modules.",
+      "The old code could leave upper offset bits undriven and could compute slot counts with fixed divide-by-2 assumptions.",
+      "These errors affect request partitioning, flow control, and simulation-visible X/Z behavior in parameterized hardware."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Both touched files are MCIF DUT RTL files: NV_NVDLA_MCIF_READ_IG_bpt.v and NV_NVDLA_MCIF_WRITE_IG_bpt.v.",
+      "The fix zero-extends stt_offset and size_offset into full 3-bit vectors before using them in arithmetic.",
+      "READ_IG replaces hardcoded >>1 slot_needed calculations with >>(NVDLA_DMA_MASK_BIT-1).",
+      "READ_IG also replaces compile guards based on NVDLA_PRIMARY_MEMIF_WIDTH with NVDLA_MEMIF_WIDTH, tightening parameter correctness."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_READ_IG_bpt.v",
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_bpt.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Burst partition logic converts request address/size information into first-transfer, middle-transfer, and last-transfer sizes, plus downstream slot accounting. In a parameterized memory interface, these intermediate offsets must be fully driven to the arithmetic width and the slot calculation must scale with the configured mask width. If upper bits are left unassigned or the math is hardcoded for one width ratio, some builds produce X/Z values or split requests incorrectly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "parameterized burst-split offset and slot computation",
+        "trigger_condition": "Configurations where the burst-size subfield is narrower than the arithmetic vector width, or where the memory-mask granularity differs from the hardcoded divide-by-2 assumption.",
+        "injection_action": "Restore partially driven offset vectors and hardcoded width-specific split calculations in the burst partitioner.",
+        "implementation_pattern": "truncate_width_and_restore_hardcoded_scaling",
+        "portability_notes": [
+          "Target the logic that derives start offset, end offset, and slot count from request address and size fields.",
+          "A good cross-DUT mutation is to assign only the low bits of an offset vector and leave the upper bits implicit or stale, then keep later arithmetic at the wider width.",
+          "If the design uses compile-time width branches, force the branch selection or shift amount back to a fixed ratio rather than the real configured mask width."
+        ],
+        "concrete_injection_steps": [
+          "Find the burst-splitting stage that calculates start offset, size offset, end offset, and slots needed for read or write requests.",
+          "Change the offset assignment so only the low subfield bits are driven while the arithmetic still consumes a wider vector, or explicitly truncate away the zero-extension that makes the vector fully defined.",
+          "Replace parameter-dependent shift or width-guard logic with a fixed divide-by-2 style assumption so split-count and swizzle decisions are wrong when the interface geometry changes."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_READ_IG_bpt.v",
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_bpt.v"
+        ],
+        "target_module_or_logic": "MCIF read/write ingress burst partition logic",
+        "commit_fix_summary": "The fix zero-extends stt_offset and size_offset to [2:0] in both BPT modules, and in READ_IG it also replaces hardcoded >>1 and width macros with parameter-derived forms.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In both BPT files, restore the partial assignments to stt_offset/size_offset indexed only by NVDLA_MCIF_BURST_SIZE_LOG2. In NV_NVDLA_MCIF_READ_IG_bpt.v also restore the old >>1 slot_needed logic and the old width guards/macros."
+      },
+      "expected_failure_mode": "Some configurations produce Z/X on offset-dependent signals or compute wrong burst split and slot counts, which can lead to malformed memory transactions, false stalls, or incorrect swizzle behavior.",
+      "evidence_for_injection": [
+        "The commit message explicitly references signal state Z.",
+        "The modified signals feed end_offset, is_single_tran, ftran/ltran sizing, and lat-fifo slot accounting.",
+        "The read-side patch also changes out_swizzle and width-condition logic, showing the bug is parameterization-sensitive rather than cosmetic."
+      ],
+      "notes": [
+        "The read-side file contains the richer portable injection because it couples offset arithmetic with slot-count scaling.",
+        "The write-side file provides a simpler companion injection that restores the same width/drive bug on the write partitioner."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 MCIF burst 分拆运算：既保证 offset 向量被完整驱动，也把原先硬编码的分拆缩放改成了依赖参数的正确逻辑。",
+    "why_it_counts": [
+      "补丁修正的是 MCIF 读写入口模块中的 DUT burst 分拆逻辑。",
+      "旧实现可能让 offset 的高位未驱动，也可能用固定的除 2 假设来计算 slot 数。",
+      "这些问题会在参数化硬件中影响请求分拆、流控，甚至在仿真中出现 X/Z。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "两个修改文件都是 MCIF 的 DUT RTL：NV_NVDLA_MCIF_READ_IG_bpt.v 和 NV_NVDLA_MCIF_WRITE_IG_bpt.v。",
+      "修复把 stt_offset 和 size_offset 都零扩展为完整的 3 位向量，再参与后续算术。",
+      "READ_IG 把硬编码的 >>1 slot_needed 计算改成了 >>(NVDLA_DMA_MASK_BIT-1)。",
+      "READ_IG 还把基于 NVDLA_PRIMARY_MEMIF_WIDTH 的编译期判断改成了 NVDLA_MEMIF_WIDTH，更符合真实参数配置。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_READ_IG_bpt.v",
+      "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_bpt.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "burst 分拆逻辑需要把请求地址和长度转换成首拍、中间拍、末拍大小，以及下游 slot 计数。在参数化内存接口中，这些中间 offset 必须以完整算术位宽被驱动，slot 计算也必须跟随真实 mask 宽度缩放。如果高位未赋值，或者运算仍然硬编码成某一种宽度比例，就会在某些配置下产生 X/Z，或者把请求错误地拆分。",
+      "portable_injection_spec": {
+        "affected_mechanism": "参数化 burst 分拆中的 offset 与 slot 计算",
+        "trigger_condition": "当 burst-size 子字段位宽小于算术向量位宽，或内存 mask 粒度不等于硬编码的“除 2”假设时。",
+        "injection_action": "把 burst partitioner 恢复成部分驱动的 offset 向量，并恢复硬编码的宽度相关分拆计算。",
+        "implementation_pattern": "truncate_width_and_restore_hardcoded_scaling",
+        "portability_notes": [
+          "目标应是根据请求地址和长度推导 start offset、end offset 以及所需 slot 数的逻辑。",
+          "跨 DUT 的典型注入方式是：只给 offset 向量的低位赋值，而后续算术仍按更宽位宽执行。",
+          "如果设计里存在编译期宽度分支，可以把 shift 量或宽度选择强行改回固定比例，而不是跟随真实 mask 宽度。"
+        ],
+        "concrete_injection_steps": [
+          "找到对读或写请求计算 start offset、size offset、end offset 和 slot_needed 的 burst 分拆阶段。",
+          "修改 offset 赋值，只驱动低位子字段，让更高位的零扩展消失或被截断。",
+          "把依赖参数的 shift 或宽度判断恢复成固定的“除 2”式假设，使接口几何变化时 split-count 和 swizzle 决策出错。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_READ_IG_bpt.v",
+          "vmod/nvdla/nocif/NV_NVDLA_MCIF_WRITE_IG_bpt.v"
+        ],
+        "target_module_or_logic": "MCIF 读写入口的 burst partition 逻辑",
+        "commit_fix_summary": "该修复在两个 BPT 模块里都把 stt_offset 和 size_offset 零扩展到 [2:0]；在 READ_IG 中还同时修正了硬编码的 >>1 和位宽宏。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在两个 BPT 文件中，把 stt_offset/size_offset 恢复为只按 NVDLA_MCIF_BURST_SIZE_LOG2 部分赋值；在 NV_NVDLA_MCIF_READ_IG_bpt.v 中再恢复旧的 >>1 slot_needed 逻辑以及旧的位宽条件宏。"
+      },
+      "expected_failure_mode": "某些配置下会在依赖 offset 的信号上出现 Z/X，或计算出错误的 burst 分拆和 slot 数，进而导致内存事务格式错误、误判 stall，或 swizzle 行为不正确。",
+      "evidence_for_injection": [
+        "提交信息明确提到了 signal state Z。",
+        "被修改的信号直接喂给 end_offset、is_single_tran、ftran/ltran 大小以及 lat-fifo slot 计数。",
+        "读路径补丁还同时修改了 out_swizzle 和位宽条件，说明这不是样式问题，而是参数化敏感的功能缺陷。"
+      ],
+      "notes": [
+        "读路径文件包含更完整的可复用注入点，因为它把 offset 算术和 slot 缩放耦合在一起。",
+        "写路径文件则提供了一个更简单的配套注入点，用于恢复同类宽度/驱动缺陷。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

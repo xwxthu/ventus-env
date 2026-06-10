@@ -1,0 +1,131 @@
+{
+  "dataset_id": 286,
+  "original_review_id": 343,
+  "meta": {
+    "id": 343,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "3f8756c3754daf122064ca1756e37375871e1e55",
+    "subject": "RASTER_UNT: Barycentric ordering issue fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "rasterizer",
+    "summary": "Fixes raster-response wiring so each lane receives its own barycentric coordinates instead of repeatedly writing the outer-loop index lane.",
+    "why_it_counts": [
+      "The patch corrects DUT RTL in the raster output path.",
+      "It fixes a direct lane-mapping error in interpolation inputs.",
+      "Misordered barycentric coordinates produce incorrect downstream attribute interpolation."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only touched DUT file is hw/rtl/raster_unit/VX_raster_rsp_switch.sv.",
+      "Inside the nested i/j loops, stamps[i].bcoord_x/y/z change from index i to index j.",
+      "The parent revision repeatedly overwrote the same destination element in the inner loop instead of filling all four barycentric lanes."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_rsp_switch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix corrects an array-lane wiring bug in raster output assembly. A rasterizer often carries several barycentric components per quad or stamp lane, and those components must be copied with the inner lane index, not the outer stamp index. If the wrong loop index is used during array transformation, one lane is overwritten repeatedly while the remaining lanes receive missing or misordered interpolation weights.",
+      "portable_injection_spec": {
+        "affected_mechanism": "per-lane barycentric wiring",
+        "trigger_condition": "The raster backend repacks barycentric arrays from one aggregate format into another for multiple lanes or pixels.",
+        "injection_action": "Use the outer loop index when writing the per-lane destination array instead of the inner lane index.",
+        "implementation_pattern": "swap inner and outer loop index in array assignment",
+        "portability_notes": [
+          "This applies to any rasterizer or SIMD frontend that repacks vectors of per-lane interpolation state.",
+          "The mutation should affect all barycentric components consistently, not just x or y, so the bug remains a lane-ordering fault.",
+          "The clearest trigger is a multi-lane quad with distinct barycentric values per lane."
+        ],
+        "concrete_injection_steps": [
+          "Locate the nested loop that converts barycentric or interpolation arrays into the outgoing stamp or pixel structure.",
+          "Replace the inner-lane destination index with the outer loop index so the same slot is written multiple times inside the inner loop.",
+          "Apply the same mistaken index to every barycentric component or similarly packed interpolation field."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_rsp_switch.sv"
+        ],
+        "target_module_or_logic": "VX_raster_rsp_switch barycentric array transformation",
+        "commit_fix_summary": "The commit changes stamps[i].bcoord_x/y/z from destination index i to j inside the inner loop so each of the four lanes is filled correctly.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_raster_rsp_switch, change stamps[i].bcoord_x[j], bcoord_y[j], and bcoord_z[j] back to index i inside the j loop."
+      },
+      "expected_failure_mode": "Some output lanes receive wrong barycentric weights, causing incorrect attribute interpolation or shading for affected pixels. ",
+      "evidence_for_injection": [
+        "The parent revision wrote stamps[i].bcoord_*[i] inside a loop over j, so only one destination element was targeted repeatedly.",
+        "The fixed revision preserves the source-side [j] indexing and only corrects the destination-side lane index.",
+        "The change is isolated to barycentric field wiring and does not alter unrelated raster control."
+      ],
+      "notes": [
+        "This is a pure lane-mapping bug and is highly portable to other packed-array transforms.",
+        "Use lane-distinct test vectors; uniform barycentric values may hide the injected fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "rasterizer",
+    "summary": "该提交修复了光栅响应路径中的连线错误，使每个 lane 都收到自己的重心坐标，而不是在内层循环中反复写外层索引对应的那个 lane。",
+    "why_it_counts": [
+      "补丁修正的是光栅输出路径中的 DUT RTL。",
+      "它修复了插值输入上的直接 lane 映射错误。",
+      "重心坐标顺序错误会直接导致下游属性插值错误。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一被修改的 DUT 文件是 hw/rtl/raster_unit/VX_raster_rsp_switch.sv。",
+      "在嵌套 i/j 循环中，stamps[i].bcoord_x/y/z 的目标索引从 i 改成了 j。",
+      "父版本在内层循环里反复覆盖同一个目标元素，而不是把四个 barycentric lane 全部填满。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_rsp_switch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对的是光栅输出组装中的数组 lane 连线错误。光栅器通常会为每个 quad 或 stamp lane 携带多组重心分量，这些分量在格式转换时必须使用内层 lane 索引来写入目标结构，而不能错误使用外层 stamp 索引。如果数组变换过程中用了错误的循环索引，就会出现某一个 lane 被反复覆盖、其余 lane 缺失或顺序错乱的情况。",
+      "portable_injection_spec": {
+        "affected_mechanism": "逐 lane 重心坐标连线",
+        "trigger_condition": "光栅后端需要把 barycentric 数组从一种聚合格式重新打包到另一种面向多个 lane 或像素的结构中。",
+        "injection_action": "在写目标逐 lane 数组时，用外层循环索引替代内层 lane 索引。",
+        "implementation_pattern": "在数组赋值中交换内外层循环索引",
+        "portability_notes": [
+          "适用于任何需要重排逐 lane 插值状态的光栅器或 SIMD 前端。",
+          "应同时作用于所有 barycentric 分量，而不只是 x 或 y，这样故障才保持为 lane 顺序错误。",
+          "最清晰的触发场景是多 lane quad 中各 lane 的 barycentric 值彼此不同。"
+        ],
+        "concrete_injection_steps": [
+          "定位把 barycentric 或插值数组转换成输出 stamp/pixel 结构的嵌套循环。",
+          "把目标数组中的内层 lane 索引替换为外层循环索引，使同一个槽位在内层循环中被重复写入。",
+          "对所有 barycentric 分量或同类打包插值字段都使用同样的错误索引。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_rsp_switch.sv"
+        ],
+        "target_module_or_logic": "VX_raster_rsp_switch 中 barycentric 数组的格式转换逻辑",
+        "commit_fix_summary": "该提交把内层循环里的 stamps[i].bcoord_x/y/z 目标索引从 i 改为 j，使四个 lane 都能被正确填充。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_raster_rsp_switch 中，把 stamps[i].bcoord_x[j]、bcoord_y[j]、bcoord_z[j] 在 j 循环里改回使用 i。"
+      },
+      "expected_failure_mode": "部分输出 lane 会收到错误的重心权重，从而使受影响像素的属性插值或着色结果错误。",
+      "evidence_for_injection": [
+        "父版本在 j 循环内写的是 stamps[i].bcoord_*[i]，因此同一个目标元素被重复覆盖。",
+        "修复版保留了源端 [j] 索引，只修正了目标端 lane 索引。",
+        "改动完全局限于 barycentric 字段连线，没有牵涉其他光栅控制逻辑。"
+      ],
+      "notes": [
+        "这是纯粹的 lane 映射类错误，非常容易迁移到其他 packed-array 变换逻辑中。",
+        "应使用 lane 间不同的测试向量；如果所有 barycentric 值都相同，故障可能被掩盖。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

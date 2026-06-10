@@ -1,0 +1,139 @@
+{
+  "dataset_id": 356,
+  "original_review_id": 437,
+  "meta": {
+    "id": 437,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "f3eb6675a4684193bd8e6924546ca051634c6582",
+    "subject": "tag hit miss trigger fixed and add log for branch"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes the L1 tag-hit indication so stage-1 hit is asserted only when a real probe-read transaction was launched in the previous cycle.",
+    "why_it_counts": [
+      "The subject explicitly says the tag hit/miss trigger is fixed.",
+      "The functional hunk is in L1TagAccess.scala, a central cache metadata block.",
+      "This branch variant carries the same functional cache fix as the corresponding master-branch commit."
+    ],
+    "disqualifiers": [
+      "The same commit also adds branch debug logging and switches a test workload.",
+      "Those extra edits do not affect the cache bug mechanism."
+    ],
+    "evidence": [
+      "`io.hit_st1` changes from raw `iTagChecker.io.cache_hit` to `iTagChecker.io.cache_hit && RegNext(io.probeRead.fire)`.",
+      "Nearby code shows `io.hit_st1` is the stage-1 result of the tag probe.",
+      "The other touched files only add logging or change the selected testbench."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1TagAccess.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A tag-compare result is only meaningful when it is aligned with a valid metadata probe in the corresponding pipeline stage. If a cache exposes the raw comparator hit bit without qualifying it by the probe-valid pipeline bit, a stale comparator output can be consumed as a real hit during bubbles or stalls. That can send a request down the hit path when no valid tag probe actually occurred for that request.",
+      "portable_injection_spec": {
+        "affected_mechanism": "pipeline validity qualification of tag-hit result",
+        "trigger_condition": "The cache metadata pipeline experiences an idle cycle, bubble, or stall after a prior hit-producing probe.",
+        "injection_action": "Expose the raw tag-comparator hit result without the matching stage-valid qualification.",
+        "implementation_pattern": "drop_valid_qualification on hit/miss flag",
+        "portability_notes": [
+          "This maps to any pipelined cache tag path that separates metadata read, compare, and downstream control use across cycles.",
+          "The bug does not require changing tag contents; it only requires misqualifying the hit output.",
+          "A similar injection can target either the hit signal itself or an equivalent downstream 'probe valid' term."
+        ],
+        "concrete_injection_steps": [
+          "Locate the stage where a tag comparator produces a hit result for a previous-cycle probe.",
+          "Find the valid bit or handshake term that confirms a real probe occupied that stage.",
+          "Remove that valid qualification from the exported hit indication while leaving the comparator logic unchanged.",
+          "Keep any way-mask output path unchanged so the failure remains a stale-hit trigger rather than a tag-content bug."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "Stage-1 hit qualification in `L1TagAccess`",
+        "commit_fix_summary": "The fix gates `io.hit_st1` with `RegNext(io.probeRead.fire)` so a hit is only visible when a probe was actually issued into the pipeline.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "The source-level anchor is the `io.hit_st1 := ...` assignment immediately below `io.waymaskHit_st1`."
+      },
+      "expected_failure_mode": "A stale tag-compare result is interpreted as a real hit, causing false cache hits, wrong path selection, and possible dirty-bit or response corruption downstream.",
+      "evidence_for_injection": [
+        "The only DUT-functional change in the commit is the added `RegNext(io.probeRead.fire)` qualification.",
+        "The surrounding code confirms the hit signal is consumed as the stage-1 probe result.",
+        "All other diffs are logging or test noise, so the injection target is well isolated."
+      ],
+      "notes": [
+        "This branch carries the same functional mutation point as dataset 355.",
+        "The bug pattern is reusable in TLBs, tag arrays, and scoreboard probes that pipeline compare outputs."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L1 tag-hit 指示信号：只有前一拍确实发起过 probe-read 事务时，stage-1 hit 才允许拉高。",
+    "why_it_counts": [
+      "标题明确说明修复的是 tag hit/miss 触发问题。",
+      "功能性 hunk 位于 L1TagAccess.scala，这是核心缓存元数据模块。",
+      "这个分支版本携带了与 master 分支对应提交相同的缓存功能修复。"
+    ],
+    "disqualifiers": [
+      "同一提交还加入了 branch 调试日志并切换了测试 workload。",
+      "这些额外改动都不影响缓存故障机制本身。"
+    ],
+    "evidence": [
+      "`io.hit_st1` 从原始的 `iTagChecker.io.cache_hit` 改为 `iTagChecker.io.cache_hit && RegNext(io.probeRead.fire)`。",
+      "附近代码表明 `io.hit_st1` 是 tag probe 的 stage-1 输出结果。",
+      "其他改动文件只是在增加日志或切换所选测试。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1TagAccess.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "只有当 tag 比较结果与对应流水级里的有效元数据探测对齐时，这个结果才有意义。如果 cache 直接输出原始 comparator hit 位，而不再用 probe-valid 的流水位做限定，那么在 bubble 或 stall 期间，陈旧的比较结果也可能被当作真实命中使用。这会让某个请求走上 hit 路径，尽管该请求实际上并没有进行对应的 tag probe。",
+      "portable_injection_spec": {
+        "affected_mechanism": "tag-hit 结果的流水有效性限定",
+        "trigger_condition": "缓存元数据流水在先前产生过 hit 的 probe 之后经历空拍、bubble 或 stall。",
+        "injection_action": "暴露未经过对应 stage-valid 限定的原始 tag comparator hit 结果。",
+        "implementation_pattern": "去掉 hit/miss 标志上的有效性限定",
+        "portability_notes": [
+          "适用于任意把元数据读取、比较和下游控制跨拍处理的流水式 cache tag 路径。",
+          "该问题不需要改变 tag 内容，只需要让 hit 输出缺少有效性限定。",
+          "类似注入也可以作用在 hit 信号本身，或与之等价的下游 probe-valid 项上。"
+        ],
+        "concrete_injection_steps": [
+          "找到 tag comparator 在某一流水级输出前一拍 probe 命中结果的位置。",
+          "找到用来确认该流水级确实存在有效 probe 的 valid 位或握手项。",
+          "在保持 comparator 逻辑不变的前提下，把导出的 hit 指示信号去掉这层有效性限定。",
+          "保持 way-mask 输出路径不变，使故障体现为“陈旧命中触发”，而不是 tag 内容错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "`L1TagAccess` 中 stage-1 hit 的限定逻辑",
+        "commit_fix_summary": "修复把 `io.hit_st1` 用 `RegNext(io.probeRead.fire)` 做门控，使只有实际进入流水的 probe 才能产生可见 hit。",
+        "mutation_strategy": "去掉握手项",
+        "source_level_edit_anchor": "源级锚点是位于 `io.waymaskHit_st1` 下方的 `io.hit_st1 := ...` 赋值。"
+      },
+      "expected_failure_mode": "陈旧的 tag 比较结果会被错误解释为真实命中，造成假命中、路径选择错误，并可能向下游传播 dirty-bit 或响应错误。",
+      "evidence_for_injection": [
+        "提交中唯一的 DUT 功能改动就是补上 `RegNext(io.probeRead.fire)` 这一限定。",
+        "周围代码确认该 hit 信号被作为 stage-1 的 probe 结果使用。",
+        "其他 diff 都是日志或测试噪声，因此该注入目标非常清晰。"
+      ],
+      "notes": [
+        "该分支上的功能性突变点与数据集 355 相同。",
+        "这种故障模式也可以复用于 TLB、tag array 以及流水化 compare 输出的 scoreboard 探测路径。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

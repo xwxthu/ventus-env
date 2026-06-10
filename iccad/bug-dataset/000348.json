@@ -1,0 +1,137 @@
+{
+  "dataset_id": 348,
+  "original_review_id": 421,
+  "meta": {
+    "id": 421,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "27a0ca7995bb85c6e4a5147a9581d94493ce2241",
+    "subject": "Fixed bug with two accumulator banks"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "The main fix derives output bank and row from the address after applying the per-row output counter, so writes crossing accumulator-bank boundaries land in the correct bank.",
+    "why_it_counts": [
+      "The commit message explicitly says there was a bug with two accumulator banks.",
+      "The substantive correctness change is in `ExecuteController`, which owns output writeback addressing.",
+      "The patch makes bank selection and row selection come from the same counter-adjusted local address."
+    ],
+    "disqualifiers": [
+      "The same commit also contains generic type-plumbing and comment cleanup in other files."
+    ],
+    "evidence": [
+      "In `src/main/scala/gemmini/ExecuteController.scala`, `w_address` is rebuilt as `mesh.io.tag_out.addr` plus an `output_counter` offset before bank/row extraction.",
+      "Both SRAM and accumulator write ports switch from a separately incremented row-only address to `w_row` derived from the adjusted address.",
+      "`is_garbage_addr` is moved back to the original tag address so bank-crossing address updates do not interfere with garbage-address detection."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When output data is emitted over multiple rows, bank selection and row selection must be computed from the same incremented local address. If the bank comes from the base address while the row is advanced separately, an output block that crosses a bank boundary will be written into the wrong bank or row.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-bank output write address generation",
+        "trigger_condition": "Output writeback advances across a bank boundary within a block, such as a two-bank accumulator or scratchpad configuration.",
+        "injection_action": "Compute bank selection from the unadjusted base address while incrementing only the row field separately.",
+        "implementation_pattern": "split bank and row calculation across different address versions",
+        "portability_notes": [
+          "This maps to any local-address format where bank and row are encoded in one address and a row counter steps across bank boundaries.",
+          "Single-bank configurations may hide the defect entirely; use at least two banks for validation.",
+          "Keep garbage or sentinel-address detection unchanged unless you intentionally want additional regressions."
+        ],
+        "concrete_injection_steps": [
+          "Find the execute-stage logic that converts an output tag plus a row counter into bank and row write addresses.",
+          "Revert the bank selection to use the base address before the row-counter offset is applied.",
+          "Continue incrementing only the row value or row field separately for each emitted output row.",
+          "Trigger with an output tile whose writeback range crosses from one accumulator bank into the next."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "Gemmini execute-stage output writeback address path",
+        "commit_fix_summary": "The fix computes `w_address` by adding `output_counter` before deriving `w_bank` and `w_row`, and then uses that unified address decomposition for both SRAM and accumulator writes.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In `src/main/scala/gemmini/ExecuteController.scala`, `w_address` changed from the raw tag address to a counter-adjusted address, and `io.srams.write(i).addr` / `io.acc.write(i).addr` changed from a row-only incremented value to `w_row` derived from that adjusted address."
+      },
+      "expected_failure_mode": "Outputs that span multiple banks are written into the wrong bank or wrong row, corrupting results in multi-bank accumulator configurations.",
+      "evidence_for_injection": [
+        "The subject line points directly at the two-bank failure scenario.",
+        "The corrected logic now derives bank and row from one adjusted address, which is exactly the invariant the bug had violated.",
+        "Most other files in the commit are unrelated type/comment churn, making `ExecuteController` the honest primary grounding site."
+      ],
+      "notes": [
+        "If you also revert the garbage-address handling change, you may introduce extra behavior beyond the original multi-bank bug.",
+        "A workload that writes a block across bank boundaries is required to expose the defect."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "核心修复是先把每行输出计数器加到本地地址上，再从该地址统一解析 bank 和 row，从而让跨 accumulator bank 的写回落到正确 bank。",
+    "why_it_counts": [
+      "提交信息明确说明存在“两块 accumulator bank”相关的缺陷。",
+      "真正的正确性改动位于负责输出写回地址的 `ExecuteController`。",
+      "补丁让 bank 选择与 row 选择都来自同一个经过计数器修正的本地地址。"
+    ],
+    "disqualifiers": [
+      "同一提交还包含其他文件中的泛型传递和注释清理。"
+    ],
+    "evidence": [
+      "在 `src/main/scala/gemmini/ExecuteController.scala` 中，`w_address` 改为先把 `output_counter` 偏移加到 `mesh.io.tag_out.addr` 上，再解析 bank/row。",
+      "SRAM 与 accumulator 的写端口都从“单独递增 row 地址”改成了使用由修正后地址导出的 `w_row`。",
+      "`is_garbage_addr` 被改回基于原始 tag 地址判断，从而避免跨 bank 地址更新干扰 garbage 地址检测。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当输出数据跨多行发射时，bank 选择与 row 选择必须基于同一个已经递增过的本地地址。如果 bank 仍来自基地址，而 row 单独递增，那么一旦输出块跨越 bank 边界，数据就会被写到错误的 bank 或错误的 row。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 bank 输出写地址生成",
+        "trigger_condition": "输出写回在一个 block 内跨越 bank 边界，例如双 accumulator bank 或多 bank scratchpad 配置。",
+        "injection_action": "让 bank 选择继续来自未修正的基地址，而只单独递增 row 字段。",
+        "implementation_pattern": "让 bank 与 row 来自不同版本的地址",
+        "portability_notes": [
+          "适用于 bank 和 row 共用一个本地地址编码、并且行计数可能跨越 bank 边界的结构。",
+          "单 bank 配置可能完全掩盖该缺陷，验证时至少需要两个 bank。",
+          "除非你故意想引入其他退化，否则应保持 garbage/sentinel 地址检测逻辑不变。"
+        ],
+        "concrete_injection_steps": [
+          "找到执行阶段把输出 tag 和行计数器转换成 bank/row 写地址的逻辑。",
+          "把 bank 选择回退为使用应用行计数器之前的基地址。",
+          "继续仅对 row 值或 row 字段进行单独递增。",
+          "用一个写回范围跨越 bank 边界的输出 tile 触发该缺陷。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "Gemmini 执行阶段的输出写回地址路径",
+        "commit_fix_summary": "该修复在解析 `w_bank` 和 `w_row` 之前先用 `output_counter` 构造 `w_address`，并让 SRAM 与 accumulator 写入都使用这一统一地址分解结果。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 `src/main/scala/gemmini/ExecuteController.scala` 中，`w_address` 从原始 tag 地址改为带计数器偏移的地址，`io.srams.write(i).addr` / `io.acc.write(i).addr` 也从单独递增的 row 值改为使用该地址导出的 `w_row`。"
+      },
+      "expected_failure_mode": "跨多个 bank 的输出会被写到错误 bank 或错误 row，导致多 bank accumulator 配置下的结果损坏。",
+      "evidence_for_injection": [
+        "提交主题直接指向“双 bank”故障场景。",
+        "修复后的逻辑改为从统一的修正地址中同时导出 bank 和 row，这正是原缺陷破坏掉的关键不变量。",
+        "该提交的大多数其他文件只是泛型/注释整理，因此 `ExecuteController` 是最诚实的主要注入锚点。"
+      ],
+      "notes": [
+        "如果连同 garbage 地址处理一起回退，可能会引入超出原始多 bank 缺陷之外的额外行为。",
+        "必须用跨 bank 写回的工作负载才能稳定暴露该问题。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

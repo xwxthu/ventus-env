@@ -1,0 +1,149 @@
+{
+  "dataset_id": 439,
+  "original_review_id": 578,
+  "meta": {
+    "id": 578,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "22398c991d8e4d68ad9bb307f11d83d9108522e1",
+    "subject": "ramulator memory addressing bug fix + platform memory refactoring"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "Fixes multi-bank platform-memory addressing so RTL adapters and simulators agree on bank-interleaved byte-address formation, including the ramulator-backed model.",
+    "why_it_counts": [
+      "The subject explicitly says memory addressing bug fix.",
+      "The patch changes the RTL AXI adapter and matching simulator address formulas.",
+      "The corrected behavior is bank mapping and byte-address formation, which is real DUT and model correctness."
+    ],
+    "disqualifiers": [
+      "The commit is broad and also includes substantial platform-memory refactoring and build-file churn."
+    ],
+    "evidence": [
+      "Vortex_axi.sv flips the AXI adapter from INTERLEAVE=0 to INTERLEAVE=PLATFORM_MEMORY_INTERLEAVE.",
+      "VX_axi_adapter.sv adds an interleaved address formula that inserts bank bits into the outgoing byte address.",
+      "rtlsim, simx, and dram_sim all change their byte-address reconstruction to the new mapping."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/Vortex_axi.sv",
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "sim/common/dram_sim.cpp",
+      "sim/rtlsim/processor.cpp",
+      "sim/simx/mem_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a banked memory system, every adapter and model must agree on where bank-select bits live inside the physical byte address. If one side assumes contiguous regions per bank while another side assumes low-order bank interleaving, requests land on the wrong bank or wrong byte address.",
+      "portable_injection_spec": {
+        "affected_mechanism": "bank-interleaved physical-address formation",
+        "trigger_condition": "The platform exposes multiple memory banks or channels and the interconnect must translate a logical block address into a bank-qualified physical byte address.",
+        "injection_action": "Disable bank interleaving or strip the bank-select bits back out of the physical-address formula so the design falls back to the old contiguous-per-bank mapping.",
+        "implementation_pattern": "strip bank-select insertion from address generation",
+        "portability_notes": [
+          "Apply this to any memory adapter or simulator that rebuilds physical byte addresses from bank id plus block address.",
+          "The reusable bug is disagreement over bank-bit placement in the global address map."
+        ],
+        "concrete_injection_steps": [
+          "Find where the adapter turns an internal block address plus bank id into a physical byte address.",
+          "Remove the inserted bank bits or force non-interleaved mapping.",
+          "If a simulator reconstructs addresses from bank and block fields, revert it to the same old assumption."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/Vortex_axi.sv",
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "sim/rtlsim/processor.cpp",
+          "sim/simx/mem_sim.cpp",
+          "sim/common/dram_sim.cpp"
+        ],
+        "target_module_or_logic": "platform-memory bank interleaving in the AXI adapter and matching simulator address reconstruction",
+        "commit_fix_summary": "The fix enables platform-memory interleaving in the RTL adapter and updates simulator and DRAM-model address formulas to insert and reconstruct bank bits consistently.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Set the adapter back to non-interleaved mode and revert the bank-bit insertion and byte-address reconstruction formulas to the old contiguous-per-bank mapping."
+      },
+      "expected_failure_mode": "Adjacent addresses can land on the wrong bank or wrong byte address, causing bank aliasing, corrupted data, or RTL/model mismatches.",
+      "evidence_for_injection": [
+        "The top-level RTL explicitly changes the adapter INTERLEAVE parameter.",
+        "The adapter adds a new interleaved address formula rather than only renaming macros.",
+        "Both rtlsim and simx change address reconstruction, confirming a real mapping mismatch."
+      ],
+      "notes": [
+        "Despite the surrounding refactor, the central semantic change is corrected bank-address mapping.",
+        "If only one injection is desired, mutate the RTL adapter first."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "该提交修复了多 bank 平台内存的寻址问题，使 RTL adapter 和 simulator 在按 bank 交织的字节地址形成上保持一致，其中也包括基于 ramulator 的模型。",
+    "why_it_counts": [
+      "提交标题明确写明是 memory addressing bug fix。",
+      "补丁修改了 RTL AXI adapter 以及匹配的 simulator 地址公式。",
+      "被修正的是 bank 映射和字节地址形成，这属于真实的 DUT 与模型正确性问题。"
+    ],
+    "disqualifiers": [
+      "该提交范围较大，同时包含较多平台内存重构和构建文件调整。"
+    ],
+    "evidence": [
+      "Vortex_axi.sv 把 AXI adapter 从 INTERLEAVE=0 改成了 INTERLEAVE=PLATFORM_MEMORY_INTERLEAVE。",
+      "VX_axi_adapter.sv 新增了交织地址公式，会把 bank 位插入到输出字节地址中。",
+      "rtlsim、simx 和 dram_sim 都同步改写了字节地址重建逻辑。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/Vortex_axi.sv",
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "sim/common/dram_sim.cpp",
+      "sim/rtlsim/processor.cpp",
+      "sim/simx/mem_sim.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 banked memory system 中，所有 adapter 和模型都必须一致地定义 bank-select 位在物理字节地址中的位置。如果一侧按每个 bank 连续分段理解地址，而另一侧按低位 bank 交织理解地址，请求就会落到错误的 bank 或错误的字节地址。",
+      "portable_injection_spec": {
+        "affected_mechanism": "按 bank 交织的物理地址形成",
+        "trigger_condition": "平台暴露了多个 memory bank 或 channel，而互连需要把逻辑 block 地址转换成带 bank 身份的物理字节地址。",
+        "injection_action": "关闭 bank interleaving，或者把 bank-select 位从物理地址公式中去掉，使系统退回旧的按 bank 连续分段映射。",
+        "implementation_pattern": "strip bank-select insertion from address generation",
+        "portability_notes": [
+          "适用于任何根据 bank id 和 block 地址重建物理字节地址的 memory adapter 或 simulator。",
+          "可复用缺陷的本质是全局地址图中 bank 位位置理解不一致。"
+        ],
+        "concrete_injection_steps": [
+          "找到 adapter 把内部 block 地址加上 bank id 转换成物理字节地址的位置。",
+          "删除插入的 bank 位，或者强制恢复非交织映射。",
+          "如果 simulator 也会重建地址，则把它的公式一起改回旧假设。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/Vortex_axi.sv",
+          "hw/rtl/libs/VX_axi_adapter.sv",
+          "sim/rtlsim/processor.cpp",
+          "sim/simx/mem_sim.cpp",
+          "sim/common/dram_sim.cpp"
+        ],
+        "target_module_or_logic": "AXI adapter 中的平台内存 bank 交织及 simulator 对应的地址重建逻辑",
+        "commit_fix_summary": "修复在 RTL adapter 中启用了平台内存交织，并同步修改 simulator 与 DRAM 模型的地址公式，使 bank 位的插入和重建保持一致。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 adapter 改回非交织模式，并把 bank 位插入与字节地址重建公式恢复到旧的按 bank 连续分段映射。"
+      },
+      "expected_failure_mode": "相邻地址请求可能落到错误的 bank 或错误字节地址，造成 bank 别名、数据损坏，或 RTL 与模型行为不一致。",
+      "evidence_for_injection": [
+        "RTL 顶层显式修改了 adapter 的 INTERLEAVE 参数。",
+        "adapter 中新增的是新的交织地址公式，而不是单纯宏重命名。",
+        "rtlsim 和 simx 都同步改写了地址重建逻辑，说明这是实质性的映射失配。"
+      ],
+      "notes": [
+        "虽然周围伴随较多重构，但核心语义变化就是 bank 地址映射被修正。",
+        "如果只选一个注入点，优先修改 RTL adapter。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

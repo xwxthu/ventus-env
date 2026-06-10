@@ -1,0 +1,149 @@
+{
+  "dataset_id": 308,
+  "original_review_id": 372,
+  "meta": {
+    "id": 372,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "8ab7c590fd2c48d7929cd0a486b34886571767ac",
+    "subject": "disabling fetch's deadlock check when L1 caches are present"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fetch_control",
+    "summary": "Fixes fetch-stage throttling so the ibuffer deadlock workaround is only active in shared-bus configurations, not when L1 caches give fetch its own path.",
+    "why_it_counts": [
+      "The patch changes active fetch and decode pipeline control logic.",
+      "The surrounding comments explicitly tie the old workaround to a shared I-cache and D-cache bus scenario.",
+      "Leaving that workaround enabled in L1-cache builds can block forward progress in a real DUT configuration."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/VX_define.vh adds a derived `L1_ENABLE macro when ICACHE_ENABLE or DCACHE_ENABLE is set.",
+      "In hw/rtl/core/VX_fetch.sv, the pending ibuffer fullness tracking and ibuf_pop-based throttling are wrapped in `ifndef L1_ENABLE, and ibuf_ready becomes 1'b1 when L1 is present.",
+      "hw/rtl/core/VX_decode.sv, hw/rtl/core/VX_ibuffer.sv, hw/rtl/interfaces/VX_decode_if.sv, and hw/rtl/interfaces/VX_fetch_if.sv all conditionally remove ibuf_pop plumbing under L1_ENABLE."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_define.vh",
+      "hw/rtl/core/VX_fetch.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_ibuffer.sv",
+      "hw/rtl/interfaces/VX_decode_if.sv",
+      "hw/rtl/interfaces/VX_fetch_if.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A fetch deadlock workaround that throttles instruction requests based on ibuffer occupancy is only appropriate when fetch and data traffic truly contend for the same constrained downstream path. If a design later adds private L1 paths or otherwise separates instruction and data traffic, keeping the old workaround creates a false dependency and can stall fetch even though the original shared-bus hazard no longer exists.",
+      "portable_injection_spec": {
+        "affected_mechanism": "configuration-dependent fetch backpressure guard",
+        "trigger_condition": "Instruction fetch and data traffic no longer share the same bottleneck, but the fetch stage still enforces a shared-bus ibuffer-throttle rule.",
+        "injection_action": "Keep the shared-bus deadlock-prevention throttle enabled in configurations with separate instruction and data paths.",
+        "implementation_pattern": "stale cross-configuration deadlock guard",
+        "portability_notes": [
+          "Map this to any fetch-stage occupancy workaround that was introduced for a bus-sharing configuration.",
+          "The bug depends on configuration, not on a single instruction type.",
+          "The injected fault should preserve the workaround logic but remove the guard that disables it in separated-cache configurations."
+        ],
+        "concrete_injection_steps": [
+          "Identify the fetch-stage condition that blocks new instruction requests when the instruction buffer is near full.",
+          "Ignore or remove the configuration predicate that says the workaround is only needed when instruction and data traffic share a path.",
+          "Keep the ibuffer-pop or occupancy-based ready gating active in configurations with separate L1 or otherwise independent fetch bandwidth."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_define.vh",
+          "hw/rtl/core/VX_fetch.sv",
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/core/VX_ibuffer.sv",
+          "hw/rtl/interfaces/VX_decode_if.sv",
+          "hw/rtl/interfaces/VX_fetch_if.sv"
+        ],
+        "target_module_or_logic": "fetch-to-ibuffer deadlock throttle and ibuf_pop plumbing under L1_ENABLE",
+        "commit_fix_summary": "The commit introduces L1_ENABLE, disables the ibuffer deadlock workaround when L1 caches are present, and removes the related ibuf_pop interface plumbing in that configuration.",
+        "mutation_strategy": "restore_shared_bus_throttle",
+        "source_level_edit_anchor": "Remove the L1_ENABLE guards so VX_fetch.sv always tracks pending_ibuf_full and the fetch and decode interfaces always carry ibuf_pop."
+      },
+      "expected_failure_mode": "In L1-enabled configurations, fetch can be throttled unnecessarily or deadlock because a shared-bus workaround remains active after the shared-bus assumption stopped being true.",
+      "evidence_for_injection": [
+        "The original comments in VX_fetch.sv state that the workaround is specifically for the case where icache and dcache share the same bus.",
+        "The fix makes ibuf_ready unconditional under L1_ENABLE and deletes the now-unneeded ibuf_pop plumbing.",
+        "The change spans fetch, decode, ibuffer, and the associated interfaces, showing this is an active control-path change."
+      ],
+      "notes": [
+        "The interface changes are support plumbing; the core bug is the stale configuration guard."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fetch_control",
+    "summary": "该提交修复了取指阶段的限流逻辑：ibuffer 死锁规避机制只应在共享总线配置下启用，而不应在存在 L1 cache、取指拥有独立路径时继续生效。",
+    "why_it_counts": [
+      "补丁修改的是实际工作的 fetch 与 decode 流水线控制逻辑。",
+      "周边注释明确说明旧规避逻辑只适用于 I-cache 与 D-cache 共用总线的场景。",
+      "如果在带 L1 cache 的真实 DUT 配置中继续启用该规避逻辑，就可能阻断前向推进。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/VX_define.vh 在 ICACHE_ENABLE 或 DCACHE_ENABLE 打开时新增派生宏 `L1_ENABLE。",
+      "在 hw/rtl/core/VX_fetch.sv 中，pending ibuffer 满度统计与基于 ibuf_pop 的限流被放入 `ifndef L1_ENABLE，下有 L1 时 ibuf_ready 直接变为 1'b1。",
+      "hw/rtl/core/VX_decode.sv、hw/rtl/core/VX_ibuffer.sv、hw/rtl/interfaces/VX_decode_if.sv 和 hw/rtl/interfaces/VX_fetch_if.sv 都在 L1_ENABLE 下条件性移除了 ibuf_pop 传递。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_define.vh",
+      "hw/rtl/core/VX_fetch.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/core/VX_ibuffer.sv",
+      "hw/rtl/interfaces/VX_decode_if.sv",
+      "hw/rtl/interfaces/VX_fetch_if.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一种基于 ibuffer 占用来限制取指请求的死锁规避逻辑，只在取指流量与数据流量确实争用同一受限下游路径时才合理。如果设计后来加入了私有 L1 路径，或者以其他方式把取指与数据流量分开，而仍保留旧的规避逻辑，就会人为制造不存在的依赖关系，使 fetch 即使在原始共享总线隐患已消失时仍然停滞。",
+      "portable_injection_spec": {
+        "affected_mechanism": "依赖配置的 fetch 反压保护逻辑",
+        "trigger_condition": "取指流量与数据流量已经不再共享同一瓶颈，但 fetch 阶段仍然执行面向共享总线场景的 ibuffer 限流规则。",
+        "injection_action": "在指令和数据路径已经分离的配置里，仍然保留共享总线死锁规避限流。",
+        "implementation_pattern": "跨配置遗留的死锁保护条件",
+        "portability_notes": [
+          "把它映射到任何仅为共享总线配置引入的 fetch 阶段占用规避逻辑。",
+          "这个缺陷依赖配置，而不是依赖某条特定指令。",
+          "注入时应保留原始规避逻辑，只去掉在分离 cache 配置下关闭它的那层门控。"
+        ],
+        "concrete_injection_steps": [
+          "找到取指阶段中基于指令缓冲区接近满而阻止新请求发出的条件。",
+          "忽略或移除说明“只有在指令和数据流量共享路径时才需要该规避”的配置谓词。",
+          "在存在独立 L1 或其他独立取指带宽的配置中，继续保留基于 ibuffer pop 或占用统计的 ready 限流。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_define.vh",
+          "hw/rtl/core/VX_fetch.sv",
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/core/VX_ibuffer.sv",
+          "hw/rtl/interfaces/VX_decode_if.sv",
+          "hw/rtl/interfaces/VX_fetch_if.sv"
+        ],
+        "target_module_or_logic": "L1_ENABLE 条件下的 fetch 到 ibuffer 死锁限流与 ibuf_pop 传递",
+        "commit_fix_summary": "该提交引入了 L1_ENABLE，在存在 L1 cache 时关闭 ibuffer 死锁规避路径，并删除该配置下不再需要的 ibuf_pop 接口传递。",
+        "mutation_strategy": "restore_shared_bus_throttle",
+        "source_level_edit_anchor": "去掉 L1_ENABLE 相关条件，使 VX_fetch.sv 始终跟踪 pending_ibuf_full，并让 fetch 和 decode 接口始终携带 ibuf_pop。"
+      },
+      "expected_failure_mode": "在启用 L1 的配置下，fetch 会因为继续套用共享总线场景的规避逻辑而被错误限流，严重时可导致死锁。",
+      "evidence_for_injection": [
+        "VX_fetch.sv 中原始注释明确指出该规避逻辑只适用于 icache 与 dcache 共用总线的情况。",
+        "修复在 L1_ENABLE 下把 ibuf_ready 变为无条件，并删除了相关 ibuf_pop 传递。",
+        "该改动同时跨越 fetch、decode、ibuffer 及其接口，说明它是实际控制路径变化。"
+      ],
+      "notes": [
+        "接口改动只是配套传递层面的调整，核心缺陷是配置门控过期。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

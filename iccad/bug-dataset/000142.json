@@ -1,0 +1,141 @@
+{
+  "dataset_id": 142,
+  "original_review_id": 178,
+  "meta": {
+    "id": 178,
+    "repo": "gemmini",
+    "branch": "bert",
+    "commit": "e22fe17171f3e8ffad5ccc6c4c63bac9dc7955ae",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "activation_pipeline",
+    "summary": "This commit fixes IGELU post-processing support by aligning special-activation gating and accumulator-scale latency with the implemented datapath.",
+    "why_it_counts": [
+      "It changes execute-time activation configuration, the accumulator-scale datapath, and the declared scaling latency inside DUT code.",
+      "The patch removes a stale ExecuteController assertion that rejected IGELU even though an IGELU datapath exists in AccumulatorScale.",
+      "The configuration latency for floating-point accumulator scaling changes from 1 to 4 cycles, indicating a real timing correction for the post-scale path."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "AccumulatorScale.scala changes the IGELU bypass condition to !has_nonlinear_activations || act =/= IGELU, preventing the IGELU polynomial from being taken when nonlinear activations are not implemented.",
+      "ExecuteController.scala removes the assertion that CONFIG_EX does not support IGELU.",
+      "Configs.scala changes the affected acc_scale_args latency from 1 to 4 in the floating-point accumulator scaling configuration."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala",
+      "src/main/scala/gemmini/Configs.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Special post-processing modes such as IGELU often add extra internal stages beyond the base accumulator scale path, and they may also be optional at synthesis time. If the controller still advertises the short generic latency or keeps an outdated unsupported-mode guard, a valid mode can either be rejected outright or observed before the special-function datapath has actually completed. This is a real hardware control-and-timing bug because it changes which activation modes execute correctly and when their results become valid.",
+      "portable_injection_spec": {
+        "affected_mechanism": "special-activation postprocess latency and mode gating",
+        "trigger_condition": "A workload configures IGELU or a similar nonlinear accumulator postprocess, especially on a floating-point scale path.",
+        "injection_action": "Restore the stale short latency and/or reintroduce an incorrect unsupported-mode guard so the special activation is blocked or consumed too early.",
+        "implementation_pattern": "restore_stale_latency_and_feature_guard",
+        "portability_notes": [
+          "Map this to any accelerator that has a configurable accumulator readback path with optional nonlinear activations.",
+          "The reusable bug is the mismatch between declared control timing and the real datapath depth, not Gemmini-specific signal names.",
+          "If another DUT uses a microcode table or parameter ROM instead of a Scala config object, mutate that latency source there."
+        ],
+        "concrete_injection_steps": [
+          "Find where the controller declares or assumes the latency of the accumulator scale plus activation path for the special mode.",
+          "Reduce that declared latency to the generic short value or otherwise make the consumer advance before the special activation pipeline is done.",
+          "Optionally add back a mode check that rejects the special activation even when the datapath exists.",
+          "Run a workload that explicitly uses the special activation and compare its scaled output timing and values."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala",
+          "src/main/scala/gemmini/Configs.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "AccumulatorScale IGELU handling, CONFIG_EX activation acceptance, and acc_scale_args latency",
+        "commit_fix_summary": "The fix guards the IGELU polynomial when nonlinear activations are absent, removes an ExecuteController assertion that blocked IGELU configuration, and increases the floating-point accumulator scale latency from 1 to 4 cycles.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change the latency in the affected ScaleArguments back from 4 to 1 and restore the old ExecuteController IGELU assertion; optionally revert the AccumulatorScale IGELU bypass condition."
+      },
+      "expected_failure_mode": "IGELU-mode operations can be rejected spuriously or their post-scaled results can be consumed before the special activation pipeline has completed, producing wrong or mis-timed outputs.",
+      "evidence_for_injection": [
+        "The patch changes both the control-plane acceptance of IGELU and the datapath latency declaration, which directly ties the bug to executable DUT behavior.",
+        "The AccumulatorScale file already contains explicit IGELU computation logic, so the removed ExecuteController assertion was stale rather than merely documenting an absent feature.",
+        "The latency correction from 1 to 4 cycles is small and concrete enough to reverse faithfully in another design."
+      ],
+      "notes": [
+        "This is a mixed but still coherent DUT fix centered on special activation execution.",
+        "If only one mutation is desired, the latency mismatch is the most portable injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "activation_pipeline",
+    "summary": "该提交通过让特殊激活的门控与 accumulator-scale 延迟和实际数据通路一致，修复了 IGELU 后处理支持问题。",
+    "why_it_counts": [
+      "它修改了 DUT 中执行期的 activation 配置、accumulator-scale 数据通路以及声明的缩放延迟。",
+      "补丁删除了 ExecuteController 中一个过期的断言；该断言会在 AccumulatorScale 已经实现了 IGELU 数据通路的情况下仍拒绝 IGELU。",
+      "浮点 accumulator scaling 的配置延迟从 1 改为 4，说明这是对后处理路径真实时序的修正。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "AccumulatorScale.scala 把 IGELU 旁路条件改成 !has_nonlinear_activations || act =/= IGELU，从而在未实现 nonlinear activation 时不会误走 IGELU 多项式路径。",
+      "ExecuteController.scala 删除了 CONFIG_EX 不支持 IGELU 的断言。",
+      "Configs.scala 把相关浮点 acc_scale_args 的延迟从 1 改成了 4。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala",
+      "src/main/scala/gemmini/Configs.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "像 IGELU 这样的特殊后处理模式通常会比基础的 accumulator scale 路径多出额外内部流水级，而且在综合时也可能是可选功能。如果控制逻辑仍然声明较短的通用延迟，或者保留了过期的“不支持该模式”门控，那么一个合法模式要么会被直接拒绝，要么会在特殊函数数据通路真正完成之前就被观察到。这个 bug 属于真实的硬件控制与时序错误，因为它改变了哪些激活模式能正确执行以及结果何时有效。",
+      "portable_injection_spec": {
+        "affected_mechanism": "特殊激活后处理的延迟与模式门控",
+        "trigger_condition": "工作负载配置了 IGELU 或类似的非线性 accumulator 后处理，尤其是在浮点 scale 路径上。",
+        "injection_action": "恢复过期的短延迟设定，和/或重新加入错误的“不支持该模式”门控，使特殊激活被阻塞或被过早消费。",
+        "implementation_pattern": "restore_stale_latency_and_feature_guard",
+        "portability_notes": [
+          "可映射到任何具有可配置 accumulator 读回路径且支持可选非线性激活的加速器。",
+          "可复用的核心 bug 是控制平面声明的时序与真实数据通路深度不匹配，而不是 Gemmini 特有的信号名。",
+          "如果其他 DUT 用的是微码表或参数 ROM 而不是 Scala 配置对象，就在那里修改该延迟来源。"
+        ],
+        "concrete_injection_steps": [
+          "定位控制逻辑中声明或假设 accumulator scale 加特殊激活路径延迟的位置。",
+          "把该特殊模式的声明延迟改回通用短值，或者让消费者在特殊激活流水完成前就前进。",
+          "可选地重新加入一个模式检查，使该特殊激活即便有数据通路也被错误拒绝。",
+          "运行明确使用该特殊激活的工作负载，并比较其缩放后输出的时序和值。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala",
+          "src/main/scala/gemmini/Configs.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "AccumulatorScale 的 IGELU 处理、CONFIG_EX 对 activation 的接受，以及 acc_scale_args 延迟参数",
+        "commit_fix_summary": "修复在未启用 nonlinear activations 时屏蔽了 IGELU 多项式路径，删除了 ExecuteController 中阻止 IGELU 配置的断言，并把浮点 accumulator scale 延迟从 1 增加到 4 个周期。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把相关 ScaleArguments 的延迟从 4 改回 1，并恢复旧的 ExecuteController IGELU 断言；也可以同时回退 AccumulatorScale 的 IGELU 旁路条件。"
+      },
+      "expected_failure_mode": "IGELU 模式操作可能被错误拒绝，或者其缩放后结果会在特殊激活流水尚未完成时就被消费，从而产生错误或时序错位的输出。",
+      "evidence_for_injection": [
+        "补丁同时修改了 IGELU 的控制面接受逻辑和数据通路延迟声明，因此 bug 与 DUT 的可执行行为直接相关。",
+        "AccumulatorScale 文件中本来就包含显式的 IGELU 计算逻辑，因此被删除的 ExecuteController 断言是过期门控，而不是对缺失功能的说明。",
+        "从 1 到 4 个周期的延迟修正很具体，容易在其他设计中忠实地反向注入。"
+      ],
+      "notes": [
+        "这虽然是一个包含多个点的小提交，但核心都围绕特殊激活执行这一 DUT 行为。",
+        "如果只选择一个变异点，延迟不匹配是最可移植的注入目标。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

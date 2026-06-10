@@ -1,0 +1,141 @@
+{
+  "dataset_id": 11,
+  "original_review_id": 16,
+  "meta": {
+    "id": 16,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "732652911da5c01739fdee63994941e3aee2eb8c",
+    "subject": "fix mxquant pipeline stall"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_handshake",
+    "summary": "Fixes packed MX requantization writeback so the first FP4 or FP6 half-result is marked as non-architectural and drained instead of entering the normal scratchpad or DMA write path.",
+    "why_it_counts": [
+      "The patch changes live handshake behavior between the requantizer, the accumulator scaling stage, and the scratchpad writer path.",
+      "Before the fix, FP4 and FP6 modes asserted output valid on both half-cycles even though the first half was only a temporary packing fragment.",
+      "The commit message and patch both point to a real pipeline stall in DUT writeback flow."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "MxRequantizer.scala now sets out.is_garbage for the first half of FP6 and FP4 packed output while leaving FP8 output non-garbage.",
+      "AccumulatorScale.scala adds and forwards the is_garbage field on the mx_data_out path.",
+      "Scratchpad.scala drains acc_scale_unit outputs marked is_garbage, forces ready, and suppresses normal writer and spad_writer requests for those beats."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala",
+      "src/main/scala/gemmini/MxRequantizer.scala",
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a multi-cycle quantization or packing datapath, some internal beats are only temporary fragments used to assemble a full architectural output row. This fix prevents the first FP4 or FP6 half-result from being treated as a real writeback beat. If that transient half is allowed to flow into the normal store or DMA path, downstream queues can consume an incomplete result, issue bogus writes, or deadlock while waiting for data that should have been discarded.",
+      "portable_injection_spec": {
+        "affected_mechanism": "partial-result suppression in multi-cycle packed writeback",
+        "trigger_condition": "A low-precision output mode emits a full architectural row only after combining two successive half-results.",
+        "injection_action": "Let the first temporary half-result assert normal valid and store semantics instead of tagging or draining it as non-architectural.",
+        "implementation_pattern": "drop transient-result mask",
+        "portability_notes": [
+          "Map this to any datapath that packs multiple internal sub-results into one final writeback beat.",
+          "The injected fault should target the boundary between the packer and the first queue or writer that assumes each valid beat is architecturally meaningful.",
+          "A minimal reinjection is to keep the extra tag field but force it low on the first half."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that tracks whether a packed output is the first or second half of a multi-cycle result.",
+          "Remove or disable the condition that marks the first half as disposable or non-architectural.",
+          "Leave downstream valid and ready handshakes unchanged so the temporary half is accepted by the normal writeback path.",
+          "Do not add compensating backpressure logic; the point is to let the incomplete beat propagate."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala",
+          "src/main/scala/gemmini/MxRequantizer.scala",
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer packed FP4 or FP6 output tagging and Scratchpad drain path",
+        "commit_fix_summary": "The fix adds is_garbage on packed MX output, marks the first FP4 or FP6 half as garbage, propagates that bit through AccumulatorScale, and drains those beats in Scratchpad without issuing writer requests.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the pre-fix behavior by making final_pipe_out.valid fire on both FP4 or FP6 halves without asserting is_garbage, or by ignoring acc_scale_unit.io.out.bits.is_garbage in Scratchpad so the first half reaches the normal writer path."
+      },
+      "expected_failure_mode": "Packed low-precision outputs can inject incomplete rows into scratchpad or DMA writeback, causing bogus writes or a writeback pipeline stall when FP4 or FP6 modes are exercised.",
+      "evidence_for_injection": [
+        "Before the fix, FP4 and FP6 logic asserted final_pipe_out.valid on every quantized half-cycle.",
+        "The fix explicitly marks only the first half as garbage by using !quant_half_counter with lut_valid or quantize_valid.",
+        "Scratchpad treats garbage beats specially by draining them and suppressing store_en driven writer requests."
+      ],
+      "notes": [
+        "This bug is easiest to reproduce in low-precision packed formats that need two half-results per final row.",
+        "A smaller mutation than full reverse patch is to leave tagging in place but never let the garbage tag affect the writer path."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_handshake",
+    "summary": "该提交修复了打包 MX requantization 的写回路径：将 FP4 或 FP6 的第一个半结果标记为非架构可见数据并直接排空，而不是送入正常的 scratchpad 或 DMA 写路径。",
+    "why_it_counts": [
+      "补丁修改了 requantizer、accumulator scaling 阶段与 scratchpad writer 路径之间的真实握手行为。",
+      "修复前，FP4 和 FP6 模式在两个 half-cycle 上都会拉高输出 valid，尽管第一个 half 只是临时打包片段。",
+      "提交信息和补丁都明确指向 DUT 写回流中的真实流水线停顿。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "MxRequantizer.scala 现在会在 FP6 和 FP4 打包输出的第一个 half 上设置 out.is_garbage，而 FP8 输出保持为非 garbage。",
+      "AccumulatorScale.scala 新增并传播了 mx_data_out 路径上的 is_garbage 字段。",
+      "Scratchpad.scala 会排空被标记为 is_garbage 的 acc_scale_unit 输出，并为这些 beat 抑制正常 writer 与 spad_writer 请求。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorScale.scala",
+      "src/main/scala/gemmini/MxRequantizer.scala",
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在多周期量化或打包数据通路中，有些内部 beat 只是用于拼出最终架构输出行的临时片段。该修复阻止 FP4 或 FP6 的第一个 half-result 被当成真实写回 beat。若这个临时 half 进入正常 store 或 DMA 路径，下游队列可能会消耗不完整结果、发出错误写请求，或者在等待本应被丢弃的数据时死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多周期打包写回中的临时结果抑制",
+        "trigger_condition": "某个低精度输出模式只有在连续两个 half-result 合并后才形成一个完整的架构输出行。",
+        "injection_action": "让第一个临时 half-result 像正常结果一样拉高 valid 并参与 store，而不是把它标记并排空为非架构数据。",
+        "implementation_pattern": "drop transient-result mask",
+        "portability_notes": [
+          "把该缺陷映射到任何需要把多个内部子结果打包成一个最终写回 beat 的数据通路。",
+          "注入点应位于 packer 与第一个假设每个 valid beat 都有架构意义的队列或 writer 之间。",
+          "最小化回注方式是保留额外标记字段，但在第一个 half 上强制其为 0。"
+        ],
+        "concrete_injection_steps": [
+          "找到跟踪一个打包输出是第一半还是第二半的控制逻辑。",
+          "移除或禁用把第一半标记为可丢弃或非架构可见的条件。",
+          "保持下游 valid 和 ready 握手不变，使这个临时 half 能被正常写回路径接收。",
+          "不要添加补偿性背压逻辑；目标就是让不完整 beat 继续传播。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorScale.scala",
+          "src/main/scala/gemmini/MxRequantizer.scala",
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer 中打包 FP4 或 FP6 输出的标记逻辑，以及 Scratchpad 的排空路径",
+        "commit_fix_summary": "修复通过在打包 MX 输出上增加 is_garbage、把 FP4 或 FP6 的第一半标记为 garbage、经由 AccumulatorScale 传播该标记，并在 Scratchpad 中无 writer 请求地直接排空这些 beat。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "可通过恢复修复前行为来回注：让 final_pipe_out.valid 在 FP4 或 FP6 的两个 half 上都生效但不置位 is_garbage，或在 Scratchpad 中忽略 acc_scale_unit.io.out.bits.is_garbage，使第一半重新进入正常 writer 路径。"
+      },
+      "expected_failure_mode": "打包低精度输出会把不完整的行送入 scratchpad 或 DMA 写回路径，在 FP4 或 FP6 模式下造成错误写入或写回流水线停顿。",
+      "evidence_for_injection": [
+        "修复前，FP4 和 FP6 逻辑会在每个量化 half-cycle 上都拉高 final_pipe_out.valid。",
+        "修复使用 !quant_half_counter 与 lut_valid 或 quantize_valid 的组合，只把第一半显式标记为 garbage。",
+        "Scratchpad 通过排空 garbage beat 并抑制由 store_en 驱动的 writer 请求来处理这些临时结果。"
+      ],
+      "notes": [
+        "该缺陷最容易在每个最终输出行需要两个 half-result 的低精度打包格式中复现。",
+        "比完整逆向补丁更小的回注方式，是保留 tagging 但永远不让 garbage 标记影响 writer 路径。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

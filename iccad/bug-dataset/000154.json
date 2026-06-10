@@ -1,0 +1,133 @@
+{
+  "dataset_id": 154,
+  "original_review_id": 192,
+  "meta": {
+    "id": 192,
+    "repo": "gemmini",
+    "branch": "gemmini-mx",
+    "commit": "fd3977340164d437fd7a78d4fa34257e0d8369d0",
+    "subject": "fixing dma len issues"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "Fixes output-format-specific DMA length generation so FP8 moveout requests use a larger byte multiplier than FP4/FP6 narrow writes.",
+    "why_it_counts": [
+      "The patch directly changes the Scratchpad DMA write request length logic.",
+      "The request byte count on the hardware write path is correctness-critical and format-dependent here.",
+      "The commit message explicitly identifies a DMA length bug."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scratchpad adds writeData_is_fp8 and writeData_is_fp4orfp6 derived from output_mx_format.",
+      "spad_writer.module.io.req.bits.len now uses a separate multiplier for FP8 instead of sharing the narrow-format formula.",
+      "The pre-fix code used weightTypeProjected.getWidth / 8 for every non-full-width format.",
+      "The fix changes the FP8 case to weightTypeProjected.getWidth / 4."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A store DMA engine often computes request length from the number of logical elements times a per-format byte multiplier. This bug came from treating FP8 output like the narrower packed formats, so the write request length for FP8 was generated with the wrong bytes-per-unit scaling. Any design that supports multiple packed output formats can suffer the same problem if one format is mistakenly charged with another format’s transfer size.",
+      "portable_injection_spec": {
+        "affected_mechanism": "format-dependent store DMA byte-count generation",
+        "trigger_condition": "A moveout or storeback operation writes FP8-format data through a path that also supports denser packed formats such as FP4 or FP6.",
+        "injection_action": "Force the FP8 path to reuse the byte-count multiplier of the denser packed formats instead of using its own larger transfer size.",
+        "implementation_pattern": "wrong byte multiplier for one output format",
+        "portability_notes": [
+          "This applies to any output formatter where one logical row can occupy different physical byte counts depending on quantization format.",
+          "The bug is especially portable on designs that share one DMA request generator across several output encodings.",
+          "If your DUT uses symbolic enums rather than numeric format IDs, map the fault to the path that stores 8-bit outputs versus sub-byte packed outputs."
+        ],
+        "concrete_injection_steps": [
+          "Locate the DMA request field that encodes byte length for store or moveout operations.",
+          "Identify the branch that handles 8-bit output format and replace its bytes-per-element or bytes-per-row multiplier with the multiplier used for denser packed formats.",
+          "Keep address generation unchanged so the bug manifests as a pure transfer-size error when FP8 moveout is exercised."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Scratchpad spad_writer req.bits.len generation for MX output formats",
+        "commit_fix_summary": "The fix adds explicit FP8 format detection and uses a different non-full-width length multiplier for FP8 than for FP4/FP6.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In the spad_writer request-length logic, remove the FP8-specific len branch so all non-full-width formats again use the same narrow-format multiplier."
+      },
+      "expected_failure_mode": "FP8 moveout/storeback requests carry the wrong byte count, which leads to truncated writes, overlong writes, or beat-alignment errors on the store DMA path.",
+      "evidence_for_injection": [
+        "The only behavioral change in the commit is the request-length formula for non-full-width writes.",
+        "The fix distinguishes FP8 from FP4/FP6 using output_mx_format.",
+        "The old formula reused one narrow-format multiplier for every non-full-width case."
+      ],
+      "notes": [
+        "This is a clean single-site injection target.",
+        "The unused writeData_is_fp4orfp6 helper in the patch is not required for reinjection."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "该提交修复了按输出格式生成 DMA 长度的错误，使 FP8 的 moveout 请求使用比 FP4/FP6 窄写更大的字节倍率。",
+    "why_it_counts": [
+      "补丁直接修改了 Scratchpad 中 DMA 写请求的长度逻辑。",
+      "这里硬件写路径上的请求字节数是与格式相关的关键正确性信息。",
+      "提交信息明确指出是 DMA length bug。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scratchpad 新增了由 output_mx_format 推导的 writeData_is_fp8 和 writeData_is_fp4orfp6。",
+      "spad_writer.module.io.req.bits.len 现在为 FP8 使用单独的倍率，而不再与其他窄格式共用公式。",
+      "修复前的代码对所有非 full-width 格式都使用 weightTypeProjected.getWidth / 8。",
+      "修复把 FP8 的倍率改成了 weightTypeProjected.getWidth / 4。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "store DMA 引擎通常会根据“逻辑元素数量 × 某种格式对应的字节倍率”来生成请求长度。这个错误的根因是把 FP8 输出当成更窄的打包格式处理，从而用错误的 bytes-per-unit 缩放生成 FP8 的写请求长度。任何支持多种打包输出格式的设计，只要把某一格式误按另一格式的传输大小计费，就会出现同类问题。",
+      "portable_injection_spec": {
+        "affected_mechanism": "按格式区分的 store DMA 字节数生成",
+        "trigger_condition": "moveout 或 storeback 在一条同时支持 FP8 和更高密度打包格式（如 FP4、FP6）的路径上写出 FP8 数据。",
+        "injection_action": "让 FP8 路径重新复用更高密度打包格式的字节倍率，而不是使用它自身更大的传输大小。",
+        "implementation_pattern": "某一输出格式使用了错误的字节倍率",
+        "portability_notes": [
+          "适用于任何在不同量化格式下，同一逻辑行会占用不同物理字节数的输出格式化器。",
+          "对那些用一套 DMA 请求生成逻辑同时支持多种输出编码的设计，这类错误尤其可移植。",
+          "如果你的 DUT 用符号枚举而不是数字格式 ID，就把错误映射到“8 位输出”与“子字节打包输出”之间的分支。"
+        ],
+        "concrete_injection_steps": [
+          "找到 store 或 moveout 操作中编码字节长度的 DMA 请求字段。",
+          "定位处理 8 位输出格式的分支，把它的 bytes-per-element 或 bytes-per-row 倍率替换为更高密度打包格式所使用的倍率。",
+          "保持地址生成逻辑不变，使错误在触发 FP8 moveout 时表现为纯粹的传输长度错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Scratchpad 中针对 MX 输出格式的 spad_writer req.bits.len 生成逻辑",
+        "commit_fix_summary": "修复新增了显式的 FP8 格式检测，并对 FP8 与 FP4/FP6 使用不同的非 full-width 长度倍率。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 spad_writer 的请求长度逻辑中，删除 FP8 专用的 len 分支，让所有非 full-width 格式重新共用同一个窄格式倍率。"
+      },
+      "expected_failure_mode": "FP8 的 moveout/storeback 请求会携带错误的字节长度，导致 store DMA 路径上出现写入截断、过长写入或 beat 对齐错误。",
+      "evidence_for_injection": [
+        "该提交唯一的行为性变化就是非 full-width 写的请求长度公式。",
+        "修复使用 output_mx_format 区分 FP8 与 FP4/FP6。",
+        "旧公式对所有非 full-width 情况都复用了同一个窄格式倍率。"
+      ],
+      "notes": [
+        "这是一个非常干净的单点注入目标。",
+        "补丁里未被后续直接使用的 writeData_is_fp4orfp6 辅助信号不是回注入所必需的。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "dataset_id": 397,
+  "original_review_id": 498,
+  "meta": {
+    "id": 498,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "09d2412b26a9367bec531e267c0d755eec334b23",
+    "subject": "fix bug 200420194 for nv_medium_512"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes a real CDMA width bug for a larger NVDLA configuration: atomic/grain request counters were hard-coded to 14 bits even though the nv_medium_512 design needs a wider bound derived from CDMA grain capacity.",
+    "why_it_counts": [
+      "The patch changes central CDMA request-generation counters in RTL, not software or tests.",
+      "The fix derives a configuration-dependent counter width and propagates it through the atomic request bookkeeping.",
+      "A too-narrow request/atomic counter can wrap or truncate progress state, which is a real data-mover correctness bug."
+    ],
+    "disqualifiers": [
+      "The bug is configuration-specific and manifests only when the larger nv_medium_512 capacity is enabled."
+    ],
+    "evidence": [
+      "projects.spec adds NVDLA_CDMA_GRAIN_MAX_BIT, derived from CBUF bank depth/width/number and memory atomic size.",
+      "NV_NVDLA_CDMA_define.h exports CDMA_GRAIN_MAX_BIT for the CDMA RTL.",
+      "NV_NVDLA_CDMA_dc.v replaces many fixed [13:0] req_atomic / req_atm_cnt / req_cur_atomic style declarations with width derived from CDMA_GRAIN_MAX_BIT.",
+      "The same file also changes zero constants and comparisons from 14-bit literals to width-agnostic 0, matching the widened counters."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_define.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is an internal counter-width truncation in a DMA request generator. The engine computes how many memory atomics or grains remain in the current transfer, but the state registers are narrower than the maximum legal value for a larger configuration. When the transfer size exceeds the hard-coded width, the counter wraps or truncates, breaking done detection and request sizing.",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA atomic/grain progress counters",
+        "trigger_condition": "A configuration or workload produces more transfer grains/atomics than fit in the stale fixed-width counter",
+        "injection_action": "Reduce the request-progress counter width below the true configuration-dependent maximum so large transfers overflow.",
+        "implementation_pattern": "truncate width of progress counter/state register",
+        "portability_notes": [
+          "Map this to any DMA, cache fill, or prefetch engine that counts transfer units across a configurable buffer size.",
+          "This bug is especially portable across parameterized RTL where counter widths are derived from old constants instead of current capacities.",
+          "The failure can appear as early completion, wrong request size, or a stuck transfer depending on how the wrapped counter is used."
+        ],
+        "concrete_injection_steps": [
+          "Identify the maximum legal number of transfer units the engine must count for the target configuration.",
+          "Force the corresponding progress or remaining-count registers to use a narrower legacy width.",
+          "Leave the surrounding request generator unchanged so overflow corrupts end detection or request-size computation on large transfers."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_define.h",
+          "spec/defs/projects.spec"
+        ],
+        "target_module_or_logic": "CDMA dc atomic/grain counting and request sizing for nv_medium_512",
+        "commit_fix_summary": "The fix introduces a derived CDMA_GRAIN_MAX_BIT width and replaces fixed 14-bit atomic/grain counters with configuration-scaled widths throughout the CDMA request-generation logic.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore fixed 14-bit declarations for req_cur_atomic / req_atm_cnt / req_atomic_* style state in NV_NVDLA_CDMA_dc.v or remove the CDMA_GRAIN_MAX_BIT-derived width export in NV_NVDLA_CDMA_define.h."
+      },
+      "expected_failure_mode": "Large CDMA transfers on the wider configuration miscount remaining atomics, causing wrong request segmentation, premature completion, or hangs.",
+      "evidence_for_injection": [
+        "The patch introduces a new configuration-derived width rather than a localized logic tweak, which is the hallmark of a real width bug.",
+        "Many related counters and temporaries are widened together, showing the bug affected a whole request-tracking chain.",
+        "The fix specifically targets nv_medium_512, indicating the old hard-coded width was sufficient only for smaller configurations."
+      ],
+      "notes": [
+        "To reproduce the original failure reliably, inject the width truncation on a configuration whose legal transfer size exceeds 14 bits of count state."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了更大 NVDLA 配置下的真实 CDMA 位宽缺陷：atomic/grain 请求计数器被硬编码为 14 位，但 nv_medium_512 设计需要根据 CDMA grain 容量推导出更宽的上界。",
+    "why_it_counts": [
+      "补丁修改的是 RTL 中核心 CDMA 请求生成计数器，而不是软件或测试。",
+      "修复引入了配置相关的计数器位宽，并把它传播到 atomic 请求簿记链路中。",
+      "请求/atomic 计数器过窄会导致回绕或截断进度状态，这是实际的数据搬运正确性缺陷。"
+    ],
+    "disqualifiers": [
+      "该缺陷具有配置相关性，只会在更大的 nv_medium_512 容量下显现。"
+    ],
+    "evidence": [
+      "projects.spec 新增了 NVDLA_CDMA_GRAIN_MAX_BIT，由 CBUF bank depth/width/number 与 memory atomic size 推导得到。",
+      "NV_NVDLA_CDMA_define.h 导出 CDMA_GRAIN_MAX_BIT，供 CDMA RTL 使用。",
+      "NV_NVDLA_CDMA_dc.v 把多个固定 [13:0] 的 req_atomic / req_atm_cnt / req_cur_atomic 等声明改成基于 CDMA_GRAIN_MAX_BIT 的位宽。",
+      "同一文件还把原来的 14 位零常量和比较改成与位宽无关的 0，说明这些计数器整体都被放宽了。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_define.h"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该缺陷属于 DMA 请求生成器内部的计数器位宽截断。引擎需要统计当前传输还剩多少 memory atomic 或 grain，但状态寄存器位宽小于大配置下的合法最大值。当传输规模超过这个固定宽度时，计数器会回绕或截断，从而破坏完成检测与请求大小计算。",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA atomic/grain 进度计数器",
+        "trigger_condition": "某个配置或工作负载产生的传输 grain/atomic 数超过旧固定宽度计数器可表示的范围",
+        "injection_action": "把请求进度计数器的位宽重新缩小到低于真实配置最大值，使大传输发生溢出。",
+        "implementation_pattern": "截断进度计数器/状态寄存器的位宽",
+        "portability_notes": [
+          "把该缺陷映射到任何跨可配置 buffer 容量统计传输单元数量的 DMA、cache fill 或 prefetch 引擎。",
+          "该缺陷在参数化 RTL 中尤其常见：计数器宽度来自旧常量，而不是当前容量上界。",
+          "根据回绕计数器的用途不同，表现可能是提前完成、请求大小错误，或者传输卡死。"
+        ],
+        "concrete_injection_steps": [
+          "找出目标配置下该引擎必须能统计的最大传输单元数。",
+          "让对应的进度/剩余计数寄存器退回到更窄的旧位宽。",
+          "保持周围请求生成逻辑不变，使溢出在大传输场景中污染完成检测或请求大小计算。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_define.h",
+          "spec/defs/projects.spec"
+        ],
+        "target_module_or_logic": "nv_medium_512 配置下 CDMA dc 的 atomic/grain 计数与请求大小逻辑",
+        "commit_fix_summary": "修复引入了派生得到的 CDMA_GRAIN_MAX_BIT 位宽，并在整个 CDMA 请求生成逻辑中用它替代固定 14 位 atomic/grain 计数器。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "在 NV_NVDLA_CDMA_dc.v 中把 req_cur_atomic / req_atm_cnt / req_atomic_* 等状态恢复为固定 14 位，或在 NV_NVDLA_CDMA_define.h 中去掉基于 CDMA_GRAIN_MAX_BIT 的位宽导出。"
+      },
+      "expected_failure_mode": "在更宽配置下的大型 CDMA 传输会错误统计剩余 atomic，导致请求切分错误、提前完成或挂死。",
+      "evidence_for_injection": [
+        "补丁引入了新的配置派生位宽，而不是局部逻辑小修，这正是典型的真实位宽缺陷特征。",
+        "多组相关计数器和临时量被一起放宽，说明问题覆盖了一整条请求跟踪链。",
+        "修复明确针对 nv_medium_512，说明旧的硬编码位宽只在较小配置下勉强够用。"
+      ],
+      "notes": [
+        "若要稳定复现原始问题，应在合法传输规模确实超过 14 位计数范围的配置上回注入该位宽截断。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

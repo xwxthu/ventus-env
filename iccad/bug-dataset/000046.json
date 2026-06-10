@@ -1,0 +1,141 @@
+{
+  "dataset_id": 46,
+  "original_review_id": 56,
+  "meta": {
+    "id": 56,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "344cb10994ae1da14cb9626e2a830afb24f36b11",
+    "subject": "Extend DMA writer len bitwidth"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes undersized DMA-writer length and progress counters that could truncate multi-block store requests whose total byte count exceeds a single local data word.",
+    "why_it_counts": [
+      "The commit title explicitly describes a DMA writer length bitwidth bug.",
+      "The patch widens both the stored request length and the bytes-sent counter in the DMA write datapath.",
+      "The surrounding code forms req.len from block offset plus in-block length, so real transactions can exceed one data word and expose truncation."
+    ],
+    "disqualifiers": [
+      "The commit also contains a secondary ExecuteController change, but the titled bugfix and the concrete injectable fault are in the DMA writer bitwidth logic."
+    ],
+    "evidence": [
+      "StreamWriteRequest.len changes from log2Up(dataWidth/8+1) to log2Up((dataWidth/8 max maxBytes)+1).",
+      "bytesSent changes from a width based only on dataBytes to a width based on the larger of dataBytes and maxBytes.",
+      "The writer computes req.len := io.req.bits.block * inputTypeRowBytes.U + io.req.bits.len, so the tracked byte count can be larger than one local data word.",
+      "ExecuteController.scala also changes accReadData selection, indicating the commit is slightly mixed even though the DMA bitwidth fix is primary."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A DMA store engine may need to emit more bytes than fit in one local operand word when a request encodes both an in-block byte count and a block offset or multi-block span. Any register that stores total request length or write progress must therefore be sized for the largest transaction, not just for one local data word. If those counters are too narrow, high bits are truncated and the writer can miscompute remaining bytes, masks, or completion.",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA writer byte-count tracking for multi-block stores",
+        "trigger_condition": "A store or mvout request spans more bytes than a single local data word, especially when total length includes a block index or row offset plus an in-block length.",
+        "injection_action": "Narrow the stored request-length field and the bytes-sent progress counter to a width suitable only for one local data word.",
+        "implementation_pattern": "truncate transaction-length bitwidth",
+        "portability_notes": [
+          "Apply this where total DMA store length is assembled from multiple terms before packetization.",
+          "The bug is most visible when the maximum external burst size exceeds the width of one internal data word.",
+          "The injected fault should be on length bookkeeping, not on the payload data itself."
+        ],
+        "concrete_injection_steps": [
+          "Find the request field or internal register that stores the total number of bytes a DMA write operation should emit.",
+          "Resize that field so it can represent only the byte count of one local data word rather than the full maximum external transfer size.",
+          "Similarly narrow the progress counter that tracks bytes already sent or bytes remaining.",
+          "Leave the request builder that adds block offset plus partial length unchanged, so large requests still arrive but are later truncated by the undersized counters."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "StreamWriteRequest len field and StreamWriter bytesSent accounting",
+        "commit_fix_summary": "The fix widens StreamWriteRequest.len and bytesSent so the DMA writer can track requests up to maxBytes even when req.len includes block*rowBytes plus the current block length.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore len to log2Up(dataWidth/8+1) and bytesSent to a width based only on dataBytes, while keeping the req.len := block*inputTypeRowBytes + len computation unchanged."
+      },
+      "expected_failure_mode": "Large DMA store requests terminate early, generate incomplete byte masks, or drop upper blocks because length bookkeeping wraps or truncates.",
+      "evidence_for_injection": [
+        "Both widened signals are directly involved in computing bytesLeft and packet masks for DMA writes.",
+        "The request length is explicitly built from block offset plus length, which can exceed one data word.",
+        "The commit title and the main diff both point to the DMA writer as the primary bug location."
+      ],
+      "notes": [
+        "A useful trigger is a store path that writes multiple blocks or a transfer larger than dataWidth/8 bytes.",
+        "The ExecuteController change in the same commit appears secondary and is not the primary injection target here."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 DMA writer 中过窄的长度和进度计数字段；当一次 store 请求的总字节数超过单个本地数据字宽时，这些字段会导致传输被截断。",
+    "why_it_counts": [
+      "提交标题明确说明是 DMA writer 的长度位宽缺陷。",
+      "补丁同时扩展了 DMA 写路径中的请求总长度字段和 bytes-sent 进度计数器。",
+      "周围代码把 req.len 计算为“block 偏移 + 当前块内长度”，因此真实事务的总字节数确实可能大于单个本地数据字。"
+    ],
+    "disqualifiers": [
+      "该提交还包含一处次要的 ExecuteController 改动，但标题所述且可稳定注入的主缺陷位于 DMA writer 的位宽逻辑。"
+    ],
+    "evidence": [
+      "StreamWriteRequest.len 从 log2Up(dataWidth/8+1) 改成了 log2Up((dataWidth/8 max maxBytes)+1)。",
+      "bytesSent 也从只按 dataBytes 计算位宽改成了按 dataBytes 与 maxBytes 中较大者确定。",
+      "writer 会计算 req.len := io.req.bits.block * inputTypeRowBytes.U + io.req.bits.len，因此跟踪的总字节数可能大于单个本地数据字。",
+      "ExecuteController.scala 还修改了 accReadData 的选择逻辑，说明该提交略有混合，但 DMA 位宽修复仍是主内容。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当 DMA store 引擎的请求长度同时编码“块内字节数”和“块偏移/多块跨度”时，一次事务可能需要发送的总字节数会超过单个本地操作数字宽。因此，用来保存总请求长度和写出进度的寄存器必须按最大事务来定宽，而不能只按一个本地数据字来定宽。若这些计数器过窄，高位会被截断，writer 就会错误计算剩余字节、字节掩码或完成条件。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多块 DMA store 的字节计数跟踪",
+        "trigger_condition": "一次 store 或 mvout 请求跨越的字节数大于单个本地数据字，尤其是总长度由块索引/行偏移与块内长度共同组成时。",
+        "injection_action": "把保存总请求长度和 bytes-sent 进度的字段收窄到只适合单个本地数据字的位宽。",
+        "implementation_pattern": "截断事务长度位宽",
+        "portability_notes": [
+          "适用于那些在打包 burst 之前，先由多个项组合出 DMA 总写长度的实现。",
+          "当外部最大 burst 大于内部单个数据字宽时，这个缺陷最容易显现。",
+          "注入点应放在长度簿记寄存器上，而不是实际负载数据上。"
+        ],
+        "concrete_injection_steps": [
+          "找到保存 DMA 写操作总字节数的请求字段或内部寄存器。",
+          "把该字段位宽收窄到只能表示一个本地数据字的字节数，而不是完整最大外部传输长度。",
+          "同样收窄用于跟踪已发送字节数或剩余字节数的进度计数器。",
+          "保持“block 偏移 + 部分长度”的请求构造逻辑不变，使大请求仍能进入系统，但随后被过窄计数器截断。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "StreamWriteRequest 的 len 字段以及 StreamWriter 的 bytesSent 计数逻辑",
+        "commit_fix_summary": "修复扩展了 StreamWriteRequest.len 和 bytesSent，使 DMA writer 在 req.len 包含 block*rowBytes 与当前块长度时仍能正确跟踪到 maxBytes 规模的请求。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "把 len 恢复为 log2Up(dataWidth/8+1)，并把 bytesSent 恢复为只基于 dataBytes 的位宽，同时保持 req.len := block*inputTypeRowBytes + len 的计算不变。"
+      },
+      "expected_failure_mode": "较大的 DMA store 请求会过早结束、生成不完整的字节掩码，或漏写高位块，因为长度簿记发生回绕或截断。",
+      "evidence_for_injection": [
+        "这两个被扩展的信号都直接参与 DMA 写路径中 bytesLeft 和 packet mask 的计算。",
+        "请求长度明确由 block 偏移与长度共同组成，因此确实可能超过单个数据字。",
+        "提交标题和主要 diff 都把 DMA writer 指向为主缺陷位置。"
+      ],
+      "notes": [
+        "适合用“多块写出”或“大于 dataWidth/8 字节”的传输来触发。",
+        "同一提交里的 ExecuteController 改动看起来是次要修补，这里不把它作为主要注入目标。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

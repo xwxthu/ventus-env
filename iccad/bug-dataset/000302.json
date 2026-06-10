@@ -1,0 +1,143 @@
+{
+  "dataset_id": 302,
+  "original_review_id": 363,
+  "meta": {
+    "id": 363,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "47847ec92015bdc7b166d97c9df3dc5022d7fda7",
+    "subject": "rrop deadlock fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes a ROP read-modify-write deadlock by releasing reserved queue space when a queued write actually leaves the memory-scheduler request queue, not when the upstream ROP unit merely accepts the write.",
+    "why_it_counts": [
+      "The patch fixes a real forward-progress bug in the DUT memory path.",
+      "The changed logic sits in the ROP unit and memory scheduler, not in tests or tooling.",
+      "The fix changes queue-occupancy accounting that directly determines whether more reads may be issued."
+    ],
+    "disqualifiers": [
+      "The same commit also changes cache configuration defaults and UUID plumbing, which are not the primary bug mechanism."
+    ],
+    "evidence": [
+      "In hw/rtl/rop_unit/VX_rop_unit.sv, pending_reads decr changes from mem_req_fire && mem_req_rw to mem_write_notify, and the counter size changes from `ROP_MEM_QUEUE_SIZE - 1 to `ROP_MEM_QUEUE_SIZE.",
+      "In hw/rtl/libs/VX_mem_scheduler.sv, write_notify is added as reqq_pop && reqq_rw.",
+      "In hw/rtl/rop_unit/VX_rop_mem.sv, write_notify is exported from the memory scheduler back to the ROP unit.",
+      "The surrounding comment is rewritten to say the accounting should keep the memory scheduler queue from filling up."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv",
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a pipeline that issues reads which later create writes into a bounded queue, the reservation counter must track real queue occupancy. If the design releases reserved space when a write is only accepted by an upstream buffer instead of when the queued write actually advances through the bounded scheduler queue, the design underestimates occupancy, can overissue more read requests, and can deadlock when their resulting writes have nowhere to go.",
+      "portable_injection_spec": {
+        "affected_mechanism": "reserved writeback slot accounting for read-modify-write traffic",
+        "trigger_condition": "A bounded request queue sits between a producer of read-triggered writebacks and the memory system, and backpressure allows writes to accumulate in that queue.",
+        "injection_action": "Release the reservation counter on an upstream write handshake instead of on the event that proves a real queue slot was freed or consumed.",
+        "implementation_pattern": "early credit release in queue-occupancy accounting",
+        "portability_notes": [
+          "Map this to any unit that issues reads whose responses later generate writes into a finite queue.",
+          "The key is a mismatch between logical reservations and the queue event that truly frees capacity.",
+          "You can optionally also reduce the reservation counter depth by one to make the deadlock easier to trigger."
+        ],
+        "concrete_injection_steps": [
+          "Locate the counter or credit pool that limits new reads based on future writeback queue usage.",
+          "Make its decrement depend on early write acceptance at an upstream interface rather than on a downstream queue-pop or equivalent capacity-release event.",
+          "Keep the rest of the read and write path unchanged so the only error is the premature release of reserved queue space."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_unit.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv",
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "ROP pending_reads accounting against the memory-scheduler request queue",
+        "commit_fix_summary": "The commit adds a write_notify signal from the memory scheduler, uses it to decrement pending_reads only when queued writes advance through the scheduler queue, and stops reserving one artificial extra slot.",
+        "mutation_strategy": "restore_early_decrement",
+        "source_level_edit_anchor": "Change pending_reads.decr back to mem_req_fire && mem_req_rw and remove the write_notify plumbing from VX_mem_scheduler and VX_rop_mem."
+      },
+      "expected_failure_mode": "Under sustained ROP traffic, the design underestimates queued write pressure, overissues reads that later need writes, fills the bounded queue, and can deadlock the ROP memory path.",
+      "evidence_for_injection": [
+        "The fix introduces an explicit scheduler-originated write_notify signal and immediately retargets the pending_reads decrement to it.",
+        "The old decrement condition fired at upstream request acceptance, not at real scheduler queue advancement.",
+        "The updated comment in VX_rop_unit.sv states that the goal is to keep the memory scheduler queue from filling up."
+      ],
+      "notes": [
+        "UUID tag widening in the same commit is auxiliary grounding, not the primary injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了 ROP 读改写路径中的死锁问题：只有当排队中的写请求真正从 memory scheduler 的请求队列中前进时，才释放保留的队列空间，而不是在上游 ROP 单元刚接受写请求时就提前释放。",
+    "why_it_counts": [
+      "该补丁修复的是 DUT 内存路径中的真实前向推进错误。",
+      "修改点位于 ROP 单元和 memory scheduler，而不是测试或工具链。",
+      "修复直接改变了队列占用统计，而这个统计决定了是否还能继续发出新的读请求。"
+    ],
+    "disqualifiers": [
+      "同一提交还改动了 cache 配置默认值和 UUID 传递，这些不是主要缺陷机制。"
+    ],
+    "evidence": [
+      "在 hw/rtl/rop_unit/VX_rop_unit.sv 中，pending_reads 的 decr 从 mem_req_fire && mem_req_rw 改为 mem_write_notify，计数器大小也从 `ROP_MEM_QUEUE_SIZE - 1 改为 `ROP_MEM_QUEUE_SIZE。",
+      "在 hw/rtl/libs/VX_mem_scheduler.sv 中，新增加了 write_notify = reqq_pop && reqq_rw。",
+      "在 hw/rtl/rop_unit/VX_rop_mem.sv 中，write_notify 从 memory scheduler 向上导出回 ROP 单元。",
+      "周边注释也从“避免潜在死锁”改成了更明确的“避免 memory scheduler 队列被填满”。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv",
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "对于会先发读、后生成写回、且中间有有界队列的流水线，保留计数必须反映真实的队列占用。如果设计在写请求只是被上游缓冲接受时就释放保留空间，而不是等到该写请求真正穿过有界调度队列时再释放，就会低估占用、过量发出更多读请求，最终在这些读请求对应的写回无处排队时形成死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "读改写流量的写回槽位保留统计",
+        "trigger_condition": "在生成读后写回的单元与内存系统之间存在有界请求队列，并且反压允许写请求在该队列中堆积。",
+        "injection_action": "让保留计数器在上游写握手时就递减，而不是在真正表示队列容量被释放或被消费的事件上递减。",
+        "implementation_pattern": "队列占用统计中的提前释放 credit",
+        "portability_notes": [
+          "把它映射到任何会先发读、后在有限队列中排写的单元。",
+          "关键错误是逻辑保留量与真正释放容量的队列事件不一致。",
+          "如果希望更容易触发死锁，还可以额外把保留计数器深度再缩小一格。"
+        ],
+        "concrete_injection_steps": [
+          "找到限制新读请求发出、并以未来写回队列容量为依据的计数器或 credit 池。",
+          "让它的递减依赖上游接口对写请求的早期接受，而不是依赖下游队列 pop 或等价的容量释放事件。",
+          "保持读写主路径其余逻辑不变，只注入“过早释放保留队列空间”这一处错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_unit.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv",
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "ROP 的 pending_reads 统计与 memory scheduler 请求队列之间的耦合逻辑",
+        "commit_fix_summary": "该提交从 memory scheduler 新增 write_notify 信号，并用它使 pending_reads 只在排队写请求真正经过 scheduler 队列时才递减，同时不再额外少保留一个槽位。",
+        "mutation_strategy": "restore_early_decrement",
+        "source_level_edit_anchor": "把 pending_reads.decr 改回 mem_req_fire && mem_req_rw，并删除 VX_mem_scheduler 与 VX_rop_mem 中的 write_notify 传递。"
+      },
+      "expected_failure_mode": "在持续的 ROP 流量下，设计会低估已排队写请求压力，过量发出后续会产生写回的读请求，最终填满有界队列并使 ROP 内存路径死锁。",
+      "evidence_for_injection": [
+        "修复新增了来自 scheduler 的 write_notify，并立刻把 pending_reads 的递减条件切换到该信号。",
+        "旧递减条件发生在上游请求接受时，而不是真实的 scheduler 队列前进时。",
+        "VX_rop_unit.sv 中更新后的注释明确说明目标是防止 memory scheduler 队列被填满。"
+      ],
+      "notes": [
+        "同一提交中的 UUID 标签扩展只是辅助配套修改，不是主要注入目标。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

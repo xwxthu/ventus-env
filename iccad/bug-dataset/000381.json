@@ -1,0 +1,135 @@
+{
+  "dataset_id": 381,
+  "original_review_id": 469,
+  "meta": {
+    "id": 469,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "b5ca7a999ced98c6edcd9345b7011e404623cbc1",
+    "subject": "SIMT stack fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "simt_stack",
+    "summary": "This commit fixes SIMT divergence bookkeeping so the scheduler executes the selected active branch mask and pushes the complementary mask to the reconvergence stack instead of hardwiring then and else roles.",
+    "why_it_counts": [
+      "The subject explicitly describes a SIMT stack fix.",
+      "The RTL patch changes warp split and join state in the core scheduler and split-join unit.",
+      "The simulator model is updated to the same corrected divergence semantics, which supports the RTL interpretation."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/core/VX_split_join.sv adds popcount-based selection of the immediate split mask and computes ntaken_tmask as the complementary subset.",
+      "hw/rtl/core/VX_schedule.sv stops overwriting the warp thread mask with split.then_tmask and instead uses split_tmask from VX_split_join.",
+      "sim/simx/execute.cpp changes the stack push to use ntaken_tmask rather than a fixed else_tmask."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_schedule.sv",
+      "hw/rtl/core/VX_split_join.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A SIMT divergence controller must choose one active thread subset for immediate execution and must save the complementary subset plus its reconvergence PC on a divergence stack. If the hardware always assumes a fixed branch side executes first, or pushes a fixed branch mask instead of the true complementary mask, warp control flow and later reconvergence no longer match the actual active lanes.",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT divergence stack mask selection",
+        "trigger_condition": "A warp encounters a divergent branch where the subset chosen for immediate execution is not equivalent to a hardwired then-side policy, especially when branch masks are imbalanced.",
+        "injection_action": "Force split handling to use a fixed branch mask for immediate execution and push a fixed opposite mask rather than the true complement of the selected subset.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "Map this to the warp divergence or reconvergence unit in another SIMT or wavefront-style DUT.",
+          "The key mutation point is where current active mask selection and stack push data are produced for a divergent branch.",
+          "The bug is portable even if the target DUT names branches as taken and not-taken instead of then and else."
+        ],
+        "concrete_injection_steps": [
+          "Replace any dynamic selection of the immediate post-split active mask with a fixed branch-side mask.",
+          "When pushing the deferred path onto the reconvergence structure, store a fixed branch-side mask instead of the complement of the mask actually chosen for execution.",
+          "Leave join and pop behavior unchanged so the inconsistency surfaces during later reconvergence."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_schedule.sv",
+          "hw/rtl/core/VX_split_join.sv"
+        ],
+        "target_module_or_logic": "Warp split/join mask selection and reconvergence stack push logic",
+        "commit_fix_summary": "The fix computes split_tmask from the larger active subset, computes ntaken_tmask as the complementary subset, uses split_tmask to update the current warp mask, and pushes ntaken_tmask to the ipdom stack.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_split_join.sv, remove the split_tmask and ntaken_tmask selection logic and push a fixed split.else_tmask-like value; in VX_schedule.sv, drive thread_masks_n from split.then_tmask instead of split_tmask."
+      },
+      "expected_failure_mode": "Divergent warps execute the wrong subset first or reconverge with the wrong thread mask, causing skipped lanes, duplicated lane execution, or incorrect control-flow state after branch reconvergence.",
+      "evidence_for_injection": [
+        "The patch introduces split_tmask and ntaken_tmask explicitly to replace fixed branch-side handling.",
+        "The scheduler-side fix is only four lines, which isolates the mutation point for reinjection.",
+        "The matching simulator change confirms the intended semantics are complementary-mask based rather than fixed-side based."
+      ],
+      "notes": [
+        "Use the RTL split/join logic as the injection target; the simulator change is corroborating evidence only.",
+        "This fault is most visible on divergent branches where then_tmask and else_tmask have noticeably different populations."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "simt_stack",
+    "summary": "该提交修复了 SIMT 发散分支的状态维护逻辑，使调度器执行被选中的活动分支掩码，并把互补掩码压入重汇合栈，而不是把 then 和 else 角色写死。",
+    "why_it_counts": [
+      "提交标题直接说明是 SIMT stack fix。",
+      "RTL 补丁修改了核心调度器和 split-join 单元中的 warp split/join 状态。",
+      "模拟器模型也同步改成同样的发散语义，这支持了对 RTL 修复含义的判断。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "hw/rtl/core/VX_split_join.sv 新增基于 popcount 的即时执行掩码选择，并计算互补子集 ntaken_tmask。",
+      "hw/rtl/core/VX_schedule.sv 不再把 warp 线程掩码直接写成 split.then_tmask，而是改用来自 VX_split_join 的 split_tmask。",
+      "sim/simx/execute.cpp 也改为把 ntaken_tmask 压栈，而不是固定的 else_tmask。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_schedule.sv",
+      "hw/rtl/core/VX_split_join.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "SIMT 发散控制器必须为当前立即执行选择一个活动线程子集，并把互补子集及其重汇合 PC 保存到发散栈中。如果硬件始终假定固定一侧分支先执行，或者压栈的是固定分支掩码而不是真正的互补掩码，那么 warp 的控制流和后续重汇合就会与真实活动线程不一致。",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT 发散栈掩码选择",
+        "trigger_condition": "当一个 warp 遇到发散分支，且立即执行的线程子集并不等同于固定的 then 侧策略时，尤其是两侧分支掩码大小不平衡时。",
+        "injection_action": "强制 split 逻辑对当前执行使用固定分支掩码，并把固定的另一侧掩码压栈，而不是压入所选执行子集的真实互补掩码。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "在其他 SIMT 或 wavefront 风格 DUT 中，把该故障映射到 warp 发散或重汇合单元。",
+          "关键注入点是发散分支上生成当前活动掩码和栈压栈数据的位置。",
+          "即使目标 DUT 使用 taken/not-taken 命名而不是 then/else，该故障仍然可移植。"
+        ],
+        "concrete_injection_steps": [
+          "把 split 后立即执行掩码的动态选择替换为固定的某一侧分支掩码。",
+          "向重汇合结构压栈时，保存固定的另一侧分支掩码，而不是当前被选执行掩码的互补集合。",
+          "保持 join 和 pop 行为不变，让不一致在后续重汇合阶段暴露出来。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_schedule.sv",
+          "hw/rtl/core/VX_split_join.sv"
+        ],
+        "target_module_or_logic": "Warp split/join 掩码选择与重汇合栈压栈逻辑",
+        "commit_fix_summary": "该修复根据较大的活动子集计算 split_tmask，把互补子集计算为 ntaken_tmask，用 split_tmask 更新当前 warp 掩码，并把 ntaken_tmask 压入 ipdom 栈。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_split_join.sv 中移除 split_tmask 和 ntaken_tmask 的选择逻辑，改回压入类似固定 split.else_tmask 的值；在 VX_schedule.sv 中把 thread_masks_n 改回由 split.then_tmask 驱动，而不是 split_tmask。"
+      },
+      "expected_failure_mode": "发散 warp 会先执行错误的线程子集，或者在重汇合时恢复错误的线程掩码，导致线程被跳过、重复执行，或分支后的控制流状态错误。",
+      "evidence_for_injection": [
+        "补丁显式引入 split_tmask 和 ntaken_tmask，替换了固定分支侧的处理方式。",
+        "调度器侧修复只有少量行数，便于精确回注该故障。",
+        "配套的模拟器修改证明目标语义是基于互补掩码，而不是固定分支侧。"
+      ],
+      "notes": [
+        "建议把注入点放在 RTL 的 split/join 逻辑中；模拟器改动只作为佐证。",
+        "当 then_tmask 和 else_tmask 的活跃线程数差异较大时，该故障更容易观察到。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

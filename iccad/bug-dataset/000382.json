@@ -1,0 +1,141 @@
+{
+  "dataset_id": 382,
+  "original_review_id": 473,
+  "meta": {
+    "id": 473,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "87e613d29dea5a08db59509e38dcd26489745413",
+    "subject": "fixed XRT AFU deadlock on exit"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "axi_handshake",
+    "summary": "This commit fixes AFU completion deadlock by counting outstanding AXI writes only after the write-address and write-data handshakes have both occurred for a transaction.",
+    "why_it_counts": [
+      "The patch changes RTL in the AFU wrapper and AXI helper logic, not only software or tests.",
+      "The new helper module explicitly pairs AW and W progress before declaring a write request accepted.",
+      "The completion condition ap_done depends on the pending-write counter, so incorrect accounting directly affects modeled hardware behavior."
+    ],
+    "disqualifiers": [
+      "The commit also updates simulator-side code, but the classified fix is the RTL-side accounting change."
+    ],
+    "evidence": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv removes the old W-fire and B-fire counter update and replaces it with synchronized request and response deltas.",
+      "hw/rtl/libs/VX_axi_write_ack.sv records partial AW and W progress across cycles and emits tx_ack only when both sides have completed.",
+      "ap_done remains gated by vx_pending_writes, so miscounting outstanding writes can hold completion low indefinitely."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_axi_write_ack.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An AXI write transaction is not fully accepted until both the address channel and the data channel have been accepted. Hardware that increments or decrements its outstanding-write bookkeeping from only one side of that handshake, or that fails to remember partial progress across cycles, can overcount or undercount pending writes. If shutdown or completion waits for the counter to drain, the accelerator can deadlock at the end of execution.",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI write acceptance accounting",
+        "trigger_condition": "The address and data portions of a write request handshake in different cycles, or one channel stalls while the other proceeds.",
+        "injection_action": "Count a write request as accepted from only one AXI subchannel event instead of from the paired AW+W transaction.",
+        "implementation_pattern": "drop_handshake_term",
+        "portability_notes": [
+          "Map this to any DUT block that tracks outstanding AXI or split-channel write requests for drain, fence, or completion logic.",
+          "The critical mutation point is the request-accept counter or readiness logic, not the memory datapath itself.",
+          "This applies even if the target bus protocol uses different signal names, as long as write address and write data are decoupled."
+        ],
+        "concrete_injection_steps": [
+          "Remove any state that remembers partial address-only or data-only progress across cycles.",
+          "Increment the outstanding-write counter on a write-data handshake alone, or on whichever channel fires first, instead of waiting for both address and data to complete.",
+          "Keep response-side decrement logic unchanged so request-side overcount or undercount becomes externally visible."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+          "hw/rtl/libs/VX_axi_write_ack.sv"
+        ],
+        "target_module_or_logic": "AFU pending AXI write accounting and AW/W pairing helper",
+        "commit_fix_summary": "The fix introduces VX_axi_write_ack to remember AW and W progress, derives write-request acceptance from tx_ack, and updates vx_pending_writes from paired request count minus response count.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_afu_wrap.sv, replace the m_axi_wr_req_fire accounting with old W-fire-only counting; in VX_axi_write_ack.sv, remove the awfired and wfired carry-over so tx_ack no longer waits for both channels."
+      },
+      "expected_failure_mode": "Outstanding writes are miscounted during split AW and W handshakes, so completion logic can remain blocked after execution ends and the AFU can deadlock on exit.",
+      "evidence_for_injection": [
+        "The old counter was driven by aggregate W and B fire events, which the new patch deletes.",
+        "The new helper retains awfired and wfired state until tx_ack, proving that cross-cycle pairing was previously missing.",
+        "The counter directly feeds ap_done through vx_pending_writes == 0."
+      ],
+      "notes": [
+        "This fault is easiest to reproduce on systems where AXI write-address and write-data channels can be accepted in different cycles.",
+        "The AFU wrapper is the preferred injection point; the adapter change is corroborating evidence of the same protocol issue."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "axi_handshake",
+    "summary": "该提交修复了 AFU 完成阶段的死锁问题：只有在 AXI 写地址通道和写数据通道都真正完成握手后，才把一次写请求计入未完成写事务。",
+    "why_it_counts": [
+      "补丁修改的是 AFU wrapper 和 AXI 辅助逻辑中的 RTL，而不是单纯的软件或测试。",
+      "新增的辅助模块在认定一次写请求被接受前，显式配对了 AW 和 W 两个通道的进度。",
+      "完成条件 ap_done 直接依赖 pending-write 计数器，因此错误计数会直接影响模型化硬件行为。"
+    ],
+    "disqualifiers": [
+      "该提交也更新了模拟器侧代码，但被分类的核心修复是 RTL 侧的计数逻辑。"
+    ],
+    "evidence": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv 删除了旧的基于 W-fire 和 B-fire 的计数更新，改为使用同步后的请求和响应差值。",
+      "hw/rtl/libs/VX_axi_write_ack.sv 跨周期记录 AW 和 W 的部分进度，只有两者都完成后才产生 tx_ack。",
+      "ap_done 仍然由 vx_pending_writes 控制，因此未完成写计数错误会让完成信号长期无法置位。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+      "hw/rtl/libs/VX_axi_adapter.sv",
+      "hw/rtl/libs/VX_axi_write_ack.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一个 AXI 写事务只有在地址通道和数据通道都被接受后，才算真正被下游接收。如果硬件只依据其中一个子通道更新未完成写事务计数，或者不能跨周期保留另一半握手的进度，就会把待完成写请求多算或少算。当退出、fence 或完成逻辑要等待该计数清零时，整个加速器可能在执行结束后死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI 写请求接受计数",
+        "trigger_condition": "写地址和写数据在不同周期握手，或者一条通道推进而另一条通道被阻塞。",
+        "injection_action": "只根据一个 AXI 子通道事件就把写请求记为已接受，而不是等 AW 和 W 配对完成。",
+        "implementation_pattern": "drop_handshake_term",
+        "portability_notes": [
+          "可映射到任何使用 AXI 或类似分离通道总线、并用未完成写请求计数来控制 drain、fence 或完成状态的 DUT 模块。",
+          "关键注入点是请求接受计数器或 ready 判定逻辑，而不是具体的数据通路。",
+          "即使目标总线使用不同信号名，只要写地址和写数据是解耦的，该故障仍然适用。"
+        ],
+        "concrete_injection_steps": [
+          "删除跨周期保存仅地址完成或仅数据完成状态的逻辑。",
+          "把未完成写计数的增加条件改成仅由写数据握手驱动，或由先到达的任一子通道驱动，而不是等待地址和数据都完成。",
+          "保持响应侧的减计数逻辑不变，使请求侧的多算或少算能够在外部显现。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/afu/xrt/VX_afu_wrap.sv",
+          "hw/rtl/libs/VX_axi_write_ack.sv"
+        ],
+        "target_module_or_logic": "AFU 未完成 AXI 写事务计数与 AW/W 配对辅助逻辑",
+        "commit_fix_summary": "该修复引入 VX_axi_write_ack 来保留 AW 和 W 的握手进度，用 tx_ack 表示一次完整写请求已被接受，并用已配对的请求数减去响应数更新 vx_pending_writes。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_afu_wrap.sv 中把 m_axi_wr_req_fire 计数改回旧的仅看 W-fire 的实现；在 VX_axi_write_ack.sv 中去掉 awfired 和 wfired 的跨周期保持，使 tx_ack 不再等待两个通道都完成。"
+      },
+      "expected_failure_mode": "当 AW 和 W 分离握手时，未完成写事务计数会出错，导致执行结束后完成逻辑仍被阻塞，AFU 在退出阶段死锁。",
+      "evidence_for_injection": [
+        "旧实现的计数器由汇总的 W 和 B fire 事件驱动，而新补丁删除了这一路径。",
+        "新辅助模块在 tx_ack 前保留 awfired 和 wfired 状态，说明原先缺少跨周期配对。",
+        "计数器通过 vx_pending_writes == 0 直接影响 ap_done。"
+      ],
+      "notes": [
+        "该故障在 AXI 写地址通道和写数据通道可能分离接受的平台上最容易复现。",
+        "优先在 AFU wrapper 中注入；adapter 的改动只是同一协议问题的辅证。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "dataset_id": 65,
+  "original_review_id": 84,
+  "meta": {
+    "id": 84,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "da835c5ce196e44299e2da5201245b39fb8c2c0f",
+    "subject": "as fixed in nvdla_nv_small branch: 1) csb master fix bug: missing cfgrom valid from core_response valid source; 2)update un-meaningful instance name in cdp/wdma; 3) remvoe redundant line in dc"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "control",
+    "summary": "The commit fixes a CSB master response-valid bug: cfgrom response data was already muxed into the response path, but cfgrom_resp_valid was missing from the aggregate valid signal.",
+    "why_it_counts": [
+      "The functional hunk changes active DUT control logic in the CSB master.",
+      "The same one-line fix also appears as standalone commit 7f357b6b10140a0c3d9e6fe74a53a9f3b6c539b3, confirming the real bug-fix payload.",
+      "The bug can cause legitimate hardware responses to be dropped when cfgrom is the only responder."
+    ],
+    "disqualifiers": [
+      "The cherry-picked master-branch commit also includes an instance rename and generator-comment cleanup that are not part of the bug fix."
+    ],
+    "evidence": [
+      "core_resp_pd already ORs in cfgrom_resp_pd under cfgrom_resp_valid gating.",
+      "Before the fix, core_resp_pvld ORed other responders but omitted cfgrom_resp_valid.",
+      "The patch adds cfgrom_resp_valid as a term of core_resp_pvld, matching the standalone fix commit 7f357b6."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csb_master/NV_NVDLA_csb_master.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a response mux or response FIFO front end, every data source that can drive the response payload must also contribute to the aggregate valid signal. If one sources data is selected but its valid bit is omitted from the OR tree, responses from that source disappear whenever no other responder is active in the same cycle.",
+      "portable_injection_spec": {
+        "affected_mechanism": "response-valid aggregation",
+        "trigger_condition": "A configuration ROM or sideband responder returns data while it is the only active response source in that cycle.",
+        "injection_action": "Drop one responders valid term from the aggregate response-valid equation while leaving its payload mux path intact.",
+        "implementation_pattern": "drop_handshake_term",
+        "portability_notes": [
+          "Apply this to any bus fabric, CSR path, or response arbiter that ORs multiple response-valid sources into a single downstream valid.",
+          "The fault is especially easy to hide when the payload mux already includes the source, because only source-specific transactions fail.",
+          "Keep ready and payload logic unchanged so the experiment isolates the missing-valid bug."
+        ],
+        "concrete_injection_steps": [
+          "Find the aggregate valid signal that feeds the shared response FIFO or output channel.",
+          "Identify a source whose payload still reaches the shared response mux.",
+          "Remove that sources valid term from the OR reduction without changing the payload mux or the ready path.",
+          "Issue a transaction that only this source can answer and observe the missing downstream valid pulse."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csb_master/NV_NVDLA_csb_master.v"
+        ],
+        "target_module_or_logic": "CSB master core_resp_pvld aggregation",
+        "commit_fix_summary": "The fix adds cfgrom_resp_valid into core_resp_pvld. cfgrom response data was already present in core_resp_pd, so the bug was the missing valid term rather than missing payload data.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "Remove cfgrom_resp_valid from the OR expression that drives core_resp_pvld in NV_NVDLA_csb_master.v, while leaving the cfgrom branch in core_resp_pd unchanged."
+      },
+      "expected_failure_mode": "Cfgrom responses produce payload data internally but fail to assert the shared response-valid signal, so reads can hang or observe no response.",
+      "evidence_for_injection": [
+        "core_resp_pd already includes a cfgrom response term in the same block.",
+        "The bug-fix hunk is only the addition of cfgrom_resp_valid into core_resp_pvld.",
+        "The same single-line change exists as standalone commit 7f357b6, confirming that this is the real functional payload inside the mixed cherry-pick."
+      ],
+      "notes": [
+        "Do not revert the unrelated WDMA instance rename or CDMA generator-comment cleanup; they are not part of the bug mechanism."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "control",
+    "summary": "该提交修复了 CSB master 的响应有效信号错误：cfgrom 的响应数据本来就已经进入响应复用路径，但 cfgrom_resp_valid 却遗漏在聚合 valid 信号之外。",
+    "why_it_counts": [
+      "功能性修改发生在 CSB master 的活动 DUT 控制逻辑中。",
+      "同样的一行修复也以独立提交 7f357b6b10140a0c3d9e6fe74a53a9f3b6c539b3 出现，说明这才是真正的 bug-fix 负载。",
+      "当 cfgrom 是该周期唯一响应源时，这个 bug 会让合法硬件响应被直接丢掉。"
+    ],
+    "disqualifiers": [
+      "这个 cherry-pick 到 master 的提交还包含了一个实例重命名和一处生成注释清理，它们都不属于功能修复。"
+    ],
+    "evidence": [
+      "core_resp_pd 本来就已经在 cfgrom_resp_valid 条件下 OR 入 cfgrom_resp_pd。",
+      "修复前，core_resp_pvld 会 OR 其他响应源，但遗漏了 cfgrom_resp_valid。",
+      "补丁把 cfgrom_resp_valid 加入 core_resp_pvld，这与独立修复提交 7f357b6 完全一致。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csb_master/NV_NVDLA_csb_master.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在响应复用器或响应 FIFO 前端中，所有能够驱动响应 payload 的数据源都必须同时参与聚合 valid 信号。如果某个源的数据被选入 payload，但它的 valid 位漏掉了，那么当同周期没有其他响应源激活时，这个源的响应就会悄悄消失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "响应 valid 聚合",
+        "trigger_condition": "配置 ROM 或侧带响应源返回数据，且该周期它是唯一的有效响应源。",
+        "injection_action": "从聚合响应 valid 的方程中删掉某个响应源的 valid 项，但保留它的 payload 复用路径。",
+        "implementation_pattern": "drop_handshake_term",
+        "portability_notes": [
+          "可映射到任何把多个响应源 OR 成单一下游 valid 的总线、CSR 路径或响应仲裁器。",
+          "这类故障很隐蔽，因为 payload mux 可能已经包含了该源，只有特定来源的事务才会失败。",
+          "保持 ready 和 payload 逻辑不变，把实验聚焦在“遗漏 valid”这一点上。"
+        ],
+        "concrete_injection_steps": [
+          "找到驱动共享响应 FIFO 或输出通道的聚合 valid 信号。",
+          "确认某个源的 payload 仍然进入共享响应 mux。",
+          "在不修改 payload mux 和 ready 路径的前提下，把该源的 valid 项从 OR 归约中删掉。",
+          "发起一个只能由该源响应的事务，并观察下游 valid 脉冲缺失。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csb_master/NV_NVDLA_csb_master.v"
+        ],
+        "target_module_or_logic": "CSB master 中的 core_resp_pvld 聚合逻辑",
+        "commit_fix_summary": "修复把 cfgrom_resp_valid 加入 core_resp_pvld。cfgrom 的响应数据本来就已经在 core_resp_pd 中，因此 bug 是 valid 项遗漏，而不是 payload 缺失。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "在 NV_NVDLA_csb_master.v 中，从驱动 core_resp_pvld 的 OR 表达式里删掉 cfgrom_resp_valid，同时保持 core_resp_pd 中 cfgrom 分支不变。"
+      },
+      "expected_failure_mode": "cfgrom 响应虽然在内部形成了 payload，但无法拉高共享 response-valid，导致读取挂起或表面上没有响应。",
+      "evidence_for_injection": [
+        "core_resp_pd 在同一代码块中本来就包含 cfgrom 响应项。",
+        "bugfix hunk 只是把 cfgrom_resp_valid 加入 core_resp_pvld。",
+        "相同的一行修改还单独出现在 7f357b6 中，证明这就是混合 cherry-pick 里的真实功能修复。"
+      ],
+      "notes": [
+        "不要回退无关的 WDMA 实例重命名或 CDMA 生成注释清理；它们与 bug 机制无关。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 299,
+  "original_review_id": 360,
+  "meta": {
+    "id": 360,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "f0e079320250ee3fb9512310ac79f3576d204a2c",
+    "subject": "serial div bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "Fixes the serial divider by turning it into a stateful valid/ready unit that retains result metadata until the divide result is consumed.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a serial divide bug.",
+      "The patch changes DUT arithmetic/control logic in both VX_muldiv.sv and hw/rtl/libs/VX_serial_div.sv.",
+      "The new loaded/tag state and output handshake materially change how divide results are held and retired."
+    ],
+    "disqualifiers": [
+      "The patch substantially restructures the divider interface, so the exact old failure waveform is inferred from the code rather than documented by a test in the commit."
+    ],
+    "evidence": [
+      "VX_muldiv.sv removes the external div_busy and div_tag_out bookkeeping and instead instantiates VX_serial_div with valid_in, ready_in, valid_out, ready_out, and tag_out.",
+      "VX_serial_div.sv adds loaded and tag_r state plus ready_in/valid_out logic, so results and metadata persist until handshake completion.",
+      "The old divider interface exposed only load and done, while the new one bundles multi-lane numer/denom data and tag tracking into the divider itself."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_muldiv.sv",
+      "hw/rtl/libs/VX_serial_div.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An iterative arithmetic unit must retain its completed result and the request metadata that identifies that result until the consumer accepts it. If completion is exposed only as a raw done condition, with metadata tracked externally or not held under backpressure, the result can be lost, observed with stale tag state, or become difficult to compose with ready/valid pipelines.",
+      "portable_injection_spec": {
+        "affected_mechanism": "iterative divider result retention under backpressure",
+        "trigger_condition": "The divide operation completes while the downstream stage is stalled, or while multiple requests rely on precise result-tag pairing.",
+        "injection_action": "Replace the internal valid/ready result-holding behavior with a raw completion signal that does not preserve result/tag state until acceptance.",
+        "implementation_pattern": "replace ready/valid result hold with raw done signaling",
+        "portability_notes": [
+          "This maps to any iterative divider, multiplier, square-root unit, or other multi-cycle arithmetic block that feeds a backpressured pipeline.",
+          "The essential fault is not division math itself but failure to couple result validity and request identity to output acceptance.",
+          "You do not need to exactly reproduce the source interface; any mutation that stops the unit from holding result and tag until handshake completion is representative."
+        ],
+        "concrete_injection_steps": [
+          "Remove the internal loaded/valid state that keeps a finished result pending until the consumer is ready.",
+          "Drive output validity directly from an internal completion counter or done condition instead of a latched “result pending” state.",
+          "Track the request tag outside the iterative unit or allow it to update independently of output acceptance, so result/data pairing can regress under stall."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_muldiv.sv",
+          "hw/rtl/libs/VX_serial_div.sv"
+        ],
+        "target_module_or_logic": "Serial divide request/result handshake and tag retention",
+        "commit_fix_summary": "The fix moves tag and valid/ready state into VX_serial_div, adds loaded/tag_r bookkeeping, and removes the old wrapper-managed div_busy/div_tag_out path from VX_muldiv.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Revert VX_serial_div to a load/done interface without loaded/tag_r/valid_out/ready_in semantics, and restore the old wrapper-side div_busy/div_tag_out handling in VX_muldiv.sv."
+      },
+      "expected_failure_mode": "Divide or remainder results can be lost under backpressure, or a returned result can be paired with stale or incorrect request metadata.",
+      "evidence_for_injection": [
+        "The fix explicitly adds state whose only purpose is to retain a completed divide result until pop/ready_out.",
+        "The old wrapper-side bookkeeping is removed entirely, so the commit is not just interface cleanup.",
+        "The modified divider now owns both result lifetime and tag lifetime, which is the central correctness change."
+      ],
+      "notes": [
+        "The patch suggests a control-path correctness issue rather than a quotient/remainder arithmetic bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "该提交把 serial divider 改造成一个带 valid/ready 的有状态单元，能够在结果被消费前保留结果及其元数据，从而修复相关 bug。",
+    "why_it_counts": [
+      "提交信息明确说明修复的是 serial divide bug。",
+      "补丁同时修改了 VX_muldiv.sv 和 hw/rtl/libs/VX_serial_div.sv 中的 DUT 算术/控制逻辑。",
+      "新增的 loaded/tag 状态与输出握手会实质性改变除法结果如何被保留和退休。"
+    ],
+    "disqualifiers": [
+      "该补丁对 divider 接口做了较大重构，因此修复前的精确失效波形是基于代码推断的，而不是由提交中的测试直接给出。"
+    ],
+    "evidence": [
+      "VX_muldiv.sv 删除了外部的 div_busy 和 div_tag_out 记账，改为实例化带 valid_in、ready_in、valid_out、ready_out、tag_out 的 VX_serial_div。",
+      "VX_serial_div.sv 新增了 loaded、tag_r 以及 ready_in/valid_out 逻辑，使结果和元数据会一直保留到握手完成。",
+      "旧接口只暴露 load 和 done，而新接口把多 lane numer/denom 数据以及 tag 跟踪都收进了 divider 内部。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_muldiv.sv",
+      "hw/rtl/libs/VX_serial_div.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "迭代型算术单元必须在消费者真正接受结果之前，持续保留完成后的结果以及标识该结果的请求元数据。如果完成状态只是一个裸露的 done 条件，而元数据在单元外部跟踪或在回压下不被保留，那么结果就可能丢失、和陈旧 tag 配对，或者难以正确接入 ready/valid 流水线。",
+      "portable_injection_spec": {
+        "affected_mechanism": "迭代除法器在回压下的结果保留",
+        "trigger_condition": "除法在下游 stall 时完成，或多个请求依赖严格的“结果-标签”配对时。",
+        "injection_action": "把内部 valid/ready 的结果保持行为改回原始完成信号风格，使结果/tag 在被接受前不再稳定保留。",
+        "implementation_pattern": "用裸 done 信号替代 ready/valid 结果保持",
+        "portability_notes": [
+          "可映射到任何向回压流水线输出结果的迭代除法器、乘法器、开方单元或其他多周期算术模块。",
+          "核心问题不是除法运算本身，而是结果有效期与请求身份没有和输出接受动作绑在一起。",
+          "不必精确复制源代码接口；只要让单元不再在握手完成前保留结果和 tag，就足以代表该类故障。"
+        ],
+        "concrete_injection_steps": [
+          "删除用于在消费者未 ready 时保留“结果待取”的内部 loaded/valid 状态。",
+          "让输出 valid 直接由内部计数器结束或 done 条件驱动，而不是由锁存的“结果待发送”状态驱动。",
+          "把请求 tag 放回迭代单元外部管理，或允许其在结果未被接受时独立更新，从而在 stall 下重新引入结果/标签错配。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_muldiv.sv",
+          "hw/rtl/libs/VX_serial_div.sv"
+        ],
+        "target_module_or_logic": "Serial divide 请求/结果握手与 tag 保留逻辑",
+        "commit_fix_summary": "修复把 tag 和 valid/ready 状态移入 VX_serial_div，新增 loaded/tag_r 记账，并从 VX_muldiv 中删除旧的 div_busy/div_tag_out 包装路径。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 VX_serial_div 回退为不带 loaded/tag_r/valid_out/ready_in 语义的 load/done 接口，并在 VX_muldiv.sv 中恢复旧的 wrapper 侧 div_busy/div_tag_out 处理。"
+      },
+      "expected_failure_mode": "除法或余数结果在回压下可能丢失，或者返回结果会和陈旧/错误的请求元数据配对。",
+      "evidence_for_injection": [
+        "修复显式加入了专门用于在 pop/ready_out 之前保留完成结果的状态。",
+        "旧的 wrapper 侧记账被整个删除，说明这不是简单的接口清理。",
+        "修改后的 divider 现在同时负责结果生命周期和 tag 生命周期，这正是核心正确性变化。"
+      ],
+      "notes": [
+        "从补丁来看，这更像是控制路径正确性问题，而不是商或余数的纯算术错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

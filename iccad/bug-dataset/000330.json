@@ -1,0 +1,59 @@
+{
+  "dataset_id": 330,
+  "original_review_id": 398,
+  "meta": {
+    "id": 398,
+    "repo": "vortex",
+    "branch": "KMU",
+    "commit": "be7ea2ad45ad912d16d9967399ed91bea73ad312",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This KMU-branch commit corrects a DSP-backend FPU field reference and includes minor cleanup, but it is better treated as a configuration or source-integration fix than as a reusable DUT behavior bug for fault injection.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "The surrounding type definitions show that fpu_execute_t carries the lane mask in data.header.tmask, so the pre-fix DSP line looks like a backend-specific field-reference or compile-integration error rather than a demonstrated runtime behavior bug.",
+      "The commit provides no test or code comment describing an observed incorrect FPU result after synthesis or simulation.",
+      "The other touched files are localparam or typedef cleanup, which further weakens the case for a concrete behavioral DUT fix."
+    ],
+    "evidence": [
+      "In hw/rtl/fpu/VX_fpu_unit.sv, only the FPU_DSP path changes from per_block_execute_if[block_idx].data.tmask to per_block_execute_if[block_idx].data.header.tmask.",
+      "The same file already used data.header.tmask in the FPU_DPI and FPU_FPNEW paths before this commit.",
+      "On this branch, fpu_execute_t is created by DECL_EXECUTE_T and stores tmask inside the nested header struct.",
+      "The other hunks change PER_OPC_* declarations from parameter to localparam and rename TCU execute/result typedefs."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_unit.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "这个 KMU 分支提交修正了 DSP 后端 FPU 的一个字段引用，并带有一些轻量清理，但它更像是配置或源码集成修复，而不是适合故障注入的可复用 DUT 行为 bug。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "周边类型定义表明 fpu_execute_t 把 lane mask 放在 data.header.tmask 中，因此修复前的 DSP 那一行更像是后端专用的字段引用或编译集成错误，而不是已证明的运行时行为错误。",
+      "提交中没有给出任何测试或代码注释来说明综合或仿真后出现了错误的 FPU 结果。",
+      "其他被修改的文件只是 localparam 或 typedef 清理，这进一步削弱了它作为明确 DUT 行为修复的证据。"
+    ],
+    "evidence": [
+      "在 hw/rtl/fpu/VX_fpu_unit.sv 中，只有 FPU_DSP 路径从 per_block_execute_if[block_idx].data.tmask 改为 per_block_execute_if[block_idx].data.header.tmask。",
+      "同一个文件在该提交之前的 FPU_DPI 和 FPU_FPNEW 路径里就已经使用 data.header.tmask 了。",
+      "在这个分支上，fpu_execute_t 由 DECL_EXECUTE_T 生成，tmask 位于嵌套的 header 结构中。",
+      "其他 hunk 只是把 PER_OPC_* 从 parameter 改成 localparam，并重命名了 TCU 的 execute/result typedef。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_unit.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

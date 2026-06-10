@@ -1,0 +1,137 @@
+{
+  "dataset_id": 343,
+  "original_review_id": 415,
+  "meta": {
+    "id": 415,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "cb9a476a117a9b9f4671212a414e9efa230faae1",
+    "subject": "Fix bug with tlbinvallall"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "The fix prevents instruction fetch from running while a global TLB invalidation is in progress.",
+    "why_it_counts": [
+      "The commit message identifies a concrete hardware bug around `tlbinvalall`.",
+      "The patch is a frontend RTL control fix in the ifetch stage.",
+      "The added regression specifically exercises global TLB invalidation followed by refetch."
+    ],
+    "disqualifiers": [
+      "Also adds a regression test."
+    ],
+    "evidence": [
+      "In `hardware/core/ifetch_tag_stage.sv`, `cache_fetch_en` gains the missing `!dt_invalidate_tlb_all_en` term.",
+      "The commit message says fetch must avoid the TLB while the TLB is being updated.",
+      "The new test invokes `tlbinvalall` and expects a subsequent TLB miss, matching the fixed behavior."
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_tag_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "During a global TLB invalidation, frontend fetch must be quiesced until the invalidate/update sequence completes. If fetch continues concurrently, the frontend can consult partially updated translation state or violate a single-port/update assumption in the TLB structure.",
+      "portable_injection_spec": {
+        "affected_mechanism": "frontend fetch gating during global TLB invalidation",
+        "trigger_condition": "The frontend is ready to fetch in the same cycle that a whole-TLB invalidate or invalidate-all operation is active.",
+        "injection_action": "Allow fetch to proceed during global TLB invalidation by omitting the invalidate-all stall term.",
+        "implementation_pattern": "drop global-invalidation guard from fetch enable",
+        "portability_notes": [
+          "Apply the mutation at the point where frontend fetch decides whether translation resources are available.",
+          "The same bug can exist for ITLB, unified TLB, or shared translation structures if invalidate-all and fetch compete for the same state.",
+          "The injected bug is specifically about global invalidation; ordinary per-entry invalidation may remain correctly stalled."
+        ],
+        "concrete_injection_steps": [
+          "Find the frontend enable or ready condition that stalls fetch during TLB updates.",
+          "Remove the term that specifically blocks fetch during invalidate-all or global invalidation.",
+          "Leave other fetch stall causes intact so the regression isolates the invalidate-all hazard.",
+          "Trigger with a program that invalidates the whole TLB and immediately refetches through a translated address."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_tag_stage.sv"
+        ],
+        "target_module_or_logic": "Nyuzi ifetch `cache_fetch_en` gating around `tlbinvalall`",
+        "commit_fix_summary": "The fix adds `!dt_invalidate_tlb_all_en` to the frontend fetch-enable condition so instruction fetch does not proceed while the TLB invalidate-all operation is active.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In `hardware/core/ifetch_tag_stage.sv`, `cache_fetch_en` changed from blocking `dt_update_itlb_en` and `dt_invalidate_tlb_en` only to also blocking `dt_invalidate_tlb_all_en`."
+      },
+      "expected_failure_mode": "Frontend fetch can observe stale or half-invalidated translation state, causing assertions, stale mappings, or incorrect instruction fetch behavior immediately after `tlbinvalall`.",
+      "evidence_for_injection": [
+        "The bug fix is a single missing control term in frontend gating, making the reverse mutation concrete.",
+        "The commit message directly states that fetch should be blocked while the TLB is being updated.",
+        "The added test checks precisely the invalidate-all scenario described in the message."
+      ],
+      "notes": [
+        "This is a narrow control bug: removing the invalidate-all guard is sufficient to recreate the original issue.",
+        "Test changes are supporting evidence only."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "该修复阻止了在全局 TLB 失效进行期间继续取指。",
+    "why_it_counts": [
+      "提交信息明确指出了 `tlbinvalall` 相关的硬件缺陷。",
+      "补丁是 ifetch 阶段中的前端 RTL 控制修复。",
+      "新增回归测试专门覆盖了全局 TLB 失效后立即重新取指的场景。"
+    ],
+    "disqualifiers": [
+      "同时增加了一个回归测试。"
+    ],
+    "evidence": [
+      "在 `hardware/core/ifetch_tag_stage.sv` 中，`cache_fetch_en` 新增了缺失的 `!dt_invalidate_tlb_all_en` 条件。",
+      "提交信息说明在更新 TLB 时，前端取指必须避开该 TLB。",
+      "新增测试执行 `tlbinvalall` 后期望后续取指出现 TLB miss，这与修复后的行为一致。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_tag_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在执行全局 TLB 失效时，前端取指必须等待失效/更新序列完成。如果取指仍然并发进行，前端就可能读取到部分更新的翻译状态，或者违反 TLB 结构对更新操作的独占假设。",
+      "portable_injection_spec": {
+        "affected_mechanism": "全局 TLB 失效期间的前端取指门控",
+        "trigger_condition": "前端准备取指的同一周期，正在进行整表失效或 invalidate-all 操作。",
+        "injection_action": "去掉 invalidate-all 的停顿条件，使前端在全局 TLB 失效期间仍可继续取指。",
+        "implementation_pattern": "从取指使能条件中删除全局失效保护项",
+        "portability_notes": [
+          "应在前端判断翻译资源是否可用的位置实施该变异。",
+          "无论是 ITLB、统一 TLB 还是共享翻译结构，只要全局失效与取指竞争同一状态，都可能出现同类问题。",
+          "该注入特指全局失效期间未停顿；普通单项失效逻辑可以保持不变。"
+        ],
+        "concrete_injection_steps": [
+          "找到前端在 TLB 更新期间阻止取指的 enable 或 ready 条件。",
+          "删除其中专门针对 invalidate-all 或全局失效的阻塞项。",
+          "保留其他取指停顿条件不变，使回注后主要暴露 invalidate-all 竞争问题。",
+          "用“全局失效后立刻取指”的程序触发该故障。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_tag_stage.sv"
+        ],
+        "target_module_or_logic": "Nyuzi 中围绕 `tlbinvalall` 的 ifetch `cache_fetch_en` 门控",
+        "commit_fix_summary": "该修复在前端取指使能条件中加入 `!dt_invalidate_tlb_all_en`，使取指不会在 TLB invalidate-all 进行时继续执行。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 `hardware/core/ifetch_tag_stage.sv` 中，`cache_fetch_en` 从只阻止 `dt_update_itlb_en` 和 `dt_invalidate_tlb_en`，改为同时阻止 `dt_invalidate_tlb_all_en`。"
+      },
+      "expected_failure_mode": "前端可能读取到陈旧或半失效的翻译状态，导致断言、陈旧映射，或在 `tlbinvalall` 后出现错误的取指行为。",
+      "evidence_for_injection": [
+        "修复本质上是前端门控里缺失的单个控制项，因此反向变异非常明确。",
+        "提交信息直接说明 TLB 更新期间必须阻止取指。",
+        "新增测试精确验证了消息中描述的 invalidate-all 场景。"
+      ],
+      "notes": [
+        "这是一个窄范围控制缺陷：删除 invalidate-all 门控项就足以重现原始问题。",
+        "测试改动仅作为佐证。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

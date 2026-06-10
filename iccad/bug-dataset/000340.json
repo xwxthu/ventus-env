@@ -1,0 +1,137 @@
+{
+  "dataset_id": 340,
+  "original_review_id": 409,
+  "meta": {
+    "id": 409,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "b5f56e4f8d08a39bb8604084d8c1bc80133b2eba",
+    "subject": "uart: fix regression introduced by aa66e0ca61e5840c3c226d628602c983e386308b"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "uart_rx",
+    "summary": "Fixes UART receive timing so the oversampling counter always decrements while reading a character instead of depending on a stale removed enable signal.",
+    "why_it_counts": [
+      "The commit message explicitly describes a regression in the RTL receiver.",
+      "The changed DUT file is the UART receive implementation itself.",
+      "The patch corrects a concrete state-machine timing condition that directly affects serial sampling."
+    ],
+    "disqualifiers": [
+      "The commit also tweaks a test timeout, but that change is secondary and not the primary substance."
+    ],
+    "evidence": [
+      "hardware/fpga/common/uart_receive.sv removes the unused sample_enable signal declaration.",
+      "The receive-state counter update changes from else if (sample_enable) to unconditional else decrement.",
+      "The parent version would leave sample_count unchanged whenever sample_enable was false, which stalls sampling progress.",
+      "The commit message states that the disused sample_enable signal was still gating sample_count decrement."
+    ],
+    "touched_dut_files": [
+      "hardware/fpga/common/uart_receive.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A UART receiver typically oversamples the input line and uses a countdown timer to reach the center of each incoming bit. If that countdown decrements only when a stale or never-asserted enable is true, the receiver stops advancing between sample points and loses bit timing.",
+      "portable_injection_spec": {
+        "affected_mechanism": "UART RX bit-center sample countdown",
+        "trigger_condition": "Any incoming serial character after the start bit has been detected and the receiver enters the data-bit sampling state.",
+        "injection_action": "Gate the sample countdown decrement with a stale or removed enable condition instead of decrementing every cycle in the receive state.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "This applies to UART receivers that use an oversampling or baud-divide countdown.",
+          "You do not need to change the shift logic; corrupting the countdown update is sufficient.",
+          "The bug is timing-related but still fully functional: it affects whether bits are sampled at the right time."
+        ],
+        "concrete_injection_steps": [
+          "Locate the receive-state branch that decrements the sample counter between bit-center sample events.",
+          "Wrap that decrement in an extra enable predicate that is stale, permanently low, or no longer maintained.",
+          "Leave the start-bit detection and shift-register update logic unchanged so the failure comes from stalled countdown timing."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/fpga/common/uart_receive.sv"
+        ],
+        "target_module_or_logic": "uart_receive sample_count update in STATE_READ_CHARACTER",
+        "commit_fix_summary": "The fix removes sample_enable and makes sample_count decrement unconditionally in the receive state whenever sample_count_ff is not zero.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change the receive-state decrement back from unconditional else to else if (sample_enable)."
+      },
+      "expected_failure_mode": "UART receive can stall or sample bits at the wrong time, causing dropped, corrupted, or delayed characters.",
+      "evidence_for_injection": [
+        "The only RTL functional change is removal of the sample_enable gate on sample_count decrement.",
+        "The commit message names sample_enable as the regression source.",
+        "The test-harness edits do not affect the hardware injection mechanism."
+      ],
+      "notes": [
+        "This is a localized one-condition mutation.",
+        "The observable symptom should appear on real serial traffic without needing unusual microarchitectural setup."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "uart_rx",
+    "summary": "该提交修复了 UART 接收定时逻辑，使过采样计数器在读取字符期间始终递减，而不是依赖一个已经失效的旧使能信号。",
+    "why_it_counts": [
+      "提交信息明确说明了 RTL 接收器中的回归缺陷。",
+      "被修改的 DUT 文件就是 UART 接收实现本身。",
+      "补丁修复了一个具体的状态机时序条件，它会直接影响串口采样。"
+    ],
+    "disqualifiers": [
+      "该提交还顺带调整了测试超时，但那只是次要变化，不是本次提交的主体。"
+    ],
+    "evidence": [
+      "hardware/fpga/common/uart_receive.sv 删除了未使用的 sample_enable 信号声明。",
+      "接收状态中的计数器更新条件从 else if (sample_enable) 改成了无条件 else 递减。",
+      "在父版本中，只要 sample_enable 为假，sample_count 就不会变化，从而使采样流程停滞。",
+      "提交信息明确说明：已经弃用的 sample_enable 仍然在控制 sample_count 的递减。"
+    ],
+    "touched_dut_files": [
+      "hardware/fpga/common/uart_receive.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "UART 接收器通常会对输入线进行过采样，并使用一个倒计时计数器来到达每个输入位的中心点。如果这个倒计时只有在一个陈旧或永远不会拉高的使能信号为真时才递减，那么接收器就会在两个采样点之间停止前进，导致位定时丢失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "UART RX 的位中心采样倒计时",
+        "trigger_condition": "起始位已经检测到并且接收器进入数据位采样状态后的任意串行字符。",
+        "injection_action": "让采样倒计时的递减依赖一个陈旧或已移除的使能条件，而不是在接收状态下每个周期都递减。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "该缺陷适用于使用过采样或 baud-divide 倒计时的 UART 接收器。",
+          "无需改动移位逻辑；只破坏倒计时更新就足够了。",
+          "这是一个时序相关但完全功能性的缺陷，因为它决定了是否在正确时间采样各个比特。"
+        ],
+        "concrete_injection_steps": [
+          "定位接收状态分支中在两次位中心采样之间递减 sample counter 的逻辑。",
+          "给这个递减操作包上一层额外使能条件，该条件是陈旧的、永久为低，或者不再被维护。",
+          "保持起始位检测和移位寄存器更新逻辑不变，使故障只来自倒计时停滞。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/fpga/common/uart_receive.sv"
+        ],
+        "target_module_or_logic": "uart_receive 中 STATE_READ_CHARACTER 状态下的 sample_count 更新逻辑",
+        "commit_fix_summary": "该修复删除了 sample_enable，并使 sample_count 在接收状态下只要 sample_count_ff 不为零就无条件递减。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把接收状态中的无条件 else 递减改回 else if (sample_enable)。"
+      },
+      "expected_failure_mode": "UART 接收会停滞或在错误时刻采样比特，导致字符丢失、损坏或延迟。",
+      "evidence_for_injection": [
+        "唯一的 RTL 功能性修改就是去掉了 sample_count 递减上的 sample_enable 门控。",
+        "提交信息直接把 sample_enable 指定为回归来源。",
+        "测试平台的修改不会影响硬件注入机制。"
+      ],
+      "notes": [
+        "这是一个局部的单条件变异。",
+        "在真实串口流量下就应当能观察到症状，无需特别复杂的微架构前置条件。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

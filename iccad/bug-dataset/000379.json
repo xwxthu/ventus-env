@@ -1,0 +1,143 @@
+{
+  "dataset_id": 379,
+  "original_review_id": 467,
+  "meta": {
+    "id": 467,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "c7e511ed1ee8893fc07ac383b127c7afe130cc7d",
+    "subject": "fixed rop bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "rop",
+    "summary": "This commit fixes real render-output-path control bugs. The corrected logic selects color/depth write masks and pixel coordinates from the pipeline stage that actually owns the outgoing memory request, and it latches per-lane masks through the request pipeline so they are not overwritten by later cycles.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes an ROP bug.",
+      "The patch changes ROP control and memory-request RTL, not tests or software.",
+      "The changed mask and coordinate selectors directly determine which pixels, color values, and depth/stencil values are written."
+    ],
+    "disqualifiers": [
+      "One touched file only adds a missing import and is not itself the bug fix.",
+      "The commit repairs two closely related control issues in the ROP path, so the final injection plan groups them under one request-selection bug class."
+    ],
+    "evidence": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv changes ds_color_write_mask so it no longer incorrectly depends on color_writeen.",
+      "The same file changes mem_req_c_mask and mem_req_pos_x/y to select from write_bypass, blend_valid_out, and ds_valid_out rather than older enable-based expressions.",
+      "hw/rtl/rop_unit/VX_rop_mem.sv introduces local mask wires before the pipeline register so request masks are captured together with the request payload."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv",
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A render output unit often merges several candidate write sources: bypass color writes, blended color results, and depth/stencil updates. The outgoing memory request must use the mask, coordinates, and payload from whichever stage actually produced that request. If control fields are selected from an older or unrelated stage, or if per-lane masks are not registered with the request payload, the backend can write the wrong pixel or drop a legitimate lane update.",
+      "portable_injection_spec": {
+        "affected_mechanism": "ROP request-source selection",
+        "trigger_condition": "Depth/stencil, blend, and bypass color paths are all possible producers, especially when one stage is valid while another is merely enabled or when the request pipeline stalls.",
+        "injection_action": "Select mask or coordinate fields from stale enable signals or live upstream wires instead of from the stage that actually owns the emitted memory request.",
+        "implementation_pattern": "select control from wrong pipeline stage",
+        "portability_notes": [
+          "Apply this to render backends, pixel export units, or other graphics backends that arbitrate among several write producers.",
+          "If the target DUT has no explicit mask pipeline, the analogous fault is to recompute the mask from current inputs instead of latching it with the request.",
+          "The bug is about source-of-truth mismatch between request payload and request metadata."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that chooses which pipeline stage supplies the outgoing render-memory request.",
+          "Change the mask and coordinate selection to use an enable-based or earlier-stage condition rather than the valid signal of the stage actually producing the request.",
+          "If the request is pipelined, stop registering the per-lane mask with the request payload and instead reuse a live input mask.",
+          "Exercise cases where blend, depth/stencil, and bypass paths can alternate or overlap across successive cycles."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_unit.sv",
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "ROP memory-request mask and coordinate selection",
+        "commit_fix_summary": "The fix rewrites mem_req_c_mask and mem_req_pos_x/y selection in VX_rop_unit.sv to use write_bypass, blend_valid_out, and ds_valid_out, and it latches request masks inside VX_rop_mem.sv before the pipeline register.",
+        "mutation_strategy": "restore_stale_source_selection",
+        "source_level_edit_anchor": "In VX_rop_unit.sv, mem_req_c_mask and mem_req_pos_x/y were changed to select from the currently valid producer stage. In VX_rop_mem.sv, local mask wires were introduced so req_ds_mask/req_c_mask are captured into the pipeline register."
+      },
+      "expected_failure_mode": "ROP memory writes can target the wrong pixel position, use the wrong color/depth mask, or drop intended lane updates, leading to visibly incorrect rendering or depth/stencil corruption.",
+      "evidence_for_injection": [
+        "The patch changes both request-source selection and mask latching, which are the exact control fields that determine where and what the ROP writes.",
+        "The bug fix is localized to the ROP request builder and ROP memory front end, not generic infrastructure.",
+        "The commit subject directly identifies the ROP path as buggy."
+      ],
+      "notes": [
+        "Reverting the ROP-unit source-selection logic is the primary injection; undoing the mask latching in VX_rop_mem.sv makes the failure easier to reproduce under pipelining.",
+        "This entry describes a graphics-specific but still reusable control-selection fault pattern."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "rop",
+    "summary": "该提交修复了渲染输出路径中的真实控制错误。修复后的逻辑会从真正拥有当前内存请求的流水级选择 color/depth 写掩码和像素坐标，并把每 lane 掩码与请求一起锁存，避免被后续周期覆盖。",
+    "why_it_counts": [
+      "提交信息明确写明修复了 ROP bug。",
+      "补丁修改的是 ROP 控制与内存请求 RTL，而不是测试或软件。",
+      "被修改的掩码和坐标选择逻辑会直接决定哪些像素、颜色值和 depth/stencil 值被写入。"
+    ],
+    "disqualifiers": [
+      "其中一个被修改文件只是补了一个 import，本身不是 bug 修复核心。",
+      "该提交修复了 ROP 路径中两个紧密相关的控制问题，因此最终注入计划把它们归为同一类请求选择错误。"
+    ],
+    "evidence": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv 修改了 ds_color_write_mask，使其不再错误依赖 color_writeen。",
+      "同一文件把 mem_req_c_mask 和 mem_req_pos_x/y 改成基于 write_bypass、blend_valid_out 和 ds_valid_out 的选择逻辑，而不是旧的 enable 表达式。",
+      "hw/rtl/rop_unit/VX_rop_mem.sv 在流水寄存器前引入局部 mask wire，使请求掩码能与请求负载一起被锁存。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_unit.sv",
+      "hw/rtl/rop_unit/VX_rop_mem.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "render output 单元通常会合并多个候选写源：旁路 color 写、blend 后的 color 结果，以及 depth/stencil 更新。外发内存请求必须使用真正产生该请求的那个流水级所对应的掩码、坐标和负载。如果控制字段来自更旧或无关的流水级，或者每 lane 掩码没有和请求负载一起寄存，那么后端就可能写错像素，或者丢掉本应写入的 lane 更新。",
+      "portable_injection_spec": {
+        "affected_mechanism": "ROP 请求源选择",
+        "trigger_condition": "depth/stencil、blend 和 bypass color 路径都可能成为请求来源，尤其是在某一级 valid 而另一级只是 enable，或请求流水发生 stall 时。",
+        "injection_action": "让掩码或坐标字段继续取自过时的 enable 信号或实时上游线网，而不是取自真正产生该请求的流水级。",
+        "implementation_pattern": "从错误的流水级选择控制字段",
+        "portability_notes": [
+          "适用于 render backend、pixel export 单元或其他在多个写入源之间仲裁的图形后端。",
+          "如果目标 DUT 没有显式掩码流水，则等价故障是：不把掩码与请求一起寄存，而是在输出时重新从当前输入计算掩码。",
+          "该 bug 的核心是请求负载与请求元数据之间的“真实来源”不一致。"
+        ],
+        "concrete_injection_steps": [
+          "找到负责选择哪个流水级提供当前渲染内存请求的逻辑。",
+          "把 mask 与坐标的选择条件改回基于 enable 或更早流水级，而不是基于真正发出请求的 valid 级。",
+          "如果请求有流水寄存器，就不要把 per-lane mask 与负载一起锁存，而是复用实时输入 mask。",
+          "构造 blend、depth/stencil 与 bypass 路径在相邻周期交替或重叠的场景。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_unit.sv",
+          "hw/rtl/rop_unit/VX_rop_mem.sv"
+        ],
+        "target_module_or_logic": "ROP 内存请求的掩码和坐标选择逻辑",
+        "commit_fix_summary": "修复在 VX_rop_unit.sv 中重写了 mem_req_c_mask 与 mem_req_pos_x/y 的选择逻辑，使其基于真正有效的来源级；同时在 VX_rop_mem.sv 中把请求 mask 先锁存后再进流水寄存器。",
+        "mutation_strategy": "restore_stale_source_selection",
+        "source_level_edit_anchor": "在 VX_rop_unit.sv 中，mem_req_c_mask 和 mem_req_pos_x/y 被改成从当前有效的 producer stage 选择。在 VX_rop_mem.sv 中，引入了局部 mask wire，把 req_ds_mask/req_c_mask 锁存进流水寄存器。"
+      },
+      "expected_failure_mode": "ROP 内存写入可能落到错误像素位置、使用错误的 color/depth 掩码，或丢失本应更新的 lane，最终导致明显的渲染错误或 depth/stencil 损坏。",
+      "evidence_for_injection": [
+        "补丁同时修改了请求来源选择和 mask 锁存，这两者正是决定 ROP 写到哪里、写什么的关键控制字段。",
+        "修复局部集中在 ROP 请求构造和 ROP memory 前端，而不是通用基础设施。",
+        "提交标题直接点名 ROP 路径存在 bug。"
+      ],
+      "notes": [
+        "主注入点是回退 ROP unit 的来源选择逻辑；同时撤销 VX_rop_mem.sv 中的 mask 锁存，会让故障在流水场景下更容易复现。",
+        "这是一类图形后端特有但仍可复用的控制选择错误模式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

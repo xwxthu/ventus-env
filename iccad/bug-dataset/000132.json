@@ -1,0 +1,133 @@
+{
+  "dataset_id": 132,
+  "original_review_id": 163,
+  "meta": {
+    "id": 163,
+    "repo": "gemmini",
+    "branch": "chol_vec",
+    "commit": "d00254f022886f0391ecb23f9c013151a0190892",
+    "subject": "fixed bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "LoopMatmulLdB now treats a zero B DRAM address as a reuse sentinel: it suppresses the pseudo-load, advances iterators only on real handshakes, and clears the one-shot flip flag after use.",
+    "why_it_counts": [
+      "Patch changes `LoopMatmulLdB` state and issue logic in DUT RTL",
+      "It gates command emission on nonzero DRAM addresses and advances iterators only on a real fire",
+      "It also clears the one-shot B-reuse flip flag after the flip happens"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "LoopMatmulLdB adds `val b_dram_addr_null = (dram_addr === 0.U)` and gates `io.cmd.valid` with `!b_dram_addr_null`",
+      "Iterator updates are moved under `when (io.cmd.fire())` instead of the old `elsewhen (dram_addr === 0.U)` structure",
+      "The patch also adds `b_dram_new_null := false.B` after `flip_b_spad` to reset the one-shot reuse state"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopMatmul.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a loop engine uses a special null or zero operand address to mean reuse of an already loaded buffer, the corresponding load FSM must not issue a memory transaction for that pseudo-load. It must also advance loop iterators only after a real memory-command handshake, and it must clear any one-shot reuse flag after the associated buffer flip happens. Otherwise the controller can emit bogus loads, skip or duplicate progress, or keep re-flipping a reuse buffer.",
+      "portable_injection_spec": {
+        "affected_mechanism": "null-address reuse handling in operand load sequencer",
+        "trigger_condition": "A matmul loop requests operand-B reuse using a sentinel address instead of a real DRAM address.",
+        "injection_action": "Let the load FSM treat the sentinel address like a real load request and/or leave the one-shot reuse flag uncleared after the flip.",
+        "implementation_pattern": "drop sentinel guard on valid and state advance",
+        "portability_notes": [
+          "This maps to any load sequencer where a special address or flag means buffer reuse rather than DMA.",
+          "The critical properties are command-valid generation, iterator advance rules, and post-flip state reset.",
+          "Another DUT may use an explicit reuse bit instead of a zero address, but the bug mechanism is the same."
+        ],
+        "concrete_injection_steps": [
+          "Locate the operand-load FSM for the reusable buffer.",
+          "Remove the guard that suppresses command valid when the address is the reuse sentinel.",
+          "Allow state progress to depend on the sentinel case instead of only on a real command handshake.",
+          "Do not clear the one-shot reuse flag after the buffer-bank flip or equivalent pointer swap occurs."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala"
+        ],
+        "target_module_or_logic": "LoopMatmulLdB zero-address handling and flip_b_spad reset",
+        "commit_fix_summary": "The fix stops LOAD2 issuance for dram_addr === 0.U, keeps iterator movement tied to io.cmd.fire(), and clears b_dram_new_null after flip_b_spad fires.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore io.cmd.valid without the !b_dram_addr_null term, move state handling back toward the old dram_addr === 0.U path, and remove b_dram_new_null := false.B from the flip_b_spad block."
+      },
+      "expected_failure_mode": "The controller can emit bogus zero-address B loads, mis-sequence or terminate the B-load loop incorrectly, or reuse the wrong B buffer because the flip state is not one-shot anymore.",
+      "evidence_for_injection": [
+        "Zero address is explicitly recognized as a special case in LoopMatmulLdB after the fix.",
+        "The patch separates real load progress from the zero-address early-exit path.",
+        "The same commit resets b_dram_new_null after flip_b_spad, showing the reuse event is intended to fire once."
+      ],
+      "notes": [
+        "This is the second half of the same zero-address B reuse bug sequence as dataset 131.",
+        "If you want a smaller mutation, removing only the post-flip reset yields a weaker but still real variant."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "LoopMatmulLdB 现在会把零值 B DRAM 地址当作复用哨兵处理：它会抑制这类伪加载，只在真实握手时推进迭代器，并在使用后清除一次性的翻转标志。",
+    "why_it_counts": [
+      "补丁修改了 DUT RTL 中 `LoopMatmulLdB` 的状态机和发射逻辑",
+      "它只在 DRAM 地址非零时发射命令，并且仅在真实握手时推进迭代器",
+      "它还在翻转发生后清除了单次触发的 B 复用标志"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "LoopMatmulLdB 增加了 `val b_dram_addr_null = (dram_addr === 0.U)`，并用 `!b_dram_addr_null` 约束 `io.cmd.valid`",
+      "迭代器更新被移动到 `when (io.cmd.fire())` 下，不再使用旧的 `elsewhen (dram_addr === 0.U)` 结构",
+      "补丁还在 `flip_b_spad` 后加入了 `b_dram_new_null := false.B`，用于重置单次复用状态"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopMatmul.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当循环引擎用特殊的空地址或零地址表示“复用已加载缓冲区”时，相应的加载状态机不应为这种伪加载发出真正的内存事务。它还必须只在真实的内存命令握手之后推进循环迭代器，并在相关缓冲区翻转完成后清除一次性复用标志。否则控制器可能发出伪加载、跳过或重复推进，或者持续重复翻转复用缓冲区。",
+      "portable_injection_spec": {
+        "affected_mechanism": "可复用操作数加载状态机中的空地址复用处理",
+        "trigger_condition": "某个 matmul 循环通过哨兵地址请求复用操作数 B，而不是提供真实 DRAM 地址。",
+        "injection_action": "让加载状态机把这个哨兵地址当成真实加载请求处理，或者在翻转之后不清除一次性复用标志。",
+        "implementation_pattern": "删除对哨兵值的 valid 和状态推进保护",
+        "portability_notes": [
+          "这可以映射到任何使用特殊地址或标志表示缓冲区复用而不是 DMA 的加载状态机。",
+          "关键点是命令 valid 的生成、迭代器推进规则，以及翻转后的状态复位。",
+          "其他 DUT 也许用显式复用位而不是零地址，但缺陷机理相同。"
+        ],
+        "concrete_injection_steps": [
+          "定位负责可复用缓冲区的操作数加载状态机。",
+          "删除当地址等于复用哨兵时抑制命令 valid 的保护条件。",
+          "让状态推进部分重新依赖哨兵情况，而不是只依赖真实命令握手。",
+          "在发生缓冲区 bank 翻转或等价指针切换后，不要清除一次性复用标志。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala"
+        ],
+        "target_module_or_logic": "LoopMatmulLdB 的零地址处理与 flip_b_spad 复位逻辑",
+        "commit_fix_summary": "修复在 dram_addr === 0.U 时停止发出 LOAD2，请求进度仅由 io.cmd.fire() 驱动，并在 flip_b_spad 触发后清除 b_dram_new_null。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复不带 !b_dram_addr_null 的 io.cmd.valid，让状态处理回到旧的 dram_addr === 0.U 路径，并从 flip_b_spad 块中删除 b_dram_new_null := false.B。"
+      },
+      "expected_failure_mode": "控制器可能发出伪造的零地址 B 加载、错误推进或过早终止 B 加载循环，或者因为翻转状态不再是一次性的而复用到错误的 B 缓冲区。",
+      "evidence_for_injection": [
+        "修复后 LoopMatmulLdB 明确把零地址识别为特殊情况。",
+        "补丁把真实加载进度和零地址提前退出路径分离开来。",
+        "同一提交在 flip_b_spad 后重置 b_dram_new_null，说明复用事件本意上只应触发一次。"
+      ],
+      "notes": [
+        "这是与数据集 131 同一零地址 B 复用缺陷序列的第二部分。",
+        "如果需要更小的变体，只删除翻转后的复位也能得到较弱但仍真实的故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

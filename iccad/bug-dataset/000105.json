@@ -1,0 +1,123 @@
+{
+  "dataset_id": 105,
+  "original_review_id": 133,
+  "meta": {
+    "id": 133,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "b1dc2fba42709ab2f3b4c335f4d490b9444131b8",
+    "subject": "cache read byteenable bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes outbound cache memory-request formatting so read transactions use a full-line byte-enable instead of reusing a partial write mask.",
+    "why_it_counts": [
+      "The commit message explicitly describes a cache byte-enable bug fix.",
+      "The patch changes the DUT cache-bank logic that formats lower-memory requests.",
+      "Using the wrong byte-enable on reads is a direct correctness error in the cache-to-memory interface."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Only hw/rtl/cache/VX_cache_bank.sv is modified.",
+      "In writeback mode, mreq_queue_byteen now uses dirty_byteen_st1 only for fill/flush writeback traffic and uses all ones for the other path.",
+      "In non-writeback mode, mreq_queue_byteen now uses write_byteen_st1 only for writes and all ones for reads."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A cache miss read or line fill request sent to the next memory level should usually request the full cache line. Partial byte-enable masks are only valid for stores or dirty-byte writebacks. If the request formatter reuses a store mask on a read transaction, the lower memory can observe a partial-line request and the cache may refill a line with missing or corrupted bytes.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache miss request byte-enable generation",
+        "trigger_condition": "A cache issues a read/fill transaction to lower memory, especially after a previous write path has produced a non-all-ones byte mask.",
+        "injection_action": "Reuse the write or dirty-byte mask on read transactions instead of forcing a full-line byte-enable.",
+        "implementation_pattern": "reuse write byte mask for reads",
+        "portability_notes": [
+          "Map this to any cache or linefill unit that carries byte enables on the lower-memory request bus.",
+          "The bug is most visible when the preceding operation left a sparse store mask or dirty-byte mask in the request formatter.",
+          "Keep write traffic correct so the failure stays isolated to read/fill transactions."
+        ],
+        "concrete_injection_steps": [
+          "In the lower-memory request formatter, leave writeback or store byte-mask selection unchanged.",
+          "For read or fill requests, stop overriding the byte-enable to all ones and instead forward the existing partial mask.",
+          "Do not change the returned line data path; the bug should come from malformed read requests, not from response decoding."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv"
+        ],
+        "target_module_or_logic": "mreq_queue byte-enable selection",
+        "commit_fix_summary": "The fix makes mreq_queue_byteen equal to all ones on read/fill traffic while preserving partial masks only for writes or dirty-byte writebacks.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Restore the old assignments where mreq_queue_byteen always follows dirty_byteen_st1 in writeback mode or write_byteen_st1 in non-writeback mode, even for reads."
+      },
+      "expected_failure_mode": "Cache read or fill requests can become partial-line transactions, causing incomplete refills or corrupted load data.",
+      "evidence_for_injection": [
+        "The patch is entirely localized to byte-enable selection in the memory-request queue formatter.",
+        "Both writeback and non-writeback paths explicitly changed from mask reuse to full-line enables on reads."
+      ],
+      "notes": []
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了缓存向下一级内存发请求时的格式化逻辑，使读事务使用整行 byte-enable，而不是复用部分写掩码。",
+    "why_it_counts": [
+      "提交信息明确说明修复的是 cache byte-enable bug。",
+      "补丁修改了 DUT 中 cache bank 负责格式化下游内存请求的逻辑。",
+      "在读事务上使用错误 byte-enable 会直接破坏 cache 到 memory 接口的正确性。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "只有 hw/rtl/cache/VX_cache_bank.sv 被修改。",
+      "在 writeback 模式下，mreq_queue_byteen 现在只对 fill/flush 的写回流量使用 dirty_byteen_st1，其他路径改为全 1。",
+      "在非 writeback 模式下，mreq_queue_byteen 现在只对写请求使用 write_byteen_st1，对读请求改为全 1。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "缓存 miss 读或 line fill 发往下一级内存时，通常应该请求整条 cache line。部分 byte-enable 只适用于 store 或 dirty-byte writeback。如果请求格式化逻辑在读事务上复用了 store 掩码，那么下级内存就会看到一个部分行请求，缓存最终可能以缺字节或损坏的数据完成 refill。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache miss request byte-enable generation",
+        "trigger_condition": "缓存向下级内存发出读或 fill 事务，且此前写路径产生过非全 1 的 byte mask。",
+        "injection_action": "在读事务上复用写或 dirty-byte 掩码，而不是强制使用整行全 1 byte-enable。",
+        "implementation_pattern": "reuse write byte mask for reads",
+        "portability_notes": [
+          "可映射到任何在下级内存请求总线上携带 byte enable 的 cache 或 linefill 单元。",
+          "当上一个操作在请求格式化逻辑里留下稀疏 store mask 或 dirty-byte mask 时，这个故障最容易暴露。",
+          "保持写流量正确，这样错误就会集中在读/fill 事务上。"
+        ],
+        "concrete_injection_steps": [
+          "在下级内存请求格式化逻辑中，保持写回或 store 的 byte-mask 选择不变。",
+          "对读或 fill 请求，取消“强制全 1”的覆盖，改为直接转发已有的部分掩码。",
+          "不要改动返回数据路径；故障应来自畸形的读请求，而不是响应解码。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv"
+        ],
+        "target_module_or_logic": "mreq_queue byte-enable selection",
+        "commit_fix_summary": "修复让 mreq_queue_byteen 在读/fill 流量上始终为全 1，而部分掩码只保留给写或 dirty-byte writeback。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "恢复旧赋值：让 mreq_queue_byteen 在 writeback 模式下始终跟随 dirty_byteen_st1、在非 writeback 模式下始终跟随 write_byteen_st1，即使是读请求也如此。"
+      },
+      "expected_failure_mode": "cache 的读或 fill 请求会退化为部分行事务，导致 refill 不完整或 load 数据损坏。",
+      "evidence_for_injection": [
+        "补丁完全局限在 memory-request queue formatter 中的 byte-enable 选择。",
+        "writeback 和非 writeback 两条路径都从“读时复用旧掩码”改成了“读时使用整行使能”。"
+      ],
+      "notes": []
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 440,
+  "original_review_id": 579,
+  "meta": {
+    "id": 579,
+    "repo": "vortex",
+    "branch": "tensor_unit",
+    "commit": "6eddf70171a226b366253e8fd7a29cd2989d6ea1",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes LSU multi-packet load-response ordering by tying packet tracking to the request queue id and ensuring the final EOP fragment is returned last.",
+    "why_it_counts": [
+      "The patch directly changes LSU response-ordering logic and the scheduler metadata that feeds it.",
+      "The RTL comments and assertions explicitly describe the out-of-order multi-packet response problem.",
+      "The added regression test targets this corrected LSU behavior."
+    ],
+    "disqualifiers": [
+      "The commit also adds a new regression-test directory."
+    ],
+    "evidence": [
+      "VX_lsu_slice.sv replaces allocator-based SOP/EOP tracking with queue-indexed pkt_ctr, pkt_sop, and pkt_eop state.",
+      "The comments say multi-packet load responses could return out-of-order and that the EOP packet must return last.",
+      "VX_mem_scheduler.sv now exports core_req_queue_id, which the LSU consumes as pkt_waddr."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When one load is split into multiple response fragments, the memory system can return those fragments out of order. The LSU must track them by the originating request slot and hold the final end-of-packet fragment until all earlier fragments of the same load have arrived.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-fragment load-response ordering",
+        "trigger_condition": "A load produces multiple packets or partial responses, and the memory system is allowed to return them in a different order from request issue order.",
+        "injection_action": "Remove request-queue identity from LSU packet tracking and revert to allocator-based SOP/EOP bookkeeping so the final fragment is not explicitly delayed until its own outstanding count reaches one.",
+        "implementation_pattern": "drop request-queue correlation",
+        "portability_notes": [
+          "Apply this to any LSU, coalescer, or vector-memory pipeline that assembles one architectural load from multiple response fragments.",
+          "The reusable bug is missing correlation between returned fragments and their originating request slot."
+        ],
+        "concrete_injection_steps": [
+          "Find the metadata that ties each multi-fragment load to a queue slot or request id.",
+          "Stop propagating that queue id into the response-ordering logic.",
+          "Replace per-request fragment counters with a simpler allocator or arrival-order tracker."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_lsu_slice.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv"
+        ],
+        "target_module_or_logic": "LSU packet tracking for multi-packet load responses keyed by request queue id",
+        "commit_fix_summary": "The fix switches LSU packet tracking to queue-indexed pkt_ctr/pkt_sop/pkt_eop state and has the memory scheduler provide core_req_queue_id so the final EOP response is emitted last for each request.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove core_req_queue_id plumbing between VX_mem_scheduler and VX_lsu_slice, then restore the old allocator-based packet tracking path."
+      },
+      "expected_failure_mode": "Multi-packet loads can assemble fragments in the wrong order or signal completion too early, leading to corrupted load data, wrong lane completion, or downstream protocol violations.",
+      "evidence_for_injection": [
+        "The fixed code explicitly says the EOP packet should be returned last.",
+        "pkt_ctr, pkt_sop, and pkt_eop are now indexed by pkt_waddr/pkt_raddr.",
+        "VX_mem_scheduler adds core_req_queue_id specifically to support this ordering fix."
+      ],
+      "notes": [
+        "This is a strong cross-DUT injection because many vector or coalesced LSUs need explicit fragment-order tracking.",
+        "The added tests are validation anchors, not part of the injected mutation."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交修复了 LSU 多包 load 响应的返回顺序问题：通过把包跟踪绑定到请求队列 id，确保最终的 EOP 分片总是最后返回。",
+    "why_it_counts": [
+      "补丁直接修改了 LSU 的响应排序逻辑以及为其提供元数据的调度器接口。",
+      "RTL 注释和断言明确说明了多包响应乱序问题。",
+      "新增的回归测试正是针对这条修复后的 LSU 行为。"
+    ],
+    "disqualifiers": [
+      "该提交同时新增了一个回归测试目录。"
+    ],
+    "evidence": [
+      "VX_lsu_slice.sv 用按队列索引维护的 pkt_ctr、pkt_sop 和 pkt_eop 替代了旧的 allocator 式 SOP/EOP 跟踪。",
+      "代码注释明确指出多包 load 响应可能乱序返回，并且 EOP 包必须最后返回。",
+      "VX_mem_scheduler.sv 新增 core_req_queue_id，而 LSU 会把它作为 pkt_waddr 使用。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一次 load 被拆成多个响应分片时，内存系统可能会乱序返回这些分片。LSU 必须按原始请求槽位来跟踪这些分片，并且只有在同一条 load 的前序分片都到达后，才能放行最终的 EOP 分片。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多分片 load 响应排序",
+        "trigger_condition": "某条 load 产生多个响应包或部分响应，而 memory system 允许这些分片以不同于请求发出顺序的方式返回。",
+        "injection_action": "删除 LSU 包跟踪对请求队列身份的依赖，恢复成基于 allocator 的 SOP/EOP 记账方式，使最终分片不再必须等到本请求 outstanding 计数降到一。",
+        "implementation_pattern": "drop request-queue correlation",
+        "portability_notes": [
+          "适用于任何需要把多个响应分片重新拼装成一条架构 load 的 LSU、coalescer 或向量内存流水线。",
+          "可复用缺陷的本质是返回分片与原始请求槽位缺少关联。"
+        ],
+        "concrete_injection_steps": [
+          "找到把每个多分片 load 绑定到某个队列槽位或 request id 的元数据。",
+          "停止把这个 queue id 传播到响应排序逻辑。",
+          "用更简单的 allocator 或按返回顺序的跟踪器替换按请求维护的分片计数器。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_lsu_slice.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv"
+        ],
+        "target_module_or_logic": "按请求队列 id 跟踪多包 load 响应的 LSU 包管理逻辑",
+        "commit_fix_summary": "修复把 LSU 的包跟踪改成按队列索引维护 pkt_ctr/pkt_sop/pkt_eop，并让内存调度器提供 core_req_queue_id，从而保证每个请求的最终 EOP 响应最后返回。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 VX_mem_scheduler 与 VX_lsu_slice 之间的 core_req_queue_id 传递，然后恢复旧的 allocator 式包跟踪路径。"
+      },
+      "expected_failure_mode": "多包 load 可能以错误顺序拼装响应，或者过早宣告完成，从而导致 load 数据损坏、lane 完成异常或后续协议错误。",
+      "evidence_for_injection": [
+        "修复后的代码明确说明 EOP 包必须最后返回。",
+        "pkt_ctr、pkt_sop 和 pkt_eop 现在按 pkt_waddr/pkt_raddr 索引。",
+        "VX_mem_scheduler 专门新增了 core_req_queue_id 来支撑这一排序修复。"
+      ],
+      "notes": [
+        "这是一个很强的跨 DUT 注入模式，因为很多向量或合并型 LSU 都需要显式的分片顺序跟踪。",
+        "新增测试只是验证锚点，并不是故障注入的一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

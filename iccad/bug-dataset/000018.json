@@ -1,0 +1,137 @@
+{
+  "dataset_id": 18,
+  "original_review_id": 23,
+  "meta": {
+    "id": 23,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "cb1377f01c1637ade05d606fa0692d76c3cd9699",
+    "subject": "fix cdma dc write address wrap issue"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "Fixes CDMA DC write-address wrap correction by subtracting the configured bank span from wrapped indices instead of a hardcoded 9-bit span.",
+    "why_it_counts": [
+      "The patch changes the wrapped-address datapath used after CBUF wrap detection in NV_NVDLA_CDMA_dc.v.",
+      "Once wrap is detected, the subtraction amount directly determines which CBUF entry receives the write.",
+      "The commit message explicitly identifies a DC write address wrap bug."
+    ],
+    "disqualifiers": [
+      "The diff updates embedded generator directives rather than a separately regenerated emitted assign line."
+    ],
+    "evidence": [
+      "The commit adds a generator-produced cbuf_idx_w assignment that subtracts {2'b0, data_bank, ${bank_depth_bits}'b0}.",
+      "It simultaneously comments out the old hardcoded subtraction by {2'b0, data_bank, 9'b0}.",
+      "The preceding commit already fixed the wrap predicate, so this change is specifically about correcting the wrapped address after wrap has been detected."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "After a banked circular-buffer write pointer has been determined to wrap, the corrected wrapped pointer must subtract the true configured bank span. If the subtraction uses a stale literal stride from another configuration, the pointer lands in the wrong bank-relative location even though wrap detection itself may be correct.",
+      "portable_injection_spec": {
+        "affected_mechanism": "wrapped write-index correction",
+        "trigger_condition": "A DC write crosses a bank boundary on a configuration whose bank depth differs from the stale hardcoded span.",
+        "injection_action": "Subtract a fixed legacy bank span when forming the wrapped address instead of the configured span.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "Apply this to the datapath that corrects the write pointer after a wrap predicate has fired.",
+          "Keep the wrap detector itself correct if you want to isolate this second bug rather than the earlier comparator bug.",
+          "This is a good candidate when the DUT has explicit wrap and wrapped-index stages."
+        ],
+        "concrete_injection_steps": [
+          "Find the expression that forms the wrapped write index after wrap detection.",
+          "Replace the configured bank-span subtraction with a fixed stride literal from the old configuration.",
+          "Do not change the wrap predicate in the same mutation so the fault remains localized to wrapped-address correction.",
+          "Trigger writes that cross the bank boundary and inspect where the wrapped index lands."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA cbuf_idx_w wrapped-address calculation for DC writes",
+        "commit_fix_summary": "The fix generates cbuf_idx_w with subtraction by the configured bank_depth_bits-based span and disables the old hardcoded 9-bit subtraction.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Restore the old wrapped cbuf_idx_w subtraction using {2'b0, data_bank, 9'b0}, or otherwise replace the configured bank span in the wrapped-address datapath with a stale fixed literal."
+      },
+      "expected_failure_mode": "After a real bank wrap, DC write data lands at the wrong CBUF address because the wrapped pointer is corrected by the wrong span.",
+      "evidence_for_injection": [
+        "This commit adds the generator-produced cbuf_idx_w assignment and comments out the previous hardcoded subtraction line.",
+        "The repository history shows the wrap predicate was already parameterized in the immediately preceding fix.",
+        "cbuf_wr_addr is driven from cbuf_idx_w later in the file, so the mutation directly affects where writes land."
+      ],
+      "notes": [
+        "Confidence is medium because the patch is generator-level, but the arithmetic change is explicit and isolated.",
+        "This bug is distinct from dataset item 17: item 17 is about detecting wrap, while this one is about correcting the wrapped address."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "该提交修复了 CDMA DC 写地址回绕后的地址修正逻辑：在回绕后减去的是配置得到的 bank 跨度，而不是硬编码的 9 位跨度。",
+    "why_it_counts": [
+      "补丁修改的是 NV_NVDLA_CDMA_dc.v 中回绕检测之后使用的 wrapped-address 数据通路。",
+      "一旦检测到回绕，减去多少直接决定写入最终落到哪个 CBUF entry。",
+      "提交信息明确指出这是 DC write address wrap 缺陷。"
+    ],
+    "disqualifiers": [
+      "该 diff 修改的是嵌入式 generator 指令，而不是单独重新生成后的最终 assign 语句。"
+    ],
+    "evidence": [
+      "提交新增了一个由 generator 生成的 cbuf_idx_w 赋值，它会减去 {2'b0, data_bank, ${bank_depth_bits}'b0}。",
+      "同时，旧的硬编码减法 {2'b0, data_bank, 9'b0} 被注释掉。",
+      "上一条提交已经修复了回绕谓词，因此本次改动专门针对回绕检测之后的地址修正。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当分 bank 的环形缓冲区写指针已经被判断为发生回绕后，修正后的 wrapped 指针必须减去真实配置下的 bank 跨度。如果减法仍使用来自其他配置的旧字面跨度，即便回绕检测本身是正确的，指针也会落在错误的 bank 相对位置。",
+      "portable_injection_spec": {
+        "affected_mechanism": "回绕后写索引修正",
+        "trigger_condition": "DC 写请求跨越 bank 边界，且实际 bank depth 与旧的硬编码跨度不同。",
+        "injection_action": "在生成回绕后地址时，减去旧的固定 bank 跨度，而不是配置得到的跨度。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "应把注入点放在 wrap 谓词触发之后修正写指针的数据通路上。",
+          "如果要隔离这个第二类缺陷，应保持 wrap detector 本身正确，不要同时回注上一条提交的比较器错误。",
+          "当 DUT 明确区分 wrap 判定阶段和 wrapped-index 计算阶段时，这类缺陷最容易迁移。"
+        ],
+        "concrete_injection_steps": [
+          "找到在检测到回绕后形成 wrapped 写索引的表达式。",
+          "把其中基于配置的 bank-span 减法替换成旧配置里的固定跨度字面值。",
+          "不要同时修改 wrap 谓词，使故障局限在回绕后地址修正路径。",
+          "触发跨越 bank 边界的写入，并检查 wrapped 索引最终落点。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "DC 写路径上 CDMA 的 cbuf_idx_w 回绕地址计算",
+        "commit_fix_summary": "修复通过使用基于 bank_depth_bits 的配置跨度来生成 cbuf_idx_w，并禁用了旧的硬编码 9 位减法。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "可通过恢复旧的 cbuf_idx_w 回绕减法 {2'b0, data_bank, 9'b0}，或把 wrapped-address 数据通路中的配置跨度替换为过时固定字面值来回注。"
+      },
+      "expected_failure_mode": "在真实发生 bank 回绕后，DC 写数据会因为 wrapped 指针减去错误跨度而落到错误的 CBUF 地址。",
+      "evidence_for_injection": [
+        "本提交新增了 generator 生成的 cbuf_idx_w 赋值，并注释掉了之前的硬编码减法行。",
+        "仓库历史显示回绕谓词已在前一条提交中参数化，因此这里的变更集中在回绕后地址修正本身。",
+        "文件后续由 cbuf_idx_w 驱动 cbuf_wr_addr，因此该回注会直接改变实际写入落点。"
+      ],
+      "notes": [
+        "之所以给 medium 置信度，是因为补丁位于 generator 层，但算术变化本身清晰且隔离良好。",
+        "该缺陷与 dataset 17 不同：17 是回绕检测错误，这里是回绕后地址修正错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

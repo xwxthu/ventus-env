@@ -1,0 +1,133 @@
+{
+  "dataset_id": 147,
+  "original_review_id": 183,
+  "meta": {
+    "id": 183,
+    "repo": "gemmini",
+    "branch": "norm-opt",
+    "commit": "142e6143bcff3de0039498136d03398a61c9b271",
+    "subject": "fix max edge case bug; parallelize max lanes; lifting multiplier pipeline"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "normalizer_max",
+    "summary": "This mixed commit contains a real Normalizer max-tracking fix: the committed max state is updated directly from each max-lane result instead of remaining stale until a later phase.",
+    "why_it_counts": [
+      "It modifies the DUT's Normalizer state updates, not just tests or performance counters.",
+      "The patch changes max-lane output handling to write both running_max and max, which directly fixes stored max semantics.",
+      "The old code only copied running_max into max on a later SUM_EXP input event, which left an edge case where the visible max lagged behind the reduction result."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "At max-lane output, the new code computes new_max and assigns it to both stat.running_max and stat.max.",
+      "The old special-case assignment stat.max := stat.running_max on SUM_EXP input is removed.",
+      "The commit title itself calls out a max edge case bug, while the rest of the diff contains structural refactoring such as treeMax and MulPipe extraction."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Normalizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Reduction engines often keep a transient running maximum during the scan of input elements and a committed max value that downstream phases such as softmax or exponent normalization consume. If only the transient running value is updated while the committed value lags until a later command boundary or special trigger, certain command sequences will use a stale max even though the reduction itself has already found the new one. That is the portable bug mechanism here; the wider refactoring in this commit is secondary.",
+      "portable_injection_spec": {
+        "affected_mechanism": "running-max to committed-max handoff",
+        "trigger_condition": "A max-reduction phase completes and a later normalization phase consumes the committed max before any separate sync or copy step refreshes it.",
+        "injection_action": "Update only the transient running-max state from max-lane outputs and leave the committed max unchanged until a later phase-specific event.",
+        "implementation_pattern": "stale_shadow_state",
+        "portability_notes": [
+          "Map this to designs that hold both an internal accumulation max and a downstream-visible max or shift reference.",
+          "The key is not the exact command names but the existence of a stale architectural or downstream-consumed shadow of the reduction result.",
+          "Avoid injecting the broader pipeline refactor; the clean reusable fault is the missing state handoff."
+        ],
+        "concrete_injection_steps": [
+          "Identify the state updated by the max-reduction datapath on each partial or final max result.",
+          "Keep the running or internal max update intact but stop mirroring that value into the committed max consumed by later stages.",
+          "If the design has a later phase that copies the value, rely on that stale delayed copy instead of the immediate one.",
+          "Run a max-dependent postprocess such as softmax or any path that needs the final max immediately after reduction."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Normalizer.scala"
+        ],
+        "target_module_or_logic": "Normalizer max-lanes output state update for stat.running_max and stat.max",
+        "commit_fix_summary": "The fix updates stat.max together with stat.running_max on max-lane output and removes the older delayed handoff tied to a later SUM_EXP input.",
+        "mutation_strategy": "drop_state_update",
+        "source_level_edit_anchor": "At max_lanes.io.out.fire(), remove stat.max := new_max and restore the older delayed max handoff behavior instead."
+      },
+      "expected_failure_mode": "Later normalization stages see a stale maximum, which can skew softmax shifting, exponent scaling, or any other postprocess that depends on the final max.",
+      "evidence_for_injection": [
+        "The functional fix is narrowly localized to state-update lines, even though the commit also refactors surrounding logic.",
+        "The removed old assignment on SUM_EXP input shows the previous design depended on a delayed copy rather than immediate committed max update.",
+        "The added direct stat.max write is exactly the kind of reversible state-handoff fix suitable for reinjection."
+      ],
+      "notes": [
+        "This commit is mixed; for dataset use, inject only the max-state handoff bug and ignore the broader structural changes.",
+        "The later commit a5cc338 addresses a separate concurrency hazard and does not invalidate this max-state bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "normalizer_max",
+    "summary": "这个混合提交里包含一个真实的 Normalizer 最大值跟踪修复：提交态的 max 现在会在每次 max-lane 输出时直接更新，而不再一直滞后到后续阶段。",
+    "why_it_counts": [
+      "它修改的是 DUT 中 Normalizer 的状态更新，而不是测试或性能计数器。",
+      "补丁把 max-lane 输出处理改为同时写 stat.running_max 和 stat.max，直接修复了已提交 max 的语义。",
+      "旧代码只会在更晚的 SUM_EXP 输入事件上把 running_max 拷贝到 max，因此存在可见 max 落后于实际归约结果的边界情况。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 max-lane 输出处，新代码计算 new_max，并把它同时赋给 stat.running_max 和 stat.max。",
+      "旧的特殊处理 stat.max := stat.running_max 已从 SUM_EXP 输入路径中删除。",
+      "提交标题明确指出修复了 max edge case bug，而 diff 中其他大块改动主要是 treeMax 和 MulPipe 之类的结构性重构。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Normalizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "归约引擎通常会在扫描输入元素时维护一个临时的 running maximum，同时还维护一个供 softmax 或指数归一化等后续阶段消费的 committed max。如果只更新临时 running 值，而 committed 值要等到更晚的命令边界或特殊触发才刷新，那么某些命令序列就会在归约其实已经得到新最大值之后，仍然消费到过期 max。这里可移植的 bug 机理正是这种状态交接缺失；该提交里的更大范围重构只是次要背景。",
+      "portable_injection_spec": {
+        "affected_mechanism": "running-max 到 committed-max 的交接",
+        "trigger_condition": "max 归约阶段刚结束，而后续归一化阶段会在任何单独同步或复制步骤刷新之前就消费 committed max。",
+        "injection_action": "让 max-lane 输出只更新临时 running-max 状态，而让 committed max 继续保持到后续阶段事件才更新。",
+        "implementation_pattern": "stale_shadow_state",
+        "portability_notes": [
+          "把它映射到那些同时持有内部归约最大值和下游可见最大值或移位参考值的设计。",
+          "关键不是具体的命令名字，而是存在一个下游会消费、但可能比真实归约结果更滞后的影子状态。",
+          "不要把更大的流水线重构一起注入；最干净、可复用的故障是缺失的状态交接。"
+        ],
+        "concrete_injection_steps": [
+          "识别在每次部分或最终 max 结果到来时由 max 归约数据通路更新的状态。",
+          "保留 running 或内部 max 的更新，但停止把该值镜像到供后续阶段消费的 committed max。",
+          "如果设计中后面还有一步复制，就继续依赖那个延迟复制，而不做即时更新。",
+          "运行一个依赖 max 的后处理，例如 softmax，或任何在归约之后立即使用最终 max 的路径。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Normalizer.scala"
+        ],
+        "target_module_or_logic": "Normalizer 中 max-lanes 输出对 stat.running_max 与 stat.max 的状态更新",
+        "commit_fix_summary": "修复在 max-lane 输出时同步更新 stat.max 和 stat.running_max，并删除了旧的、绑定到后续 SUM_EXP 输入上的延迟交接逻辑。",
+        "mutation_strategy": "drop_state_update",
+        "source_level_edit_anchor": "在 max_lanes.io.out.fire() 处移除 stat.max := new_max，并恢复旧的延迟 max 交接方式。"
+      },
+      "expected_failure_mode": "后续归一化阶段会看到过期的最大值，从而导致 softmax 的移位、指数缩放或其他依赖最终 max 的后处理出现偏差。",
+      "evidence_for_injection": [
+        "尽管该提交包含较大范围重构，真正的功能修复非常集中在几行状态更新代码上。",
+        "被删除的旧 SUM_EXP 输入赋值说明原设计依赖延迟复制，而不是在 max 归约完成时立即提交最终 max。",
+        "新增的直接 stat.max 更新正是那种可以忠实反向注入的状态交接修复。"
+      ],
+      "notes": [
+        "这是一个混合提交；用于数据集时，应只注入 max 状态交接 bug，而忽略其他结构性改动。",
+        "后续的 a5cc338 修复的是另一个并发调度问题，并不否定这里的 max 状态 bug。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "dataset_id": 407,
+  "original_review_id": 515,
+  "meta": {
+    "id": 515,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "4fa540575c3a7638c3ef77f2b033036f22a02cdb",
+    "subject": "fixed gpr_ram bug + io bus arbitration"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "io_protocol",
+    "summary": "This mixed RTL commit contains a clearer and more portable top-level I/O arbitration bug than the first-pass entry captured. Before the fix, multi-core and multi-cluster I/O traffic was effectively hard-wired to source 0, so nonzero sources could not issue or retire MMIO traffic correctly.",
+    "why_it_counts": [
+      "The patch rewires real DUT top-level I/O request and response paths, not test scaffolding.",
+      "Old Vortex_Cluster and Vortex_Socket code forwarded only per_core/per_cluster_io_*[0] to the external I/O port.",
+      "The fix introduces VX_mem_arb and proper per-source ready/response demultiplexing."
+    ],
+    "disqualifiers": [
+      "The commit also includes a separate VX_gpr_ram fix and AFU/scope-related changes."
+    ],
+    "evidence": [
+      "Pre-fix Vortex_Cluster.v assigns io_req_* and io_rsp_ready directly from per_core_io_*[0].",
+      "Pre-fix Vortex_Socket.v likewise assigns io_req_* and io_rsp_ready directly from per_cluster_io_*[0].",
+      "The commit adds a new VX_mem_arb module and instantiates it in both Vortex_Cluster.v and Vortex_Socket.v.",
+      "The patched cluster/socket code adds per-source io_req_ready and io_rsp_valid/io_rsp_tag/io_rsp_data wiring instead of broadcasting one shared path."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_mem_arb.v",
+      "hw/rtl/Vortex_Cluster.v",
+      "hw/rtl/Vortex_Socket.v",
+      "hw/rtl/VX_gpr_ram.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When multiple cores or clusters share one MMIO or I/O fabric port, the top level must arbitrate requests and demultiplex responses back to the originating source. If the integration simply hard-wires the external port to source 0, all other sources lose access or receive no matching responses, producing hangs or incorrect I/O-visible behavior.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-source MMIO or I/O port arbitration",
+        "trigger_condition": "A nonzero core, warp group, cluster, or tile attempts an MMIO or other I/O transaction through a shared external port.",
+        "injection_action": "Bypass the arbitration layer and wire the shared I/O port directly to source 0 while leaving the other sources disconnected from request or response routing.",
+        "implementation_pattern": "hard-wire shared port to first requester",
+        "portability_notes": [
+          "Apply this to any top-level interconnect where multiple internal requesters share one off-core I/O port.",
+          "The bug is about integration wiring and response routing, not about the semantics of the MMIO target itself.",
+          "If the target DUT already has an arbiter, remove or bypass only the arbitration and response-demux layer."
+        ],
+        "concrete_injection_steps": [
+          "Locate the point where multiple internal I/O request sources converge onto one external MMIO or device interface.",
+          "Remove the arbiter or mux logic and connect the shared output only to requester 0.",
+          "Likewise route the shared response or ready signal back only to requester 0.",
+          "Keep the rest of the I/O datapath intact so the bug specifically manifests as missing access from nonzero sources."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_mem_arb.v",
+          "hw/rtl/Vortex_Cluster.v",
+          "hw/rtl/Vortex_Socket.v"
+        ],
+        "target_module_or_logic": "cluster/socket I/O aggregation onto a shared external port",
+        "commit_fix_summary": "The fix replaces direct [0]-only wiring with a new VX_mem_arb instance and explicit per-source ready/response routing in both Vortex_Cluster and Vortex_Socket.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the VX_mem_arb-based I/O aggregation and restore the old pattern that drives io_req_* and io_rsp_ready from only per_core_io_*[0] or per_cluster_io_*[0]."
+      },
+      "expected_failure_mode": "MMIO or other shared-I/O traffic from nonzero sources hangs, never reaches the device, or receives no matching completion, while source 0 may continue to work.",
+      "evidence_for_injection": [
+        "The old code explicitly uses only index 0 for the shared I/O path, making the bug mechanism unambiguous.",
+        "The new VX_mem_arb module exists solely to arbitrate and demultiplex that shared path.",
+        "This injection is more directly grounded than the first-pass focus on VX_gpr_ram because the interconnect bug is explicit in the diff."
+      ],
+      "notes": [
+        "The commit title mentions both gpr_ram and I/O arbitration; this second-pass entry prioritizes the I/O arbitration fix because it is clearer and more reusable for cross-DUT injection.",
+        "VX_gpr_ram remains a real touched DUT file, but it is not the primary injection anchor here."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "io_protocol",
+    "summary": "这个混合 RTL 提交里，比一审记录更清晰、也更可移植的缺陷是顶层 I/O 仲裁错误。修复前，多核/多 cluster 的 I/O 流量实际上被硬连到了 source 0，因此非零来源无法正确发起或完成 MMIO/I/O 事务。",
+    "why_it_counts": [
+      "补丁重连的是 DUT 顶层真实 I/O 请求与响应路径，而不是测试脚手架。",
+      "旧版 Vortex_Cluster 和 Vortex_Socket 都只把 per_core/per_cluster_io_*[0] 转发到外部 I/O 端口。",
+      "修复通过引入 VX_mem_arb 以及正确的按来源 ready/response 分发来解决问题。"
+    ],
+    "disqualifiers": [
+      "该提交还包含独立的 VX_gpr_ram 修复以及 AFU/scope 相关改动。"
+    ],
+    "evidence": [
+      "修复前的 Vortex_Cluster.v 直接把 io_req_* 和 io_rsp_ready 连接到 per_core_io_*[0]。",
+      "修复前的 Vortex_Socket.v 同样直接把 io_req_* 和 io_rsp_ready 连接到 per_cluster_io_*[0]。",
+      "该提交新增了 VX_mem_arb 模块，并在 Vortex_Cluster.v 与 Vortex_Socket.v 中实例化。",
+      "修复后的 cluster/socket 代码为每个来源增加了单独的 io_req_ready 和 io_rsp_valid/io_rsp_tag/io_rsp_data 连线，而不再共享一条广播路径。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_mem_arb.v",
+      "hw/rtl/Vortex_Cluster.v",
+      "hw/rtl/Vortex_Socket.v",
+      "hw/rtl/VX_gpr_ram.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "只要多个 core 或 cluster 共用一个 MMIO/I/O 外设端口，顶层就必须对请求进行仲裁，并把响应正确返回给原始来源。如果系统集成层只是把外部端口硬连到来源 0，那么其他来源要么根本发不出请求，要么拿不到对应响应，最终表现为挂起或错误的 I/O 行为。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多来源共享 MMIO/I/O 端口的仲裁",
+        "trigger_condition": "非零 core、warp 组、cluster 或 tile 尝试通过共享外设端口发起 MMIO 或其他 I/O 事务。",
+        "injection_action": "绕过仲裁层，把共享 I/O 端口直接连接到来源 0，并让其他来源失去请求或响应回路。",
+        "implementation_pattern": "hard-wire shared port to first requester",
+        "portability_notes": [
+          "适用于任何多个内部请求方共用一个片外 I/O 端口的顶层互连。",
+          "缺陷本质是集成布线和响应回传错误，而不是 MMIO 设备本身的语义问题。",
+          "如果目标 DUT 已有仲裁器，只需移除或旁路仲裁与 response-demux 层。"
+        ],
+        "concrete_injection_steps": [
+          "找到多个内部 I/O 请求源汇聚到一个外部 MMIO/设备接口的位置。",
+          "删掉仲裁器或多路复用逻辑，把共享输出只连接到 requester 0。",
+          "把共享响应或 ready 也只回送给 requester 0。",
+          "保持其余 I/O 数据通路不变，使故障专门表现为非零来源无法访问。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_mem_arb.v",
+          "hw/rtl/Vortex_Cluster.v",
+          "hw/rtl/Vortex_Socket.v"
+        ],
+        "target_module_or_logic": "cluster/socket 到共享外部 I/O 端口的聚合",
+        "commit_fix_summary": "修复在 Vortex_Cluster 和 Vortex_Socket 中用 VX_mem_arb 取代了原先只连接 [0] 的写法，并加入了按来源的 ready/response 路由。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "移除基于 VX_mem_arb 的 I/O 聚合，恢复成只用 per_core_io_*[0] 或 per_cluster_io_*[0] 驱动 io_req_* 和 io_rsp_ready 的旧模式。"
+      },
+      "expected_failure_mode": "来自非零来源的 MMIO 或共享 I/O 事务会挂起、无法到达设备，或者没有匹配的完成响应，而来源 0 仍可能正常工作。",
+      "evidence_for_injection": [
+        "旧代码在共享 I/O 路径上显式只使用 index 0，因此缺陷机理非常明确。",
+        "新增的 VX_mem_arb 模块正是为了解决这一条共享路径的仲裁和回传问题。",
+        "与一审聚焦 VX_gpr_ram 相比，这个互连缺陷在 diff 里更直接、更适合作为可移植注入目标。"
+      ],
+      "notes": [
+        "虽然标题同时提到 gpr_ram 和 I/O arbitration，但二审优先保留 I/O 仲裁修复，因为它更清晰，也更适合跨 DUT 注入。",
+        "VX_gpr_ram 仍是这次提交里真实改到的 DUT 文件，但不是本条目的主要注入锚点。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "dataset_id": 287,
+  "original_review_id": 344,
+  "meta": {
+    "id": 344,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "812bbccd2a06b5dc5af613811132e4de3f4a3f17",
+    "subject": "device configuration bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes configuration-dependent memory-tag width and bitfield-removal edge cases so optional texture/non-cache tag bits are preserved and zero-width removals are handled safely.",
+    "why_it_counts": [
+      "The patch changes hardware tag-width and bit-slicing logic used in the memory path.",
+      "These changes affect how memory requests and responses are encoded and decoded under certain hardware configurations.",
+      "Tag truncation or invalid bit removal can misroute transactions or corrupt configuration-specific behavior."
+    ],
+    "disqualifiers": [
+      "The functional effect is configuration-dependent, so the bug may stay latent unless the affected optional feature settings are enabled."
+    ],
+    "evidence": [
+      "_D_NC_MEM_TAG_WIDTH in VX_define.vh grows by EXT_TEX_ENABLED, adding space for the extra non-cache/texture-select bit.",
+      "VX_bits_remove adds a static assertion and new branches for S == 0 and for removals at the top end of the vector.",
+      "The VX_mem_unit hunk is whitespace-only, so the substantive fix is in tag-width computation and generic bitfield removal."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_define.vh",
+      "hw/rtl/libs/VX_bits_remove.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix addresses configuration-sensitive tag encoding. A memory subsystem often inserts optional selector bits into request or response tags when features such as texture paths, non-cache bypass, or bank selection are enabled. The computed tag width and the helper logic that removes or reinserts those bits must both match the configured feature set. If width computation forgets an optional bit, or if the generic bit-removal helper mishandles zero-width or top-end removals, tags can be truncated, misdecoded, or compiled into invalid slices only in certain configurations.",
+      "portable_injection_spec": {
+        "affected_mechanism": "configuration-dependent memory tag packing",
+        "trigger_condition": "A build enables or disables optional tag fields, such as texture-select or non-cache bits, and then packs or strips those fields in the memory path.",
+        "injection_action": "Undercompute the tag width or restore a bit-removal helper that mishandles zero-width or top-edge field removal.",
+        "implementation_pattern": "omit optional tag bit or break edge-case bit slicing",
+        "portability_notes": [
+          "This applies to cache, texture, bypass, or interconnect tags whose layout changes with feature knobs.",
+          "The most representative mutation is to leave one optional selector bit out of the computed tag width when a feature is enabled.",
+          "If the design uses generic slice-insert/remove helpers, edge-case handling for zero-width removals is another valid injection point."
+        ],
+        "concrete_injection_steps": [
+          "Identify the optional tag bit or bitfield that is present only in some hardware configurations.",
+          "Remove that bit from the computed packed-tag width, or from the width passed to modules that strip or restore tag fields.",
+          "If a reusable bitfield helper exists, restore behavior that assumes the removed-field width is always nonzero or never sits at the vector boundary.",
+          "Run the injected fault under a build that actually exercises the optional bit; otherwise the bug may not manifest."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_define.vh",
+          "hw/rtl/libs/VX_bits_remove.sv"
+        ],
+        "target_module_or_logic": "non-cache memory tag width macros and generic bitfield-removal helper",
+        "commit_fix_summary": "The commit adds EXT_TEX_ENABLED into _D_NC_MEM_TAG_WIDTH and updates VX_bits_remove to support S == 0 and upper-boundary removals safely.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_define.vh, drop the extra EXT_TEX_ENABLED term from _D_NC_MEM_TAG_WIDTH; in VX_bits_remove, restore the older branch structure that lacks S == 0 and top-end handling."
+      },
+      "expected_failure_mode": "Under the affected configuration, memory tags can be truncated or mis-sliced, leading to misrouted responses, wrong path selection, or configuration-specific build/runtime failures.",
+      "evidence_for_injection": [
+        "The fixed tag-width expression explicitly adds EXT_TEX_ENABLED to the non-cache memory tag width.",
+        "Existing users such as VX_nc_bypass instantiate VX_bits_remove with S equal to NC_ENABLE, so S can be zero in some configurations.",
+        "The parent VX_bits_remove implementation had no S == 0 case and treated POS == N as the top-end special case instead of POS + S == N."
+      ],
+      "notes": [
+        "For portability, describe this as a tag-packing width bug rather than as a Vortex-specific texture extension detail.",
+        "Because the bug is config-sensitive, keep the dataset confidence at medium even though the patch itself is clear."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了与配置相关的内存 tag 位宽和位域删除边界错误，使可选的纹理/非缓存 tag 位不会被截断，并让零宽删除场景得到安全处理。",
+    "why_it_counts": [
+      "补丁修改了内存路径中使用的硬件 tag 位宽与位切片逻辑。",
+      "这些改动会影响某些硬件配置下内存请求与响应的编码和解码方式。",
+      "tag 截断或非法位删除会导致事务路由错误，或触发与配置相关的行为错误。"
+    ],
+    "disqualifiers": [
+      "该问题依赖具体配置，若未启用相关可选特性，bug 可能保持潜伏。"
+    ],
+    "evidence": [
+      "VX_define.vh 中的 _D_NC_MEM_TAG_WIDTH 增加了 EXT_TEX_ENABLED，为额外的 non-cache/texture 选择位预留了空间。",
+      "VX_bits_remove 新增了静态断言，并显式处理 S == 0 以及在向量高端删除位域的情况。",
+      "VX_mem_unit 中的 hunk 只有空白格式变化，因此真正的修复点是 tag 位宽计算和通用位域删除逻辑。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_define.vh",
+      "hw/rtl/libs/VX_bits_remove.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对的是对配置敏感的 tag 编码问题。内存子系统在启用纹理路径、非缓存旁路、bank 选择等可选特性时，通常会在请求或响应 tag 中插入额外的选择位。计算得到的 tag 总宽度以及负责删除/重插这些位的辅助逻辑，必须和当前配置保持一致。如果位宽计算漏掉了某个可选位，或者通用位删除辅助模块错误处理了零宽删除或向量顶端删除，那么在某些配置下 tag 就会被截断、误解码，甚至生成非法切片。",
+      "portable_injection_spec": {
+        "affected_mechanism": "与配置相关的内存 tag 打包",
+        "trigger_condition": "构建启用或关闭了某些可选 tag 位，例如 texture-select 或 non-cache 位，并且内存路径需要打包或剥离这些位。",
+        "injection_action": "少算一个可选 tag 位，或恢复会错误处理零宽/顶端删除的位删除辅助逻辑。",
+        "implementation_pattern": "省略可选 tag 位或破坏边界位切片处理",
+        "portability_notes": [
+          "适用于 tag 布局会随特性开关变化的 cache、texture、bypass 或互连路径。",
+          "最具代表性的变异方式是在某个特性启用时，故意不把一个可选选择位计入打包后的 tag 位宽。",
+          "如果设计里使用通用 slice 插入/删除辅助模块，那么破坏其零宽删除处理也是有效注入点。"
+        ],
+        "concrete_injection_steps": [
+          "定位仅在部分硬件配置中存在的可选 tag 位或位域。",
+          "把该位从打包 tag 的总位宽计算中移除，或从负责剥离/恢复 tag 字段的模块位宽参数中移除。",
+          "如果存在通用位域辅助模块，可恢复成默认假设“删除宽度永不为零”或“删除字段不在向量边界”的旧行为。",
+          "务必在真正会用到该可选位的构建配置下运行注入后的设计，否则故障可能不会显现。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_define.vh",
+          "hw/rtl/libs/VX_bits_remove.sv"
+        ],
+        "target_module_or_logic": "非缓存内存 tag 位宽宏与通用位域删除辅助模块",
+        "commit_fix_summary": "该提交把 EXT_TEX_ENABLED 加入 _D_NC_MEM_TAG_WIDTH，并更新 VX_bits_remove 以安全支持 S == 0 和高端边界删除。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_define.vh 中，把 _D_NC_MEM_TAG_WIDTH 里的额外 EXT_TEX_ENABLED 项删掉；在 VX_bits_remove 中恢复缺少 S == 0 和高端处理的旧分支结构。"
+      },
+      "expected_failure_mode": "在受影响配置下，内存 tag 可能被截断或错误切片，从而导致响应路由错误、路径选择错误，或触发与配置相关的构建/运行失败。",
+      "evidence_for_injection": [
+        "修复后的 tag 位宽表达式显式把 EXT_TEX_ENABLED 加入了 non-cache memory tag 宽度。",
+        "像 VX_nc_bypass 这类现有用户会用 S = NC_ENABLE 实例化 VX_bits_remove，因此某些配置下 S 的确可能为 0。",
+        "父版本的 VX_bits_remove 没有 S == 0 分支，并且只把 POS == N 视为顶端特殊情况，而不是 POS + S == N。"
+      ],
+      "notes": [
+        "为了跨 DUT 复用，应把它描述为 tag 打包位宽错误，而不是仅仅描述为 Vortex 的纹理扩展细节。",
+        "由于该 bug 对配置敏感，即使补丁本身很清楚，数据集置信度仍保持 medium。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

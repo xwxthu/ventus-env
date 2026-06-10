@@ -1,0 +1,139 @@
+{
+  "dataset_id": 365,
+  "original_review_id": 448,
+  "meta": {
+    "id": 448,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "3628721bafd2788ddb425e2ca02c5d00ddd9e8db",
+    "subject": "fix bug when num_warp = 1 or 2"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes small-num_warp corner cases by preventing the operand collector from slicing more warp-id bits than the configuration actually provides.",
+    "why_it_counts": [
+      "The subject explicitly identifies a hardware configuration bug.",
+      "The patch changes operand-collector bank-index logic in the DUT.",
+      "Incorrect slice widths directly affect register-bank addressing and can break valid small configurations."
+    ],
+    "disqualifiers": [
+      "The difftest submodule addition is unrelated."
+    ],
+    "evidence": [
+      "ventus/src/top/parameters.scala changes depth_warp to if (num_warp == 1) 1 else log2Ceil(num_warp).",
+      "The same file adds widSliceHigh = min(log2Ceil(num_bank) - 1, depth_warp - 1).",
+      "ventus/src/pipeline/operandCollector.scala replaces direct warp_id(log2Ceil(num_bank)-1, 0) slices with warp_id(widSliceHigh, 0) in both request and writeback bank-ID calculations."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/operandCollector.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Parameterized hardware often reuses identifier bits for banking or hashing. If bank-index logic assumes the warp or thread identifier is always at least as wide as the bank selector, then small configurations can trigger invalid slices, implicit zero-width values, or aliasing. The fix here ensures the bank-index computation never slices beyond the actual warp-id width.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Configuration-dependent bank index extraction",
+        "trigger_condition": "A configuration with very few warps uses a banked register file or collector that derives bank ID from low warp-id bits.",
+        "injection_action": "Restore the assumption that the warp ID always has enough bits for the bank selector and slice the raw selector width directly.",
+        "implementation_pattern": "truncate_or_overslice_index",
+        "portability_notes": [
+          "Map this to any parameterized banked structure where an ID field can become narrower than the bank-selection logic.",
+          "The fault is most relevant when num_warp or an equivalent dimension can be 1 or 2.",
+          "Validation should use the smallest legal configuration, because larger configurations can hide the bug."
+        ],
+        "concrete_injection_steps": [
+          "Locate the bank-ID computation that adds low register-index bits to low warp-id bits.",
+          "Remove any min or clamp on the warp-id slice width and directly slice with the bank-selector width.",
+          "If the design separately computes identifier width, also remove any floor that forces that width to be at least one bit in the smallest configuration."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/operandCollector.scala",
+          "ventus/src/top/parameters.scala"
+        ],
+        "target_module_or_logic": "Operand collector bank-ID generation from warp_id and reg_idx",
+        "commit_fix_summary": "The fix introduces widSliceHigh and a guarded depth_warp so bank-ID logic no longer overslices warp IDs when num_warp is 1 or 2.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Revert widSliceHigh usage to direct warp_id(log2Ceil(num_bank)-1, 0) slices and change depth_warp back to log2Ceil(num_warp)."
+      },
+      "expected_failure_mode": "In small-num_warp configurations, register-bank IDs become malformed or aliased, leading to bad operand collection, incorrect writeback banking, or configuration-specific failures.",
+      "evidence_for_injection": [
+        "The parameter fix and the operand collector changes are paired, showing the bug is a configuration-dependent width mismatch.",
+        "Both the request-side and writeback-side bank calculations were repaired, indicating the issue affected multiple bank-ID paths.",
+        "The commit message explicitly names num_warp = 1 or 2 as the trigger."
+      ],
+      "notes": [
+        "This bug is best validated with num_warp set to 1 or 2; larger configurations may appear correct.",
+        "The minimal reverse mutation is to remove the slice clamp while leaving the rest of the collector unchanged."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了小 num_warp 配置下的边界问题，避免 operand collector 在 bank 索引计算中对 warp-id 做超出真实位宽的切片。",
+    "why_it_counts": [
+      "提交标题明确指出这是硬件配置相关 bug。",
+      "补丁修改的是 DUT 中 operand collector 的 bank 索引逻辑。",
+      "错误切片宽度会直接破坏寄存器 bank 寻址，并使合法的小配置失效。"
+    ],
+    "disqualifiers": [
+      "difftest 子模块的增加与该 bug 修复无关。"
+    ],
+    "evidence": [
+      "ventus/src/top/parameters.scala 将 depth_warp 改为 if (num_warp == 1) 1 else log2Ceil(num_warp)。",
+      "同一文件新增了 widSliceHigh = min(log2Ceil(num_bank) - 1, depth_warp - 1)。",
+      "ventus/src/pipeline/operandCollector.scala 在请求和写回的 bank-ID 计算中，都把直接的 warp_id(log2Ceil(num_bank)-1, 0) 切片改成了 warp_id(widSliceHigh, 0)。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/operandCollector.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "参数化硬件常会复用标识符低位来做 banking 或散列。如果 bank 索引逻辑默认 warp 或线程标识符总是至少与 bank 选择器一样宽，那么在小配置下就可能出现非法切片、隐式零宽值或别名。这里的修复保证 bank 索引计算永远不会切到超过真实 warp-id 位宽的位数。",
+      "portable_injection_spec": {
+        "affected_mechanism": "与配置相关的 bank 索引位提取",
+        "trigger_condition": "配置中 warp 数量很少，但 banked 寄存器文件或 collector 仍然用 warp-id 的低位来生成 bank ID。",
+        "injection_action": "恢复“warp ID 一定足够宽”的假设，直接按 bank 选择器宽度去切 raw warp-id。",
+        "implementation_pattern": "truncate_or_overslice_index",
+        "portability_notes": [
+          "可映射到任何 ID 字段位宽可能小于 bank 选择逻辑位宽的参数化 banked 结构。",
+          "该错误在 num_warp 或等效维度可取 1 或 2 时最相关。",
+          "验证应使用最小合法配置，因为较大配置往往会掩盖该问题。"
+        ],
+        "concrete_injection_steps": [
+          "定位把寄存器索引低位与 warp-id 低位相加生成 bank ID 的逻辑。",
+          "删除对 warp-id 切片宽度的 min 或 clamp，直接按 bank 选择器宽度切片。",
+          "如果设计还单独计算标识符位宽，也删除最小配置下保证至少 1 位的保护。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/operandCollector.scala",
+          "ventus/src/top/parameters.scala"
+        ],
+        "target_module_or_logic": "由 warp_id 与 reg_idx 共同生成 bank ID 的 operand collector 逻辑",
+        "commit_fix_summary": "该修复引入了 widSliceHigh 和受保护的 depth_warp，使 num_warp 为 1 或 2 时不再对 warp ID 进行超宽切片。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 widSliceHigh 的使用回退为直接的 warp_id(log2Ceil(num_bank)-1, 0) 切片，并把 depth_warp 改回 log2Ceil(num_warp)。"
+      },
+      "expected_failure_mode": "在小 num_warp 配置下，寄存器 bank ID 会变得错误或发生别名，导致取数错误、写回路由错误或配置特定失效。",
+      "evidence_for_injection": [
+        "参数修复与 operand collector 修复是配对出现的，说明 bug 本质是配置相关的位宽不匹配。",
+        "请求侧与写回侧的 bank 计算都被修改，说明多个 bank-ID 路径都受影响。",
+        "提交信息明确指出触发条件就是 num_warp = 1 或 2。"
+      ],
+      "notes": [
+        "该 bug 最适合在 num_warp 为 1 或 2 的配置下验证；更大配置可能看起来正常。",
+        "最小化反向突变方式是删除切片宽度保护，其余 collector 逻辑保持不变。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

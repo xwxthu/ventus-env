@@ -1,0 +1,133 @@
+{
+  "dataset_id": 333,
+  "original_review_id": 402,
+  "meta": {
+    "id": 402,
+    "repo": "vortex",
+    "branch": "KMU",
+    "commit": "18cdb255ab475218a41bc38b620f0f8578d1cf45",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "Fixes TCU micro-op expansion so special-register read/write dependency masks are preserved on emitted uops instead of being dropped.",
+    "why_it_counts": [
+      "The patch repairs control metadata that downstream scheduling and hazard logic uses.",
+      "It is in the RTL micro-op expander, not in tests or software.",
+      "The missing fields are architecturally relevant because the same tree's scoreboard tracks rd_xregs and wr_xregs hazards."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit only changes hw/rtl/tcu/VX_tcu_uops.sv.",
+      "It adds ibuf_out.rd_xregs = ibuf_in.rd_xregs and ibuf_out.wr_xregs = ibuf_in.wr_xregs.",
+      "In the same commit tree, hw/rtl/core/VX_scoreboard.sv computes xreg hazards from ibuffer_if.data.rd_xregs | ibuffer_if.data.wr_xregs.",
+      "Without these assignments, expanded TCU uops would lose special-register dependency information even though other fields are forwarded."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_uops.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When one decoded instruction expands into multiple micro-ops, each emitted uop must carry the same special-register dependency metadata that the scheduler and scoreboard expect. If the expander drops read/write masks for control or status registers, downstream hazard tracking can issue those uops in the wrong order or fail to reserve/release special resources correctly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "special-register dependency propagation through micro-op expansion",
+        "trigger_condition": "Any expanded execution op whose original decoded form reads a control register or writes a status register such as rounding mode or exception flags.",
+        "injection_action": "Clear, omit, or stop forwarding the special-register read/write masks on the generated micro-ops while leaving the rest of the uop intact.",
+        "implementation_pattern": "drop_metadata_propagation",
+        "portability_notes": [
+          "This applies to any macro-op expander that clones an instruction header onto several internal uops.",
+          "Use a control-register or flag register dependency, not a normal integer/floating register dependency.",
+          "The bug is about metadata propagation, so the arithmetic function of the uop can remain unchanged."
+        ],
+        "concrete_injection_steps": [
+          "Locate the expander logic that copies decoded instruction header fields into each generated micro-op.",
+          "Remove the forwarding of special-register read and write masks, or force them to zero on the expanded uops.",
+          "Keep the opcode, source registers, destination register, and writeback enable unchanged so only dependency tracking is corrupted."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_uops.sv"
+        ],
+        "target_module_or_logic": "VX_tcu_uops output-header propagation for rd_xregs and wr_xregs",
+        "commit_fix_summary": "The fix copies rd_xregs and wr_xregs from ibuf_in to ibuf_out in the TCU uop expander.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Delete the two assignments that forward ibuf_in.rd_xregs and ibuf_in.wr_xregs into ibuf_out."
+      },
+      "expected_failure_mode": "Expanded TCU uops can bypass scoreboard constraints on special registers, causing misordered issue, stale control-state reads, or incorrect flag-write timing.",
+      "evidence_for_injection": [
+        "The only functional change in the commit is forwarding rd_xregs and wr_xregs.",
+        "VX_scoreboard uses these masks to form xreg hazard state in the same commit tree.",
+        "The bug is localized to metadata propagation and does not require changing datapath computation."
+      ],
+      "notes": [
+        "This is a clean reverse mutation with very small surface area.",
+        "The most likely visible symptoms involve FRM or FFLAGS-like special-register hazards."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "该提交修复了 TCU 微操作展开逻辑，使生成的 uop 能保留特殊寄存器读写依赖掩码，而不是把这些信息丢掉。",
+    "why_it_counts": [
+      "补丁修复了下游调度和冒险检测逻辑依赖的控制元数据。",
+      "修改发生在 RTL 微操作展开器中，而不是测试或软件中。",
+      "这些缺失字段在体系结构上是重要的，因为同一代码树中的 scoreboard 会跟踪 rd_xregs 和 wr_xregs 冒险。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "该提交只修改了 hw/rtl/tcu/VX_tcu_uops.sv。",
+      "补丁新增了 ibuf_out.rd_xregs = ibuf_in.rd_xregs 和 ibuf_out.wr_xregs = ibuf_in.wr_xregs。",
+      "在同一提交树中，hw/rtl/core/VX_scoreboard.sv 会用 ibuffer_if.data.rd_xregs | ibuffer_if.data.wr_xregs 计算 xreg 冒险。",
+      "如果没有这两条赋值，展开后的 TCU uop 即使转发了其他字段，也会丢失特殊寄存器依赖信息。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_uops.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一条已解码指令被展开为多个微操作时，每个生成的 uop 都必须携带调度器和 scoreboard 所需的特殊寄存器依赖元数据。如果展开器丢掉了控制寄存器或状态寄存器的读写掩码，下游冒险跟踪就可能错误地发射这些 uop，或者错误地保留/释放特殊资源。",
+      "portable_injection_spec": {
+        "affected_mechanism": "微操作展开过程中的特殊寄存器依赖传播",
+        "trigger_condition": "任何展开后的执行操作，其原始已解码形式会读取控制寄存器或写入状态寄存器，例如舍入模式或异常标志。",
+        "injection_action": "在保持 uop 其他内容不变的情况下，把生成微操作上的特殊寄存器读写掩码清零、遗漏或停止转发。",
+        "implementation_pattern": "drop_metadata_propagation",
+        "portability_notes": [
+          "该缺陷适用于任何把一条宏操作拆成多个内部 uop 的展开器。",
+          "应选用控制寄存器或标志寄存器依赖，而不是普通整数/浮点寄存器依赖。",
+          "这是元数据传播缺陷，因此不需要改变 uop 的算术功能。"
+        ],
+        "concrete_injection_steps": [
+          "定位把已解码指令头字段复制到每个生成微操作的展开逻辑。",
+          "删除特殊寄存器读写掩码的转发，或者强制这些掩码在展开后的 uop 上为零。",
+          "保持操作码、源寄存器、目的寄存器和写回使能不变，只破坏依赖跟踪信息。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_uops.sv"
+        ],
+        "target_module_or_logic": "VX_tcu_uops 中 rd_xregs 和 wr_xregs 的输出头字段传播",
+        "commit_fix_summary": "该修复在 TCU uop 展开器中把 rd_xregs 和 wr_xregs 从 ibuf_in 复制到 ibuf_out。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除把 ibuf_in.rd_xregs 和 ibuf_in.wr_xregs 转发到 ibuf_out 的两条赋值语句。"
+      },
+      "expected_failure_mode": "展开后的 TCU uop 可能绕过 special register 的 scoreboard 约束，导致发射顺序错误、控制状态读取过期，或标志写回时序错误。",
+      "evidence_for_injection": [
+        "该提交唯一的功能性修改就是转发 rd_xregs 和 wr_xregs。",
+        "同一提交树中的 VX_scoreboard 使用这些掩码形成 xreg 冒险状态。",
+        "该缺陷局限在元数据传播，不需要改变数据通路计算。"
+      ],
+      "notes": [
+        "这是一个很干净的反向注入，改动面非常小。",
+        "最可能出现的可见症状与 FRM 或 FFLAGS 一类特殊寄存器冒险有关。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

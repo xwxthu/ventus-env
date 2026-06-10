@@ -1,0 +1,133 @@
+{
+  "dataset_id": 45,
+  "original_review_id": 54,
+  "meta": {
+    "id": 54,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "a356ec6dd6a72ee17c12e52b3dd1cec08080ef76",
+    "subject": "Fix tlb req cmd for DMA reads (#68)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "Fixes DMA read-side TLB requests so they present a read access type instead of incorrectly asking the translator to authorize them as writes.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a TLB request bug for DMA reads.",
+      "The only patch is in the DMA read translation request logic inside DUT code.",
+      "The corrected field is the memory-operation type used by translation and permission checks."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "In StreamReaderCore, io.tlb.req.bits.tlb_req.cmd changes from M_XWR to M_XRD.",
+      "The surrounding logic is the read-side address-translation path for untranslated TileLink read requests.",
+      "The rest of the request stays the same, showing the bug was specifically the access-type code presented to the TLB."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Address-translation and protection logic commonly distinguishes load versus store permissions. A DMA engine that is fetching data from memory must therefore send a read-class translation request. If the hardware mislabels that request as a write, the TLB or permission checker can reject legal reads, take the wrong fault path, or apply the wrong access policy.",
+      "portable_injection_spec": {
+        "affected_mechanism": "access-type encoding on DMA read translation requests",
+        "trigger_condition": "A DMA load or memory-read request goes through a translation or permission path that distinguishes read and write commands.",
+        "injection_action": "Encode the read-side translation request as a write access instead of a read access.",
+        "implementation_pattern": "swap the translation request command or permission class",
+        "portability_notes": [
+          "This bug matters most on designs whose TLB, PMA, PMP, or page-permission logic checks access type.",
+          "If the design collapses read and write permissions together, the injected bug may be latent unless additional side effects depend on the command class.",
+          "The injection belongs on the translation request metadata, not on the downstream TileLink or AXI opcode."
+        ],
+        "concrete_injection_steps": [
+          "Find the metadata field attached to DMA read requests when they are sent to the TLB or page-permission checker.",
+          "Change that field from the read or load code to the write or store code.",
+          "Leave the actual DMA dataflow as a read so the only mismatch is the translation-time permission class.",
+          "Do not modify the write-side path; the injected bug should only affect DMA reads."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "StreamReaderCore TLB request generation for DMA reads",
+        "commit_fix_summary": "The fix changes the TLB command field on read-side translation requests from M_XWR to M_XRD.",
+        "mutation_strategy": "swap_signal",
+        "source_level_edit_anchor": "Set io.tlb.req.bits.tlb_req.cmd back to M_XWR in the StreamReaderCore translation request logic."
+      },
+      "expected_failure_mode": "DMA reads can spuriously fail permission checks, take the wrong translation fault path, or be blocked where only read access should have been required.",
+      "evidence_for_injection": [
+        "The diff is a single-line change in the DMA read TLB request path.",
+        "The modified field is the translator command code, not the external memory opcode.",
+        "The commit title explicitly says the bug is on DMA reads, matching the StreamReaderCore location."
+      ],
+      "notes": [
+        "This is a precise, highly portable permission-class mutation.",
+        "Use pages that are readable but not writable to make the failure mode obvious."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "该提交修复了 DMA 读路径的 TLB 请求类型，使其以“读访问”而不是错误的“写访问”身份进入地址翻译与权限检查逻辑。",
+    "why_it_counts": [
+      "提交信息明确指出 DMA 读请求的 TLB 请求存在缺陷。",
+      "唯一的补丁位于 DUT 代码中的 DMA 读侧地址翻译请求逻辑。",
+      "修正的字段正是翻译与权限检查所使用的内存访问类型。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 StreamReaderCore 中，io.tlb.req.bits.tlb_req.cmd 从 M_XWR 改为 M_XRD。",
+      "周围代码正是未翻译 TileLink 读请求进入地址翻译的路径。",
+      "其余请求字段都未变化，说明缺陷点就是提交给 TLB 的访问类型编码。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "地址翻译与保护检查通常会区分读权限和写权限。DMA 引擎如果是在从内存读取数据，就必须发出“读”类翻译请求。若硬件把该请求错误标记为“写”，TLB 或权限检查器就可能错误地拒绝本来合法的读访问、走错 fault 路径，或应用错误的访问策略。",
+      "portable_injection_spec": {
+        "affected_mechanism": "DMA 读请求在地址翻译阶段的访问类型编码",
+        "trigger_condition": "DMA load/读请求经过会区分读写命令的地址翻译或权限检查路径。",
+        "injection_action": "把读侧翻译请求编码成写访问，而不是读访问。",
+        "implementation_pattern": "交换翻译请求上的命令或权限类别",
+        "portability_notes": [
+          "当设计中的 TLB、PMA、PMP 或页权限逻辑会检查访问类型时，这个缺陷最有意义。",
+          "如果设计把读写权限完全合并，该缺陷可能是潜伏的，除非还有其它逻辑依赖该命令类别。",
+          "注入位置应当在翻译请求的元数据上，而不是下游 TileLink 或 AXI 的外部操作码上。"
+        ],
+        "concrete_injection_steps": [
+          "找到 DMA 读请求进入 TLB 或页权限检查器时携带的访问类型字段。",
+          "把该字段从 read/load 编码改成 write/store 编码。",
+          "保持实际 DMA 数据流仍然是读操作，使失配只体现在翻译阶段的权限类别。",
+          "不要修改写路径；该缺陷应只影响 DMA 读操作。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala"
+        ],
+        "target_module_or_logic": "DMA 读路径 StreamReaderCore 中的 TLB 请求生成逻辑",
+        "commit_fix_summary": "修复把读路径翻译请求上的 TLB 命令字段从 M_XWR 改成了 M_XRD。",
+        "mutation_strategy": "swap_signal",
+        "source_level_edit_anchor": "在 StreamReaderCore 的翻译请求逻辑中，把 io.tlb.req.bits.tlb_req.cmd 改回 M_XWR。"
+      },
+      "expected_failure_mode": "DMA 读操作可能错误地触发权限失败、进入错误的翻译 fault 路径，或在只需要读权限时被不当地阻塞。",
+      "evidence_for_injection": [
+        "整个 diff 只有读路径 TLB 请求中的一行改动。",
+        "被修改的是翻译器命令编码，而不是外部存储总线操作码。",
+        "提交标题明确指出问题发生在 DMA 读路径，与 StreamReaderCore 的位置完全一致。"
+      ],
+      "notes": [
+        "这是一个非常精确、可移植性很高的权限类别变异。",
+        "使用“可读但不可写”的页最容易观察到错误行为。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

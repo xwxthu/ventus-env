@@ -1,0 +1,133 @@
+{
+  "dataset_id": 416,
+  "original_review_id": 531,
+  "meta": {
+    "id": 531,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "43b143bba637c8696a7fc8ab330b4a639bb7b349",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "axi_protocol",
+    "summary": "Fixes an AXI request-handshake bug in the DUT memory adapter. Write requests were allowed to retire from arbitration when the read address channel was ready, even if the write address and write data channels had not both completed a valid write handshake.",
+    "why_it_counts": [
+      "The patch changes the RTL AXI adapter, which is directly on the DUT memory path.",
+      "The modified line changes request acceptance semantics, not logging or test infrastructure.",
+      "The simulator update mirrors the same write-handshake correctness issue."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_axi_adapter.sv changes arb_ready_out from axi_write_ready || m_axi_arready_w to an rw-qualified choice: writes wait for axi_write_ready, reads wait for m_axi_arready_w.",
+      "The same file renames the comment from AXI write request handshake to AXI request handshake, matching the read/write split in the fix.",
+      "sim/xrtsim/xrt_sim.cpp is updated to keep both AW and W channels ready and to track independent write-address and write-data acknowledgements before creating a write request."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A bridge from an internal memory request stream to AXI must only consume a write request when the write-side handshake is genuinely complete. If the arbitration-ready signal is allowed to depend on the read-address channel even for a write request, the adapter can pop a write transaction early, before both AW and W are accepted. That breaks the coupling between internal request retirement and actual AXI transfer completion.",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI read/write handshake qualification",
+        "trigger_condition": "A write request reaches the bridge while the read-address channel appears ready or idle, but the write address and write data handshake has not fully completed.",
+        "injection_action": "Make the request arbiter treat any downstream ready signal as sufficient for both reads and writes, instead of conditioning ready on the selected transaction type.",
+        "implementation_pattern": "drop transaction-type guard",
+        "portability_notes": [
+          "Map this to any bridge that converts one internal request stream into separate AXI AR and AW/W channels.",
+          "The bug is about retiring writes too early, not about AXI signal naming.",
+          "If the target DUT tracks AW and W completion separately, keep that tracking logic but reconnect the upstream ready signal incorrectly."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that asserts upstream ready for an arbitrated AXI request.",
+          "Replace the transaction-type-qualified ready expression with a combined expression that also treats read-channel readiness as sufficient for writes.",
+          "Leave the AW/W bookkeeping state machines otherwise intact so the regression is isolated to upstream request retirement timing.",
+          "Do not modify the payload fields; only change the condition that allows the write request to leave arbitration."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv"
+        ],
+        "target_module_or_logic": "arbiter ready qualification between AXI read and write channels",
+        "commit_fix_summary": "The fix changed arb_ready_out so write requests are acknowledged only by axi_write_ready, while reads still use m_axi_arready_w.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_axi_adapter.sv, revert arb_ready_out to the old combined expression that accepts a write whenever either axi_write_ready or m_axi_arready_w is high."
+      },
+      "expected_failure_mode": "Writes can be dropped, duplicated, or issued with mismatched address/data handshakes, producing memory corruption or rare deadlocks under mixed read/write traffic.",
+      "evidence_for_injection": [
+        "The functional RTL delta is a single handshake-qualification condition on arb_ready_out.",
+        "The simulator changes independently confirm that AW and W acknowledgement had to be tracked separately for correctness.",
+        "This bridge sits directly on the DUT memory interface, so the bug is architectural traffic corruption rather than infrastructure-only behavior."
+      ],
+      "notes": [
+        "A good trigger is mixed read/write traffic where AR is almost always ready but AW/W can backpressure independently.",
+        "The simulator-side changes are corroborating evidence, not the primary injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "axi_protocol",
+    "summary": "该提交修复了 DUT 内存适配器中的 AXI 握手错误。旧逻辑在读地址通道 ready 时就允许写请求从仲裁器退出，即使写地址和写数据通道都还没有完成一次有效的写握手。",
+    "why_it_counts": [
+      "补丁修改的是 RTL AXI adapter，它位于 DUT 的内存路径上。",
+      "被修改的语句改变的是请求接受语义，而不是日志或测试基础设施。",
+      "模拟器更新也在修复同一类 write-handshake 正确性问题。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_axi_adapter.sv 把 arb_ready_out 从 axi_write_ready || m_axi_arready_w 改成了按 rw 区分的选择：写请求只等待 axi_write_ready，读请求才等待 m_axi_arready_w。",
+      "同一文件把注释从 AXI write request handshake 改成了 AXI request handshake，对应这次修复对读写分支的明确区分。",
+      "sim/xrtsim/xrt_sim.cpp 也被改为同时保持 AW 和 W 通道 ready，并在真正创建写请求前分别记录写地址和写数据的确认。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "把内部内存请求流桥接到 AXI 时，只有在写侧握手真实完成后，桥才可以消费一个写请求。如果仲裁 ready 信号在写请求场景下仍然可以被读地址通道的 ready 驱动，那么适配器就可能在 AW 和 W 尚未都被接受之前，提前把写事务从内部队列中弹出。这会破坏“内部请求退休时刻”和“真实 AXI 传输完成时刻”之间的对应关系。",
+      "portable_injection_spec": {
+        "affected_mechanism": "AXI 读写握手资格判断",
+        "trigger_condition": "有写请求到达桥接器时，读地址通道处于 ready 或空闲状态，但写地址和写数据握手尚未都完成。",
+        "injection_action": "让请求仲裁器把任意下游 ready 都当成读写都可用，而不是按当前事务类型去区分 ready。",
+        "implementation_pattern": "drop transaction-type guard",
+        "portability_notes": [
+          "可映射到任何把一条内部请求流拆成 AXI AR 与 AW/W 多通道的桥接器。",
+          "该缺陷的本质是写请求过早退休，而不是 AXI 信号具体名称。",
+          "如果目标 DUT 分别跟踪 AW 与 W 的完成状态，可以保留这些状态机，只把上游 ready 接错。"
+        ],
+        "concrete_injection_steps": [
+          "找到为已仲裁的 AXI 请求产生上游 ready 的逻辑。",
+          "把按事务类型区分的 ready 表达式改回组合表达式，使读通道 ready 也能让写请求通过。",
+          "保留 AW/W 的其余簿记状态机不变，使回归只集中在上游请求退休时序。",
+          "不要改 payload 字段，只修改允许写请求离开仲裁器的条件。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv"
+        ],
+        "target_module_or_logic": "AXI 读写通道之间的仲裁 ready 资格判断",
+        "commit_fix_summary": "修复把 arb_ready_out 改成：写请求只由 axi_write_ready 确认，读请求仍由 m_axi_arready_w 确认。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_axi_adapter.sv 中，把 arb_ready_out 恢复为旧的组合表达式，使写请求在 axi_write_ready 或 m_axi_arready_w 任一为高时都被接受。"
+      },
+      "expected_failure_mode": "在读写混合流量下，写请求可能被丢失、重复发送，或在地址/数据握手不匹配的情况下发出，最终造成内存破坏或偶发死锁。",
+      "evidence_for_injection": [
+        "功能性 RTL 改动的核心就是 arb_ready_out 这一条握手资格判断。",
+        "模拟器改动也独立证明了 AW 和 W 必须分别确认才能保证正确性。",
+        "该桥接器位于 DUT 的真实内存接口上，因此这不是纯基础设施问题，而是会污染体系结构流量的硬件错误。"
+      ],
+      "notes": [
+        "典型触发方式是读写混合流量，其中 AR 几乎一直 ready，而 AW/W 会独立回压。",
+        "模拟器端的改动只是佐证，不是主要注入位置。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

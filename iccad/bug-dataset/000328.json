@@ -1,0 +1,129 @@
+{
+  "dataset_id": 328,
+  "original_review_id": 396,
+  "meta": {
+    "id": 396,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "6c2c1a81b399e6a806d0b58437fc87582f614e30",
+    "subject": "bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "This commit fixes issue-scheduler bookkeeping so the scheduler is notified only on the start of an operands packet rather than on every operands beat.",
+    "why_it_counts": [
+      "The patch changes a scheduler-facing control signal in the issue pipeline.",
+      "The added sop qualifier directly changes per-instruction issue accounting rather than tests or diagnostics.",
+      "The fault is small, concrete, and easily portable to other packetized issue pipelines."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only modified file is hw/rtl/core/VX_issue_slice.sv.",
+      "issue_sched_if.valid changes from operands_if.valid && operands_if.ready to operands_if.valid && operands_if.ready && operands_if.data.sop.",
+      "operands_if carries sop and eop fields, so the patch is explicitly narrowing scheduler notification to packet boundaries."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_issue_slice.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a packetized or multi-beat issue pipeline, the scheduler should usually receive one bookkeeping event per instruction, not one event per data beat. The start-of-packet marker is commonly used to identify that single event. If the scheduler is notified on every beat, one instruction can be counted multiple times, corrupting issue accounting or readiness tracking.",
+      "portable_injection_spec": {
+        "affected_mechanism": "per-instruction scheduler notification in a multi-beat issue path",
+        "trigger_condition": "An instruction's operands or payload can span multiple beats, sublanes, or packet fragments while the scheduler expects exactly one issue event per instruction.",
+        "injection_action": "Drop the start-of-packet qualifier and notify the scheduler on every valid or ready beat.",
+        "implementation_pattern": "drop sop qualifier on issue notification",
+        "portability_notes": [
+          "Use the target DUT's equivalent of sop, first-beat, head, or packet-start.",
+          "If the target pipeline is always single-beat, this bug may not manifest.",
+          "Keep the scheduler payload such as warp or slot ID unchanged so only the notification frequency regresses."
+        ],
+        "concrete_injection_steps": [
+          "Find the signal that tells the scheduler an issued instruction has entered the next stage.",
+          "Remove the condition that restricts that signal to the first beat of a multi-beat packet.",
+          "Leave the instruction identifier or warp identifier field unchanged."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_issue_slice.sv"
+        ],
+        "target_module_or_logic": "issue_sched_if.valid generation after the operands stage",
+        "commit_fix_summary": "The fix adds operands_if.data.sop to the issue_sched_if.valid condition so scheduler notification occurs only on the first operands beat.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the operands_if.data.sop term from issue_sched_if.valid."
+      },
+      "expected_failure_mode": "The scheduler can see duplicate issue events for one instruction, which may cause double counting, premature release, false readiness, or later stalls.",
+      "evidence_for_injection": [
+        "The patch changes only the valid condition, not the associated issue identifier.",
+        "The operands interface already carries explicit sop and eop packet markers.",
+        "The change sits under the source comment 'notify scheduler'."
+      ],
+      "notes": [
+        "This is a strong reinjection target for designs with packetized operand delivery."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了 issue-scheduler 记账逻辑，使调度器只在操作数包的起始 beat 上收到一次通知，而不是在每个操作数 beat 上都被通知。",
+    "why_it_counts": [
+      "补丁修改了 issue pipeline 中一个面向调度器的控制信号。",
+      "新增的 sop 限定直接改变了每条指令的发射记账，而不是测试或诊断逻辑。",
+      "这个故障点很小、很明确，也容易迁移到其他分包式发射流水线。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一修改的文件是 hw/rtl/core/VX_issue_slice.sv。",
+      "issue_sched_if.valid 从 operands_if.valid && operands_if.ready 改为 operands_if.valid && operands_if.ready && operands_if.data.sop。",
+      "operands_if 本身携带 sop 与 eop 字段，因此该补丁明确是把调度通知收窄到包边界。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_issue_slice.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在分包或多拍的发射流水线中，调度器通常应该每条指令只收到一次记账事件，而不是每个数据 beat 都收到一次。常见做法是用起始包标记来界定这唯一的一次通知。如果调度器在每个 beat 上都被通知，同一条指令就会被重复记账，破坏发射计数或就绪状态跟踪。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多拍发射路径中的按指令调度通知",
+        "trigger_condition": "一条指令的操作数或有效负载可能跨越多个 beat、多个 sublane 或多个包片段，而调度器仍然期望每条指令只看到一个发射事件。",
+        "injection_action": "删除起始包限定，使调度器在每个 valid/ready beat 上都收到通知。",
+        "implementation_pattern": "删除 issue 通知上的 sop 限定",
+        "portability_notes": [
+          "可映射到目标 DUT 中与 sop、first-beat、head 或 packet-start 等价的信号。",
+          "如果目标流水线永远是单拍，这个故障可能不会显现。",
+          "保持调度器携带的 warp ID 或槽位 ID 不变，只让通知频率退化。"
+        ],
+        "concrete_injection_steps": [
+          "定位通知调度器“某条已发射指令进入下一阶段”的信号。",
+          "删除把该信号限制在多拍包首 beat 的条件。",
+          "保持指令标识或 warp 标识字段不变。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_issue_slice.sv"
+        ],
+        "target_module_or_logic": "操作数阶段之后的 issue_sched_if.valid 生成逻辑",
+        "commit_fix_summary": "修复给 issue_sched_if.valid 增加了 operands_if.data.sop 条件，使调度通知只在第一拍操作数上发生。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "从 issue_sched_if.valid 中删除 operands_if.data.sop 条件。"
+      },
+      "expected_failure_mode": "调度器会对同一条指令看到重复的发射事件，从而导致重复记账、过早释放、错误就绪，或后续停顿。",
+      "evidence_for_injection": [
+        "补丁只改了 valid 条件，没有改动对应的发射标识。",
+        "operands 接口本身已经包含显式的 sop 与 eop 包标记。",
+        "该改动正位于源码注释“notify scheduler”之下。"
+      ],
+      "notes": [
+        "对于存在分包式操作数传递的设计，这是一个很强的重注入目标。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

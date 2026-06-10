@@ -1,0 +1,137 @@
+{
+  "dataset_id": 131,
+  "original_review_id": 162,
+  "meta": {
+    "id": 162,
+    "repo": "gemmini",
+    "branch": "chol_vec",
+    "commit": "28e79d5112a0357dfe54f4383cfd3bb1471da392",
+    "subject": "fixed bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "LoopMatmul now latches the operand-B reuse sentinel when the config command arrives instead of recomputing it later from mutable loop state.",
+    "why_it_counts": [
+      "Patch changes `LoopMatmul.scala` control logic in DUT RTL",
+      "It fixes how B-reuse is detected from `LOOP_WS_CONFIG_ADDRS_AB` commands",
+      "The B-reuse flip logic is isolated enough for reverse mutation"
+    ],
+    "disqualifiers": [
+      "Commit also changes floating-point capacity values in `ConfigsFP.scala`"
+    ],
+    "evidence": [
+      "LoopMatmul replaces combinational `b_dram_new = loop_being_configured.b_dram_addr` detection with a `RegInit` flag",
+      "The flag is now assigned directly from `cmd.bits.rs2 === 0.U` inside `LOOP_WS_CONFIG_ADDRS_AB`",
+      "The substantive behavioral change is in core loop-matmul controller RTL rather than tests or host software"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopMatmul.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a loop controller that supports operand reuse via a special null or zero address, the reuse flag must be captured when the configuration command is accepted. If reuse detection is instead recomputed later from a live loop-descriptor register, the controller can associate the reuse event with the wrong loop or wrong cycle and flip the operand-B buffer at the wrong time.",
+      "portable_injection_spec": {
+        "affected_mechanism": "loop-config reuse-sentinel capture",
+        "trigger_condition": "A loop configuration uses a null or zero operand-B address to mean reuse of already loaded B data, especially when multiple loop descriptors can be staged.",
+        "injection_action": "Derive the reuse sentinel from mutable loop state after configuration instead of latching it at config-command acceptance.",
+        "implementation_pattern": "restore stale/late sentinel detection",
+        "portability_notes": [
+          "Map this to any ping-pong or double-buffered operand path where a special address means reuse rather than DMA load.",
+          "The bug target is the control flag that selects whether the next loop should flip or keep the existing operand-B buffer.",
+          "The source repository uses a zero B address as the sentinel, but another DUT may use a different reserved value or explicit reuse bit."
+        ],
+        "concrete_injection_steps": [
+          "Locate the loop-configuration path that decodes operand-B reuse requests.",
+          "Remove or bypass the register that captures the reuse flag when the config command is accepted.",
+          "Recompute the flag later from the currently selected loop descriptor or address register.",
+          "Keep the downstream edge-detect or bank-flip logic driven by this late signal so reuse can be attributed to the wrong cycle."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala"
+        ],
+        "target_module_or_logic": "LoopMatmul B-reuse detection around LOOP_WS_CONFIG_ADDRS_AB and flip_b_spad",
+        "commit_fix_summary": "The fix replaces late combinational reuse detection from loop_being_configured.b_dram_addr with a registered b_dram_new_null flag captured directly from the config command rs2 field.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove b_dram_new_null := (cmd.bits.rs2 === 0.U) in LOOP_WS_CONFIG_ADDRS_AB and restore reuse detection from loop_being_configured.b_dram_addr before flip_b_spad is formed."
+      },
+      "expected_failure_mode": "Operand-B bank flipping can occur on the wrong loop or wrong cycle, causing stale or wrong B tiles to be reused during looped matmul execution.",
+      "evidence_for_injection": [
+        "flip_b_spad is generated from b_dram_new_null and its delayed copy, so the reuse sentinel is edge-detected.",
+        "That flip directly updates ld_b_addr_end and ex_b_addr_end, which define the active B scratchpad region.",
+        "The patch only changes how the sentinel is captured, which makes the reinjection target narrowly identifiable."
+      ],
+      "notes": [
+        "Ignore the unrelated ConfigsFP.scala capacity edits when injecting this fault.",
+        "This commit is the first half of a two-commit fix sequence for zero-address B reuse handling."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "LoopMatmul 现在会在配置命令到达时锁存操作数 B 的复用哨兵，而不是稍后再从可变的循环状态中重新计算。",
+    "why_it_counts": [
+      "补丁修改了 DUT RTL 中 `LoopMatmul.scala` 的控制逻辑",
+      "它修复了从 `LOOP_WS_CONFIG_ADDRS_AB` 命令检测 B 复用的方式",
+      "B 复用翻转逻辑足够独立，便于后续反向注入"
+    ],
+    "disqualifiers": [
+      "该提交同时修改了 `ConfigsFP.scala` 中的浮点容量配置值"
+    ],
+    "evidence": [
+      "LoopMatmul 将基于 `loop_being_configured.b_dram_addr` 的组合检测替换为 `RegInit` 标志",
+      "该标志现在在 `LOOP_WS_CONFIG_ADDRS_AB` 中直接由 `cmd.bits.rs2 === 0.U` 赋值",
+      "实质性的行为改动发生在核心 loop-matmul 控制器 RTL，而不是测试或主机软件中"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopMatmul.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在支持通过特殊空地址或零地址复用操作数的循环控制器中，复用标志必须在配置命令被接收时就锁存下来。如果复用检测改为稍后从活动的循环描述符寄存器中重新计算，控制器就可能把复用事件关联到错误的循环或错误的周期，并在错误的时机翻转操作数 B 缓冲区。",
+      "portable_injection_spec": {
+        "affected_mechanism": "循环配置中的复用哨兵捕获",
+        "trigger_condition": "某个循环配置使用空值或零值的操作数 B 地址来表示复用已加载的 B 数据，尤其是在可以并行暂存多个循环描述符时。",
+        "injection_action": "不要在配置命令接收时锁存复用哨兵，而是改为稍后从可变的循环状态中推导。",
+        "implementation_pattern": "恢复陈旧或过晚的哨兵检测",
+        "portability_notes": [
+          "可映射到任何使用 ping-pong 或双缓冲操作数路径、并通过特殊地址表示复用而不是 DMA 加载的 DUT。",
+          "故障目标是控制下一次循环是否翻转或保持当前操作数 B 缓冲区的那个控制标志。",
+          "源仓库使用零值 B 地址作为哨兵，但其他 DUT 也可能使用别的保留值或显式复用位。"
+        ],
+        "concrete_injection_steps": [
+          "定位解码操作数 B 复用请求的循环配置路径。",
+          "删除或绕过在配置命令接收时捕获复用标志的寄存器。",
+          "改为从当前选中的循环描述符或地址寄存器中稍后再计算该标志。",
+          "保持下游的沿检测或 bank 翻转逻辑仍由这个过晚的信号驱动，从而让复用可能归属到错误周期。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala"
+        ],
+        "target_module_or_logic": "LoopMatmul 中围绕 LOOP_WS_CONFIG_ADDRS_AB 和 flip_b_spad 的 B 复用检测",
+        "commit_fix_summary": "修复把基于 loop_being_configured.b_dram_addr 的过晚组合复用检测，改为直接从配置命令 rs2 字段锁存 b_dram_new_null。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 LOOP_WS_CONFIG_ADDRS_AB 中的 b_dram_new_null := (cmd.bits.rs2 === 0.U)，并恢复在形成 flip_b_spad 前从 loop_being_configured.b_dram_addr 检测复用。"
+      },
+      "expected_failure_mode": "操作数 B bank 翻转可能发生在错误的循环或错误的周期上，导致 looped matmul 复用了陈旧或错误的 B tile。",
+      "evidence_for_injection": [
+        "flip_b_spad 由 b_dram_new_null 及其延迟版本生成，因此该复用哨兵会被做沿检测。",
+        "这个翻转会直接更新 ld_b_addr_end 和 ex_b_addr_end，决定当前活动的 B scratchpad 区域。",
+        "补丁只改变哨兵的捕获方式，因此回注故障的位置非常集中。"
+      ],
+      "notes": [
+        "注入该故障时应忽略无关的 ConfigsFP.scala 容量修改。",
+        "这是关于零地址 B 复用处理的连续两次修复中的第一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

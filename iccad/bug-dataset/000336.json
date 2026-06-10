@@ -1,0 +1,143 @@
+{
+  "dataset_id": 336,
+  "original_review_id": 405,
+  "meta": {
+    "id": 405,
+    "repo": "vortex",
+    "branch": "bug_fixes",
+    "commit": "e655ce78550670f1eb319e43e939c559aa2e8a90",
+    "subject": "logic fix to meet 300MHz in fpga and large K bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "The commit primarily fixes sparse TCU micro-op sequencing for large-K fused metadata-plus-MMA bursts; it also changes metadata RAM writes to avoid FPGA partial-write corruption.",
+    "why_it_counts": [
+      "It changes active DUT control logic in the uop sequencer and TCU sparse expander, not just tests.",
+      "The patch fixes handshake-aligned micro-op indexing and phase transitions in a real execution pipeline.",
+      "The accompanying regression changes target a large-K sparse GEMM scenario consistent with the RTL bugfix."
+    ],
+    "disqualifiers": [
+      "The commit mixes correctness fixes with timing-oriented restructuring and extensive debug/test additions."
+    ],
+    "evidence": [
+      "In VX_uop_sequencer, uop_ctr starts at 0 instead of 1 and output_if.data now uses the expander output combinationally instead of a registered uop_data stage.",
+      "The TCU expander gains an advance handshake plus registered meta_done_r and mma_ctr_r state, replacing the old ctr < sparse_meta_cols and ctr - sparse_meta_cols phase logic.",
+      "The commit subject explicitly calls out a large-K bug fix.",
+      "VX_tcu_meta is reworked from partial-width bank writes to per-column RAMs to avoid FPGA partial-write behavior."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_uop_sequencer.sv",
+      "hw/rtl/tcu/VX_tcu_uops.sv",
+      "hw/rtl/tcu/VX_tcu_meta.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A sparse tensor instruction may expand into a burst containing a metadata prefix followed by many MMA micro-ops. If the burst counter starts one step late, or the metadata-to-MMA phase boundary is derived from raw counter arithmetic instead of advancing only when a uop is actually accepted, long sequences can skip, duplicate, or misindex work items. The bug becomes more visible as K grows and the burst length crosses phase boundaries many times.",
+      "portable_injection_spec": {
+        "affected_mechanism": "sparse meta-plus-MMA micro-op burst sequencing",
+        "trigger_condition": "Fused sparse tensor operations with a metadata prefix and a long MMA suffix, especially large-K cases.",
+        "injection_action": "Start the uop counter at the wrong initial value or derive the MMA phase/index directly from the raw burst counter without handshake-synchronized phase state.",
+        "implementation_pattern": "misalign_counter_phase",
+        "portability_notes": [
+          "This applies to any decomposer that emits a prefix of setup uops before the main compute uops.",
+          "A one-cycle misalignment is enough if the decomposer uses the same counter for both phases.",
+          "You can inject only the sequencing bug without reproducing the separate FPGA metadata-RAM write issue."
+        ],
+        "concrete_injection_steps": [
+          "Find the burst sequencer that drives the internal uop index for a sparse compute macro-op.",
+          "Initialize the counter to one instead of zero, or keep a stale registered uop copy so the first live index and the emitted payload are out of sync.",
+          "Compute the post-metadata MMA index with direct subtract/comparison on the raw counter instead of using state that advances only when a uop handshake occurs."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_uop_sequencer.sv",
+          "hw/rtl/tcu/VX_tcu_uops.sv"
+        ],
+        "target_module_or_logic": "Sparse TCU uop burst counter, handshake advance, and meta/MMA phase tracking",
+        "commit_fix_summary": "The fix changes uop_ctr start and done logic, removes the stale registered uop_data path, adds a TCU advance handshake, and replaces combinational sparse phase arithmetic with registered meta_done_r and mma_ctr_r tracking.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore uop_ctr start to 1 with a registered uop_data stage in VX_uop_sequencer and revert VX_tcu_uops to the old ctr < sparse_meta_cols and ctr - sparse_meta_cols phase calculation without advance-driven state."
+      },
+      "expected_failure_mode": "Sparse tensor operations, especially large-K cases, can skip or misorder metadata and MMA uops, producing wrong results or mismatched metadata use.",
+      "evidence_for_injection": [
+        "Before the fix, the burst counter started at 1 and the emitted uop payload was registered separately.",
+        "Before the fix, sparse phase selection used raw counter comparisons and subtraction rather than advance-synchronized state.",
+        "The test changes in the same commit explicitly add large-K sparse diagnostics."
+      ],
+      "notes": [
+        "The metadata RAM rewrite in VX_tcu_meta is a second real bugfix, but the sequencing bug alone is enough for a portable injection record.",
+        "Because the commit is mixed, confidence is medium rather than high."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交主要修复了大 K 稀疏 TCU 中融合 metadata+MMA burst 的微操作时序问题；此外还修改了 metadata RAM 写入方式，以避免 FPGA 上的部分写损坏。",
+    "why_it_counts": [
+      "它修改的是 uop sequencer 和 TCU 稀疏展开器中的 DUT 主控制逻辑，而不是仅修改测试。",
+      "补丁修复了真实执行流水线中与握手对齐的微操作索引和阶段切换。",
+      "配套回归测试修改针对的是大 K 稀疏 GEMM 场景，与 RTL 缺陷修复相吻合。"
+    ],
+    "disqualifiers": [
+      "该提交把正确性修复、时序优化重构以及大量调试/测试增强混在一起。"
+    ],
+    "evidence": [
+      "在 VX_uop_sequencer 中，uop_ctr 从 1 改为 0 起始，output_if.data 也从使用寄存的 uop_data 改为直接使用展开器输出。",
+      "TCU 展开器新增了 advance 握手以及寄存状态 meta_done_r 和 mma_ctr_r，取代了原先基于 ctr < sparse_meta_cols 和 ctr - sparse_meta_cols 的阶段逻辑。",
+      "提交标题明确写到了 large-K bug fix。",
+      "VX_tcu_meta 从部分宽度 bank 写改成了逐列 RAM，以规避 FPGA 上的部分写行为问题。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_uop_sequencer.sv",
+      "hw/rtl/tcu/VX_tcu_uops.sv",
+      "hw/rtl/tcu/VX_tcu_meta.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一条稀疏张量指令可能会展开成一个先发 metadata、后发大量 MMA 微操作的 burst。如果 burst 计数器起始值晚了一拍，或者 metadata 到 MMA 的阶段边界是直接由原始计数器算出来的，而不是只在 uop 真正被接受时推进，那么长序列就可能跳过、重复或错索引工作项。K 越大、越频繁跨越阶段边界时，这个问题越明显。",
+      "portable_injection_spec": {
+        "affected_mechanism": "稀疏 metadata 与 MMA 混合 burst 的微操作时序",
+        "trigger_condition": "带 metadata 前缀和长 MMA 后缀的融合稀疏张量操作，尤其是大 K 场景。",
+        "injection_action": "让 uop 计数器以错误初值启动，或者不使用与握手同步的阶段状态，而是直接用原始 burst 计数器推导 MMA 阶段和索引。",
+        "implementation_pattern": "misalign_counter_phase",
+        "portability_notes": [
+          "该缺陷适用于任何先发若干设置 uop、再发主计算 uop 的分解器。",
+          "如果同一个计数器同时驱动两个阶段，一拍偏移就足以造成故障。",
+          "可以只注入时序/索引缺陷，而不必同时复现独立的 FPGA metadata RAM 写入问题。"
+        ],
+        "concrete_injection_steps": [
+          "找到为稀疏计算宏操作驱动内部 uop 索引的 burst sequencer。",
+          "把计数器初值改成 1，或者保留一个过时的寄存 uop 副本，使首个有效索引和实际发出的载荷不同步。",
+          "在 metadata 结束后，使用原始计数器的直接比较/减法来计算 MMA 索引，而不是使用只在 uop 握手成功时推进的状态。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_uop_sequencer.sv",
+          "hw/rtl/tcu/VX_tcu_uops.sv"
+        ],
+        "target_module_or_logic": "稀疏 TCU 的 uop burst 计数器、握手推进以及 meta/MMA 阶段跟踪",
+        "commit_fix_summary": "该修复修改了 uop_ctr 的起始和 done 逻辑，移除了过时的寄存 uop_data 路径，增加了 TCU advance 握手，并用寄存的 meta_done_r 和 mma_ctr_r 取代了组合的稀疏阶段计算。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_uop_sequencer 中恢复 uop_ctr 从 1 启动并恢复寄存的 uop_data 路径，同时在 VX_tcu_uops 中恢复不依赖 advance 状态的 ctr < sparse_meta_cols 与 ctr - sparse_meta_cols 阶段计算。"
+      },
+      "expected_failure_mode": "稀疏张量操作，尤其是大 K 情况下，会跳过或错序执行 metadata 与 MMA uop，导致结果错误或 metadata 使用错位。",
+      "evidence_for_injection": [
+        "修复前，burst 计数器从 1 启动，而且发射的 uop 载荷是单独寄存的。",
+        "修复前，稀疏阶段选择直接使用原始计数器比较和减法，而不是与 advance 握手同步的状态。",
+        "同一提交中的测试修改显式加入了大 K 稀疏诊断。"
+      ],
+      "notes": [
+        "VX_tcu_meta 中的 metadata RAM 重写是另一个真实缺陷修复，但仅时序缺陷就足以形成一个可移植的注入记录。",
+        "由于该提交是混合提交，置信度保留为 medium。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

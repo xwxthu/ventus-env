@@ -1,0 +1,133 @@
+{
+  "dataset_id": 260,
+  "original_review_id": 311,
+  "meta": {
+    "id": 311,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "101de6b13881fc9e654291a5b13c988ce60fda41",
+    "subject": "mrvq update ready + init ready as 1 in same cycle causing incorrect ready state"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes miss-reservation ready bookkeeping when an entry is inserted with an initial ready state in the same cycle that the ready table is also being updated from fill-driven events.",
+    "why_it_counts": [
+      "The patch changes central cache miss-reservation state update logic.",
+      "It preserves a ready-on-push event that was previously lost when the ready table was rewritten in the same cycle.",
+      "The bug affects whether miss-reservation entries ever become serviceable, which is cache-control correctness rather than debug behavior."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_cache_miss_resrv.v adds qual_mrvq_init and make_ready_push to represent a same-cycle push whose entry should already start ready.",
+      "The key behavioral edit changes ready_table <= ready_table | make_ready to ready_table <= ready_table | make_ready | make_ready_push.",
+      "The other files touched by the commit only wrap debug assignments and do not participate in the readiness bug mechanism."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_miss_resrv.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A miss-reservation queue or MSHR often has two independent ways for an entry to become ready: it can be born ready when inserted, or it can become ready later when a fill or other completion event arrives. If the control logic updates both conditions in the same cycle, the ready bookkeeping must merge them. A bug appears when the logic rewrites the ready table using only the fill-driven ready bits and accidentally drops the same-cycle push-side ready event. The entry is then present but marked not-ready, so it can stall indefinitely or be serviced out of order.",
+      "portable_injection_spec": {
+        "affected_mechanism": "same-cycle enqueue-ready and fill-ready merge in miss reservation logic",
+        "trigger_condition": "An entry is inserted with its initial ready state asserted in the same cycle that the ready table is also updated from an independent fill or completion event.",
+        "injection_action": "Update the ready table from the fill-driven ready bitmap only, without preserving the same-cycle ready-on-enqueue bit.",
+        "implementation_pattern": "drop ready-on-push contribution from merged ready update",
+        "portability_notes": [
+          "Apply this to any MSHR, miss queue, or replay queue that stores readiness in a bitmap or per-entry table.",
+          "The bug does not require the fill event to target the same entry; it only requires a later table write in the same cycle to overwrite or omit the enqueue-side ready bit.",
+          "If the design uses explicit per-entry writes instead of a bitmap OR, recreate the same bug by letting the later ready update win without including the enqueue-ready state."
+        ],
+        "concrete_injection_steps": [
+          "Locate the state update that marks miss-reservation entries ready on completion or fill events.",
+          "Identify the separate condition that inserts a new entry already marked ready.",
+          "Remove that enqueue-side ready contribution from the merged ready-table update so the later completion update writes back only the old ready bits plus fill-driven bits.",
+          "Exercise a case where a ready-on-insert entry is created in the same cycle as another ready-table update and confirm that the new entry stays not-ready."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "ready_table update path in VX_cache_miss_resrv",
+        "commit_fix_summary": "The commit synthesizes make_ready_push from mrvq_push && mrvq_init_ready_state and ORs it into the ready_table update so a same-cycle ready-on-push event is not lost when update_ready also fires.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove make_ready_push from the ready_table writeback, restoring the old update that ORed only make_ready into ready_table."
+      },
+      "expected_failure_mode": "An entry that should be immediately serviceable after insertion remains marked not-ready, causing miss processing to stall, reorder incorrectly, or miss a wakeup.",
+      "evidence_for_injection": [
+        "The fix introduces an entire new bitmap path solely to preserve push-side readiness during a concurrent ready-table update.",
+        "Before the patch, ready_table had one write for mrvq_push and a later write for update_ready, so the later write could drop same-cycle enqueue readiness.",
+        "No non-debug behavior changes are present in the other touched files."
+      ],
+      "notes": [
+        "This is a portable queue-bookkeeping bug: any design with concurrent enqueue and wakeup updates can suffer the same lost-ready state.",
+        "The bug can manifest even when the completion event that triggers update_ready is for a different entry than the one being inserted."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 miss-reservation 的 ready 记账问题：当一个条目在插入时本就应 ready，而同一周期又发生了基于 fill 的 ready_table 更新时，原先会丢失这个 ready-on-push 事件。",
+    "why_it_counts": [
+      "补丁修改了缓存 miss-reservation 的核心状态更新逻辑。",
+      "它保留了原先会在同周期 ready_table 重写中丢失的 ready-on-push 事件。",
+      "该缺陷影响 miss-reservation 条目是否能真正变为可服务状态，属于 cache-control 正确性问题，而不是调试行为。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_cache_miss_resrv.v 新增 qual_mrvq_init 和 make_ready_push，用来表示“同周期 push 且该条目本应立刻 ready”。",
+      "关键行为修改是把 ready_table <= ready_table | make_ready 改成 ready_table <= ready_table | make_ready | make_ready_push。",
+      "该提交中其他文件的改动只是给 debug 赋值加保护，不参与 ready 状态缺陷机制。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_miss_resrv.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一个 miss-reservation queue 或 MSHR 通常有两种独立方式让条目变为 ready：它可能在插入时就已经 ready，也可能在之后由 fill 或其他完成事件把它唤醒。如果控制逻辑允许这两种条件在同一周期同时发生，那么 ready 记账必须把它们合并。缺陷出现在这种情况下：逻辑在重写 ready table 时只保留了 fill 驱动的 ready 位，却把同周期 push 一侧的 ready 事件丢掉了。结果就是条目已经存在，但仍被标为 not-ready，可能无限期停住，或者在服务顺序上出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "miss reservation 逻辑中同周期 enqueue-ready 与 fill-ready 的合并",
+        "trigger_condition": "某条目在插入时其初始 ready 状态为真，而同一周期 ready_table 又因独立的 fill/完成事件被更新。",
+        "injection_action": "让 ready_table 只根据 fill 驱动的 ready 位更新，而不保留同周期 enqueue-ready 位。",
+        "implementation_pattern": "从合并后的 ready 更新中删除 ready-on-push 贡献",
+        "portability_notes": [
+          "把它映射到任何使用位图或每项 ready table 记录可服务状态的 MSHR、miss queue 或 replay queue。",
+          "该缺陷不要求 fill 事件命中同一条目；只要同一周期后来的表写回遗漏了 enqueue 一侧的 ready 位，就能出现问题。",
+          "如果设计使用逐项显式写而不是位图 OR，也可以通过“后来的 ready 更新覆盖了 enqueue-ready 状态”来重建同类缺陷。"
+        ],
+        "concrete_injection_steps": [
+          "找到在完成或 fill 事件到来时把 miss-reservation 条目标记为 ready 的状态更新逻辑。",
+          "识别那个“插入新条目时就应 ready”的独立条件。",
+          "把这个 enqueue-side ready 贡献从合并后的 ready-table 更新中删除，使后来的完成更新只写回旧 ready 位加 fill 位。",
+          "构造一个 ready-on-insert 条目与另一个 ready-table 更新同周期发生的场景，并确认新条目被错误地保留为 not-ready。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_miss_resrv.v"
+        ],
+        "target_module_or_logic": "VX_cache_miss_resrv 中 ready_table 的更新路径",
+        "commit_fix_summary": "该提交从 mrvq_push && mrvq_init_ready_state 生成 make_ready_push，并将其 OR 入 ready_table 更新，从而避免在 update_ready 同周期发生时丢失 ready-on-push 事件。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "从 ready_table 的写回逻辑中删除 make_ready_push，恢复为只把 make_ready OR 入 ready_table 的旧实现。"
+      },
+      "expected_failure_mode": "某个本应在插入后立即可服务的条目会继续保持 not-ready，导致 miss 处理停滞、顺序错误，或丢失唤醒。",
+      "evidence_for_injection": [
+        "这个修复为“保留 push 侧 ready 状态”单独新增了一整条位图路径。",
+        "修复前 ready_table 对 mrvq_push 和 update_ready 分别写入，而后者会在同周期覆盖掉 enqueue 的 ready 状态。",
+        "其他被修改文件中没有非 debug 的行为变化。"
+      ],
+      "notes": [
+        "这是高度可移植的队列记账缺陷：任何同时支持入队和唤醒更新的设计都可能出现同样的 lost-ready 状态。",
+        "即使触发 update_ready 的完成事件对应的是另一条目，而不是新插入的条目，该缺陷仍然可能发生。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 39,
+  "original_review_id": 47,
+  "meta": {
+    "id": 47,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "3f9eb7c0ec4d771dc23fc7b4ae83c00a71c1b015",
+    "subject": "Fix issue #56, Addition overflow"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "The commit fixes floating-point addition overflow by classifying a finite sum whose exponent saturates to all ones as infinity at the final pack stage.",
+    "why_it_counts": [
+      "The subject names a specific arithmetic bug.",
+      "The RTL change is in the final floating-point result-selection logic.",
+      "The accompanying ISA test reenables a previously failing overflow case."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "fp_execute_stage5.sv adds add_overflow = add_result_exponent == 8'hFF && !fx4_result_nan[lane_idx].",
+      "The add-result mux now returns infinity when either fx4_result_inf or add_overflow is true.",
+      "tests/core/isa/float.S reenables the case 0x7f7fffff + 0x7f7fffff -> 0x7f800000."
+    ],
+    "touched_dut_files": [
+      "hardware/core/fp_execute_stage5.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In the final normalization and packing stage of a floating-point adder, a finite result whose exponent has overflowed into the all-ones encoding must be classified as infinity according to the implementation's IEEE-754 handling. If the pack stage only checks whether an operand was already infinite and ignores overflow created by the addition itself, the unit can emit a malformed or non-infinite result for sums that exceed the maximum finite magnitude.",
+      "portable_injection_spec": {
+        "affected_mechanism": "final add-result overflow classification",
+        "trigger_condition": "A finite add or subtract operation produces a normalized result whose post-rounding exponent reaches the all-ones overflow encoding.",
+        "injection_action": "Suppress the final overflow-to-infinity classification and pack the result using the raw overflowed exponent and mantissa path.",
+        "implementation_pattern": "drop exponent-saturation check in final pack stage",
+        "portability_notes": [
+          "Apply this to the last FP add normalization or result-mux stage, not to operand decode.",
+          "The mutation is specific to designs that treat exponent saturation from a finite add as infinity rather than NaN.",
+          "Do not alter NaN handling; the bug is only in finite overflow classification."
+        ],
+        "concrete_injection_steps": [
+          "Locate the final floating-point add result-selection or pack logic.",
+          "Identify the predicate that detects a finite addition overflow after normalization and rounding.",
+          "Remove that predicate from the path that forces an infinity result.",
+          "Keep all preceding normalization and rounding logic unchanged so only the final classification is regressed."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/fp_execute_stage5.sv"
+        ],
+        "target_module_or_logic": "floating-point add result mux in fp_execute_stage5",
+        "commit_fix_summary": "The fix adds add_overflow and routes finite add results with exponent 0xFF to the infinity output case.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove add_overflow from fp_execute_stage5.sv and restore the condition so only fx4_result_inf forces the add_result mux to return infinity."
+      },
+      "expected_failure_mode": "Large finite additions that should overflow to +inf or -inf instead produce an incorrect finite-like encoding or another malformed non-infinite result.",
+      "evidence_for_injection": [
+        "Only fp_execute_stage5.sv changed in the DUT, isolating the bug to final add packing.",
+        "The test reenabled by the commit is a direct finite-overflow stimulus.",
+        "The new add_overflow signal depends only on the final exponent and NaN state, matching a result-classification fix."
+      ],
+      "notes": [
+        "A simple regression stimulus is max-finite plus max-finite in the target precision.",
+        "This bug pattern is portable to any FP adder with a distinct final classification mux."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了浮点加法上溢：当有限和在最终打包阶段的指数饱和为全 1 时，应把它分类为无穷大。",
+    "why_it_counts": [
+      "标题明确指出了具体的算术错误。",
+      "RTL 修改位于最终的浮点结果选择逻辑中。",
+      "配套 ISA 测试重新启用了此前失败的溢出用例。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "fp_execute_stage5.sv 新增 add_overflow = add_result_exponent == 8'hFF && !fx4_result_nan[lane_idx]。",
+      "加法结果 mux 现在在 fx4_result_inf 或 add_overflow 为真时都输出无穷大。",
+      "tests/core/isa/float.S 重新启用了 0x7f7fffff + 0x7f7fffff -> 0x7f800000 这个用例。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/fp_execute_stage5.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在浮点加法器的最终归一化和打包阶段，如果有限结果的指数已经上溢到全 1 编码，那么按照该实现的 IEEE-754 处理规则，它必须被分类为无穷大。如果打包阶段只检查输入操作数是否原本就是无穷大，却忽略了由本次加法自身产生的上溢，那么对于那些超过最大有限幅值的和，单元就可能输出畸形值或错误的非无穷结果。",
+      "portable_injection_spec": {
+        "affected_mechanism": "最终加法结果的上溢分类",
+        "trigger_condition": "一次有限的加法或减法经过归一化和舍入后，结果指数达到全 1 的上溢编码。",
+        "injection_action": "去掉最终将上溢结果强制分类为无穷大的逻辑，而是沿用原始的溢出指数和尾数路径进行打包。",
+        "implementation_pattern": "drop exponent-saturation check in final pack stage",
+        "portability_notes": [
+          "把该故障映射到最终的 FP 加法归一化或结果 mux 阶段，而不是操作数译码阶段。",
+          "这个变异适用于把有限加法指数饱和视为无穷大的实现，而不是视为 NaN 的实现。",
+          "不要改动 NaN 处理；故障只针对有限上溢分类。"
+        ],
+        "concrete_injection_steps": [
+          "定位最终的浮点加法结果选择或打包逻辑。",
+          "找出那个在归一化和舍入后检测有限加法上溢的谓词。",
+          "把该谓词从强制输出无穷大的路径中移除。",
+          "保持前面的归一化与舍入逻辑不变，使回归只出现在最终分类阶段。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/fp_execute_stage5.sv"
+        ],
+        "target_module_or_logic": "fp_execute_stage5 中的浮点加法结果 mux",
+        "commit_fix_summary": "修复新增了 add_overflow，并把指数为 0xFF 的有限加法结果导向无穷大输出分支。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 fp_execute_stage5.sv 中的 add_overflow，并恢复为只有 fx4_result_inf 才能让 add_result mux 输出无穷大。"
+      },
+      "expected_failure_mode": "本应上溢到 +inf 或 -inf 的大数有限加法，会产生错误的类有限编码或其他错误的非无穷结果。",
+      "evidence_for_injection": [
+        "DUT 中只有 fp_execute_stage5.sv 被修改，说明故障集中在最终加法打包阶段。",
+        "提交重新启用的测试本身就是直接的有限上溢刺激。",
+        "新的 add_overflow 仅依赖最终指数和 NaN 状态，符合结果分类修复的特征。"
+      ],
+      "notes": [
+        "一个简单的回归用例是目标精度下的最大有限数加最大有限数。",
+        "这个故障模式可迁移到任何带独立最终分类 mux 的 FP 加法器。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

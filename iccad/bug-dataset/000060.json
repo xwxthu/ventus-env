@@ -1,0 +1,131 @@
+{
+  "dataset_id": 60,
+  "original_review_id": 79,
+  "meta": {
+    "id": 79,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "e02167f4ef532474844a60feaccf5f314e513d6a",
+    "subject": "fix cdma image mismatch"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "data_layout",
+    "summary": "Fixes planar image packing masks in the CDMA image packer so planar1 p0 padding is derived from the correct next-state edge conditions.",
+    "why_it_counts": [
+      "The patch changes RTL generator logic inside the CDMA image packing datapath.",
+      "It corrects left/right pad mask generation for one image plane, which directly affects output pixel layout.",
+      "The commit subject explicitly reports an image mismatch."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "For the single-atomic case, the patch adds data_planar1_p0_flag_nex and uses it to decide planar1 p0 left and right masks.",
+      "For the two-atomic case, the planar1 p0 mask conditions drop the extra data_planar1_p0_cur_flag dependency and key directly off the paired planar1 p1 flags.",
+      "The modified code sits in the mask-generation section that controls padding and zero insertion for image packing."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Image packers that support planar formats often generate left-pad, right-pad, and zero masks from per-plane counters and edge flags. Those masks must reflect the next-state boundary condition of the chunk currently being emitted. If mask generation relies on stale current flags or the wrong companion-plane flags, padding is applied to the wrong byte lanes and the packed image data no longer matches the intended tensor layout.",
+      "portable_injection_spec": {
+        "affected_mechanism": "planar image edge-mask generation",
+        "trigger_condition": "A planar image packer emits a chunk near the left or right image boundary where padding decisions depend on per-plane counters.",
+        "injection_action": "Use stale current flags, or flags from the wrong paired sub-lane, when generating pad masks for one plane.",
+        "implementation_pattern": "restore stale edge-flag dependency in pad-mask logic",
+        "portability_notes": [
+          "Apply this to line packers that handle planar channels or sub-lanes with per-plane pad masks.",
+          "The core bug is incorrect boundary-state selection for mask generation, not a wrong data counter increment.",
+          "This can be injected either in a single-atomic case via missing next-state flags or in a multi-atomic case via wrong paired-lane flag selection."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that derives left/right pad masks for one planar output slice from counter-based edge flags.",
+          "Replace the next-state flag inputs with current-state flags, or use the wrong companion-lane flags when choosing the mask.",
+          "Keep the rest of the packing pipeline unchanged so the failure is a pure boundary-mask/layout error."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v"
+        ],
+        "target_module_or_logic": "planar1 p0 left/right pad mask generation in the CDMA image packer",
+        "commit_fix_summary": "The fix adds next-state flags for planar1 p0 in the single-atomic path and simplifies the multi-atomic mask predicates so planar1 p0 masks follow the correct edge conditions.",
+        "mutation_strategy": "restore stale edge-flag dependency in pad-mask logic",
+        "source_level_edit_anchor": "In the planar1 p0 pad-mask expressions, revert to the older current-flag-based conditions instead of the new next-state or corrected paired-lane flag conditions."
+      },
+      "expected_failure_mode": "Padding or zero masks are applied to the wrong planar lanes near image boundaries, producing image-data mismatches in packed CDMA output.",
+      "evidence_for_injection": [
+        "The fix is entirely in pad-mask generation, not in DMA request routing or counters.",
+        "Both the single-atomic and two-atomic branches are corrected in the same direction: use the proper edge condition for planar1 p0.",
+        "The commit subject states cdma image mismatch, which matches the expected symptom of wrong boundary masking."
+      ],
+      "notes": [
+        "The source file embeds generator directives, but they are still the RTL truth for this logic.",
+        "Boundary-heavy image cases with planar data are the right validation target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "data_layout",
+    "summary": "该提交修复了 CDMA 图像打包器中的 planar 图像掩码逻辑，使 planar1 p0 的 padding 依据正确的下一状态边界条件生成。",
+    "why_it_counts": [
+      "补丁修改的是 CDMA 图像打包数据通路中的 RTL 生成逻辑。",
+      "它修复了某个图像平面的左右 padding mask 生成，这会直接影响输出像素布局。",
+      "提交标题明确报告了 image mismatch。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在单 atomic 情况下，补丁新增了 data_planar1_p0_flag_nex，并用它决定 planar1 p0 的左右掩码。",
+      "在双 atomic 情况下，planar1 p0 的掩码条件去掉了额外的 data_planar1_p0_cur_flag 依赖，并直接依据配对的 planar1 p1 flags。",
+      "被修改的代码位于控制 padding 和零填充的图像打包 mask 生成区域。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "支持 planar 格式的图像打包器通常会依据每个平面的计数器和边界标志生成左填充、右填充和零掩码。这些掩码必须反映当前输出块对应的下一状态边界条件。如果掩码生成依赖了过期的当前标志，或者依赖了错误的伴随平面标志，那么 padding 就会落在错误的字节 lane 上，最终打包后的图像数据布局也会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "planar 图像边界掩码生成",
+        "trigger_condition": "planar 图像打包器在图像左右边界附近输出一个数据块，而 padding 决策依赖每个平面的计数器。",
+        "injection_action": "在为某一平面生成 pad mask 时，使用陈旧的当前标志，或使用错误的配对子 lane 标志。",
+        "implementation_pattern": "restore stale edge-flag dependency in pad-mask logic",
+        "portability_notes": [
+          "适用于处理 planar 通道或子 lane 且带有每平面 pad mask 的行打包器。",
+          "核心缺陷是掩码生成使用了错误的边界状态，而不是数据计数器递增错误。",
+          "注入既可以发生在单 atomic 情况下的缺失 next-state flag，也可以发生在多 atomic 情况下的错误配对子 lane flag 选择。"
+        ],
+        "concrete_injection_steps": [
+          "找到依据计数器边界标志为某个 planar 输出切片生成左/右 pad mask 的逻辑。",
+          "把 next-state flag 输入替换成 current-state flag，或在选择掩码时使用错误的伴随 lane 标志。",
+          "保持其余打包流水线不变，使故障纯粹表现为边界掩码/布局错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v"
+        ],
+        "target_module_or_logic": "CDMA 图像打包器中 planar1 p0 的左右 pad mask 生成",
+        "commit_fix_summary": "修复在单 atomic 路径中为 planar1 p0 新增 next-state flags，并在多 atomic 路径中简化 mask 谓词，使 planar1 p0 的掩码跟随正确的边界条件。",
+        "mutation_strategy": "restore stale edge-flag dependency in pad-mask logic",
+        "source_level_edit_anchor": "在 planar1 p0 的 pad-mask 表达式中，把条件恢复成旧的基于 current flag 的形式，而不是新的 next-state 或修正后的配对 lane flag 条件。"
+      },
+      "expected_failure_mode": "图像边界附近的 padding 或零掩码会被施加到错误的 planar lane 上，导致 CDMA 打包输出产生图像数据不匹配。",
+      "evidence_for_injection": [
+        "修复完全发生在 pad-mask 生成逻辑中，而不是 DMA 请求路由或计数器逻辑中。",
+        "单 atomic 和双 atomic 两条分支都朝同一方向修正：让 planar1 p0 使用正确的边界条件。",
+        "提交标题写的是 cdma image mismatch，这与错误边界掩码造成的症状完全一致。"
+      ],
+      "notes": [
+        "虽然源文件中嵌入了生成指令，但这些内容仍然是该逻辑的 RTL 真值来源。",
+        "最合适的验证对象是 planar 数据且边界较多的图像场景。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

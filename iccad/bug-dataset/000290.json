@@ -1,0 +1,57 @@
+{
+  "dataset_id": 290,
+  "original_review_id": 351,
+  "meta": {
+    "id": 351,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "ce067ef980f4c23c0eb3d8487d1fabaef29451cb",
+    "subject": "Fixed ROP Ocache csr address"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This commit repairs performance-counter CSR numbering for the ROP ocache and fixes an interface typo, but it does not fix core DUT functional or microarchitectural behavior.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "The main change is a performance-monitor CSR address map update, not a datapath or control-path correctness fix.",
+      "The accompanying VX_execute edit is only a perf-interface type-name typo correction.",
+      "For this dataset's fault-injection goal, a perf-counter register-map mismatch is closer to instrumentation/interface maintenance than to a true DUT behavior bug."
+    ],
+    "evidence": [
+      "VX_types.vh changes CSR_MPM_OCACHE_WRITES through CSR_MPM_OCACHE_CRSP_ST from B19-B1F/B99-B9F to B09-B0F/B89-B8F.",
+      "The counters involved are explicitly labeled as PERF: rop cache counters.",
+      "VX_execute.sv only changes VX_perf_cache_if.slace to VX_perf_cache_if.slave."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_types.vh"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "该提交修复的是 ROP ocache 性能计数器的 CSR 编号以及一个接口拼写错误，但它并没有修复核心 DUT 的功能或微结构行为。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "主要改动是性能监控 CSR 地址映射调整，而不是数据通路或控制通路的正确性修复。",
+      "随附的 VX_execute 修改只是 perf 接口类型名的拼写修正。",
+      "对于以故障注入为目标的数据集来说，性能计数器寄存器地址不匹配更接近于监控/接口维护问题，而不是真正的 DUT 行为缺陷。"
+    ],
+    "evidence": [
+      "VX_types.vh 把 CSR_MPM_OCACHE_WRITES 到 CSR_MPM_OCACHE_CRSP_ST 从 B19-B1F/B99-B9F 改成了 B09-B0F/B89-B8F。",
+      "这些计数器在文件中明确标注为 PERF: rop cache counters。",
+      "VX_execute.sv 中唯一改动是把 VX_perf_cache_if.slace 改成 VX_perf_cache_if.slave。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_types.vh"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

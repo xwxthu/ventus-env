@@ -1,0 +1,133 @@
+{
+  "dataset_id": 171,
+  "original_review_id": 210,
+  "meta": {
+    "id": 210,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "4eff3c2c7a41969ffce9a7d45144c0ca0a747caf",
+    "subject": "add 1 forgeted fix for csc read image jump address wrap"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "Fixes the CBUF dual-read address pair for CSC image jump-wrap reads so the hardware fetches current plus wrapped-next, not predecessor plus current.",
+    "why_it_counts": [
+      "The patch changes DUT read-address generation in the CBUF data path.",
+      "The new logic uses the explicit wrapped next address input instead of deriving a stale predecessor/current pair.",
+      "The bug directly changes which buffer entries are read during image jump handling."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only touched file is vmod/nvdla/cbuf/NV_NVDLA_cbuf.v.",
+      "sc2buf_dat_rd_addr0 changes from a conditional current-1 expression to the current address itself.",
+      "sc2buf_dat_rd_addr1 changes from the current address to sc2buf_dat_rd_next1_addr.",
+      "The surrounding code shows these are the two SRAM read addresses used when sc2buf_dat_rd_next1_en requests a second entry."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A dual-entry image-read path in a circular buffer must request the current entry together with the explicit wrapped-next entry when a read jump crosses the logical boundary. If the hardware instead derives the pair as predecessor plus current, the two-entry window is shifted and wrap cases fetch the wrong data even though the dual-read enable still fires.",
+      "portable_injection_spec": {
+        "affected_mechanism": "dual-entry circular-buffer read address generation",
+        "trigger_condition": "Image-mode read-jump cases where the consumer requests a second entry and that second entry is provided through an explicit wrapped-next address path.",
+        "injection_action": "Break the second-address generation so the dual-read pair is formed as predecessor/current instead of current/wrapped-next.",
+        "implementation_pattern": "restore stale relative addressing",
+        "portability_notes": [
+          "Target the logic that forms two read addresses from one image-read request, not unrelated buffer-bank decode.",
+          "The injected fault should only affect the special second-entry path so ordinary single-entry reads remain correct.",
+          "If another DUT uses a modulo pointer rather than an explicit next-address signal, map the fault to the wraparound computation that chooses the companion address."
+        ],
+        "concrete_injection_steps": [
+          "Locate the logic that emits two buffer read addresses for a single image-read or jump request.",
+          "When the second-entry flag is asserted, replace the first address with a predecessor/current-relative derivation or keep it stale instead of using the requested current address directly.",
+          "Make the second address reuse the current address rather than the explicitly computed wrapped-next address, while leaving the dual-read enable intact."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v"
+        ],
+        "target_module_or_logic": "CBUF dual-read decode for CSC image jump reads",
+        "commit_fix_summary": "The fix rewrites sc2buf_dat_rd_addr0/sc2buf_dat_rd_addr1 so the two-read pair becomes current plus sc2buf_dat_rd_next1_addr whenever the second-read path is active.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In NV_NVDLA_cbuf.v, restore sc2buf_dat_rd_addr0 to the old conditional current-1 expression and restore sc2buf_dat_rd_addr1 to sc2buf_dat_rd_addr instead of sc2buf_dat_rd_next1_addr."
+      },
+      "expected_failure_mode": "Jump-wrap image reads fetch the wrong pair of CBUF entries, producing off-by-one or wraparound corruption in CSC input data.",
+      "evidence_for_injection": [
+        "The commit touches only the two address wires that feed the dual-read SRAM decode.",
+        "The second-address path is explicitly gated by sc2buf_dat_rd_next1_en.",
+        "The fix consumes sc2buf_dat_rd_next1_addr, indicating the bug was in wrap-aware companion-address selection."
+      ],
+      "notes": [
+        "This is a localized reverse patch with a clear trigger: image jump reads that request two entries.",
+        "A reusable injection on another DUT should preserve normal one-entry reads and only corrupt the dual-entry wrap case."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "该提交修复了 CSC 图像 jump-wrap 读取时 CBUF 的双读地址配对，使硬件读取“当前项 + 回绕后的下一项”，而不是“前一项 + 当前项”。",
+    "why_it_counts": [
+      "补丁修改的是 CBUF 数据路径中的 DUT 读地址生成逻辑。",
+      "新逻辑使用显式的回绕后 next 地址输入，而不是继续推导出陈旧的前一项/当前项组合。",
+      "该缺陷会直接改变图像 jump 处理期间实际读取的 buffer entry。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一修改文件是 vmod/nvdla/cbuf/NV_NVDLA_cbuf.v。",
+      "sc2buf_dat_rd_addr0 从条件式的 current-1 表达式改成了当前地址本身。",
+      "sc2buf_dat_rd_addr1 从当前地址改成了 sc2buf_dat_rd_next1_addr。",
+      "周围代码表明这两个信号就是 sc2buf_dat_rd_next1_en 触发第二次读取时使用的两路 SRAM 读地址。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在环形 buffer 的双项图像读取路径里，当 read jump 跨越逻辑边界时，硬件必须读取“当前项 + 显式计算出的回绕后下一项”。如果错误地把这对地址构造成“前一项 + 当前项”，那么虽然双读使能仍然有效，但两项窗口会整体偏移，回绕场景就会抓到错误数据。",
+      "portable_injection_spec": {
+        "affected_mechanism": "环形缓冲区双项读取地址生成",
+        "trigger_condition": "图像模式的 read jump 需要第二个 entry，且第二个 entry 通过显式的回绕后 next 地址路径给出时。",
+        "injection_action": "破坏第二地址生成逻辑，使双读地址对退化为“前一项/当前项”，而不是“当前项/回绕后下一项”。",
+        "implementation_pattern": "restore stale relative addressing",
+        "portability_notes": [
+          "应定位到一次图像读取如何形成两个 buffer 读地址的逻辑，而不是其他 bank decode 逻辑。",
+          "注入后的故障应只影响特殊的第二 entry 路径，使普通单 entry 读取仍然正确。",
+          "如果另一套 DUT 用的是模指针而不是显式 next 地址信号，就把故障映射到回绕伴随地址的计算逻辑上。"
+        ],
+        "concrete_injection_steps": [
+          "找到一次图像读取或 jump 请求如何发出两个 buffer 读地址的逻辑。",
+          "在第二 entry 标志有效时，把第一地址改回基于前一项/相对地址的推导，或保留旧值，而不是直接使用当前请求地址。",
+          "让第二地址复用当前地址，而不是使用显式计算出的回绕后 next 地址，同时保留双读使能。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v"
+        ],
+        "target_module_or_logic": "CBUF 中面向 CSC 图像 jump 读取的双读地址解码逻辑",
+        "commit_fix_summary": "该修复重写了 sc2buf_dat_rd_addr0/sc2buf_dat_rd_addr1，使第二读路径激活时两次读取变成“当前地址 + sc2buf_dat_rd_next1_addr”。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 NV_NVDLA_cbuf.v 中，把 sc2buf_dat_rd_addr0 恢复成旧的条件式 current-1 表达式，并把 sc2buf_dat_rd_addr1 恢复为 sc2buf_dat_rd_addr，而不是 sc2buf_dat_rd_next1_addr。"
+      },
+      "expected_failure_mode": "发生 jump-wrap 的图像读取会抓取错误的一对 CBUF entry，导致 CSC 输入数据出现 off-by-one 或回绕型损坏。",
+      "evidence_for_injection": [
+        "该提交只修改了喂给双读 SRAM 解码的两个地址线。",
+        "第二地址路径明确受 sc2buf_dat_rd_next1_en 控制。",
+        "修复版开始使用 sc2buf_dat_rd_next1_addr，说明原始缺陷就在回绕感知的伴随地址选择上。"
+      ],
+      "notes": [
+        "这是一个局部且可直接反向注入的补丁，触发条件很明确：请求双 entry 的图像 jump 读取。",
+        "在其他 DUT 上做可复用注入时，应保持普通单 entry 读取正确，只破坏双 entry 回绕场景。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "dataset_id": 264,
+  "original_review_id": 317,
+  "meta": {
+    "id": 317,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "c1f23cf3ad0bad4d91cb846087a8a9bde8863e13",
+    "subject": "fixed redundnat cache fill with dirty block, fixed cache tag_store critical path"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes cache tag and dirty-state handling for fill-versus-write operations, especially when a redundant fill encounters a dirty resident line.",
+    "why_it_counts": [
+      "The patch changes core cache tag-access, tag-store, and writeback-control RTL.",
+      "The commit message explicitly describes a redundant-fill bug involving dirty blocks.",
+      "The behavioral portion is concrete enough to isolate even though the same commit also reduces tag-store critical-path pressure."
+    ],
+    "disqualifiers": [
+      "Part of the commit is also a timing-oriented tag-store cleanup.",
+      "A follow-up commit the next day further refines redundant-fill handling, so this entry should be read as the fill-versus-write tag-state fix, not the final word on redundant fills."
+    ],
+    "evidence": [
+      "VX_tag_store.v replaces the shared write_enable and write_fill interface with separate do_fill, do_write, and invalidate controls; only fills now write the tag RAM and clear dirty, while normal writes only set dirty.",
+      "VX_tag_access.v changes fill handling from a !tags_match-only fill_write path to an explicit use_do_fill path and computes writeen_out as use_do_write || use_do_fill.",
+      "In this commit, dirty_out is masked when is_fill_in && tags_match, which suppresses writeback on a redundant fill hitting an already matching line.",
+      "VX_bank.v keeps fill and writeback traffic distinct with separate dwbq_is_fill and dwbq_is_wb decisions."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v",
+      "hw/rtl/cache/VX_tag_store.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix separates two cache-line state transitions that were previously conflated: installing a line from a fill, and marking an already resident line dirty because of a write hit. When those actions share one generic write-enable path, a fill that collides with an already-present dirty line can clear or preserve the wrong metadata, suppress a needed writeback, or rewrite tag state as if the event were a normal hit.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache line tag and dirty-state update on fill-hit collisions",
+        "trigger_condition": "A fill arrives for a line whose tag already matches a resident entry, especially when that line is dirty or when redundant fills are still possible in the pipeline.",
+        "injection_action": "Merge fill installation and write-hit dirty marking back into one control path, and let redundant fills use the wrong dirty or writeback semantics.",
+        "implementation_pattern": "merge fill and write metadata paths",
+        "portability_notes": [
+          "Map this to any cache tag array or metadata RAM that tracks valid, dirty, and tag fields.",
+          "The key mistake is treating fill and write-hit updates as interchangeable even though one installs a line and the other only dirties an existing line.",
+          "If the target DUT can observe redundant fills, the injected bug should also suppress or distort the writeback decision for that case."
+        ],
+        "concrete_injection_steps": [
+          "Replace separate fill and write metadata controls with one generic write-enable path that updates tag and dirty state together.",
+          "Allow normal write-hit metadata rules to apply during a fill, or allow fill rules to apply during a write hit, instead of keeping those transitions distinct.",
+          "When a fill hits an already matching line, suppress dirty reporting or writeback based only on the tag match rather than on the full replacement policy and line state.",
+          "Keep the bank-side writeback request logic dependent on that conflated metadata so the wrong tag and dirty semantics propagate into external traffic."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_tag_access.v",
+          "hw/rtl/cache/VX_tag_store.v"
+        ],
+        "target_module_or_logic": "Tag access and tag store control for fill, write, invalidate, and dirty-driven writeback",
+        "commit_fix_summary": "The commit splits tag-store fill and write behavior, makes fills use an explicit do_fill path, and keeps bank-side fill versus writeback control separate for redundant-fill handling.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_tag_store and VX_tag_access, collapse do_fill and do_write back into a shared write_enable-style path, and in VX_bank restore the earlier fill-versus-writeback coupling that depended on that shared metadata behavior."
+      },
+      "expected_failure_mode": "A redundant or colliding fill can clear or preserve the wrong dirty state, skip a required writeback, or rewrite tag metadata incorrectly, leading to lost modified data or incorrect cache-line state.",
+      "evidence_for_injection": [
+        "The commit introduces explicit do_fill and do_write controls in VX_tag_store, showing that the previous shared control was semantically wrong for at least some cases.",
+        "The commit message names a dirty-block redundant-fill bug, not just a critical-path cleanup.",
+        "VX_bank.v distinguishes fill requests from writebacks in the same patch, which ties the metadata fix to externally visible cache behavior."
+      ],
+      "notes": [
+        "This entry should be interpreted as a fill-versus-write tag-state fix.",
+        "Later commit ce95c40aee45e7bc61a76eada543ac24256f2c36 further fixes when redundant fills are generated, but that does not erase the metadata-semantics bug fixed here."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该修复把 cache 中 fill 与 write 两类元数据更新语义分离，重点处理冗余 fill 命中脏行时的 tag 和 dirty 状态错误。",
+    "why_it_counts": [
+      "补丁修改了核心 cache 的 tag access、tag store 和 writeback 控制 RTL。",
+      "提交信息明确指出是 dirty block 上的 redundant fill bug。",
+      "虽然同一提交也在降低 tag_store 关键路径压力，但行为修复部分仍然足够具体，可以独立提取。"
+    ],
+    "disqualifiers": [
+      "该提交的一部分也属于面向时序的 tag_store 清理。",
+      "第二天的后续提交继续细化 redundant fill 处理，因此这里应理解为 fill 与 write 的 tag-state 修复，而不是 redundant fill 问题的最终版本。"
+    ],
+    "evidence": [
+      "VX_tag_store.v 把共享的 write_enable 和 write_fill 接口拆成独立的 do_fill、do_write 和 invalidate；fill 现在才写 tag RAM 并清除 dirty，而普通写只设置 dirty。",
+      "VX_tag_access.v 把 fill 处理从仅在 !tags_match 下触发的 fill_write 路径，改成显式的 use_do_fill 路径，并把 writeen_out 定义为 use_do_write || use_do_fill。",
+      "在这个提交中，dirty_out 会在 is_fill_in && tags_match 时被屏蔽，从而在冗余 fill 命中已有匹配行时抑制 writeback。",
+      "VX_bank.v 用独立的 dwbq_is_fill 和 dwbq_is_wb 判定来区分 fill 流量和 writeback 流量。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v",
+      "hw/rtl/cache/VX_tag_store.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复把之前被错误混在一起的两类 cache line 状态转换分离开来：一类是通过 fill 安装一条新行，另一类是因为写命中而把已有行标记为 dirty。如果这两种动作共用同一条通用 write-enable 路径，那么当 fill 与一个已存在且可能为脏的行发生碰撞时，就可能清除或保留错误的元数据、抑制本应存在的 writeback，或者把 tag 状态按普通命中的语义错误改写。",
+      "portable_injection_spec": {
+        "affected_mechanism": "fill 与命中写碰撞时的 cache line tag 和 dirty 状态更新",
+        "trigger_condition": "一个 fill 到达时，其 tag 已经匹配到一条驻留行，尤其是在该行为 dirty 或流水线中仍可能出现 redundant fill 的情况下。",
+        "injection_action": "把 fill 安装和 write-hit 置脏重新合并到同一条控制路径，并让 redundant fill 继续走错误的 dirty 或 writeback 语义。",
+        "implementation_pattern": "合并 fill 和 write 的元数据更新路径",
+        "portability_notes": [
+          "可映射到任何维护 valid、dirty 和 tag 字段的 cache tag array 或 metadata RAM。",
+          "关键错误是把 fill 和写命中当成可互换的更新动作，尽管一个是在安装行，另一个只是把已有行置脏。",
+          "如果目标 DUT 可能观察到 redundant fill，注入后的故障也应在该场景下错误抑制或扭曲 writeback 决策。"
+        ],
+        "concrete_injection_steps": [
+          "把独立的 fill 和 write 元数据控制重新合并成一条通用 write-enable 路径，让 tag 和 dirty 状态一起更新。",
+          "在 fill 时套用普通写命中的元数据规则，或在写命中时套用 fill 规则，而不是严格区分这两种状态转换。",
+          "当 fill 命中已有匹配行时，仅基于 tag match 去抑制 dirty 报告或 writeback，而不是依据完整的替换语义和行状态。",
+          "让 bank 侧的 writeback 请求逻辑继续依赖这些被混淆的元数据，使错误的 tag 和 dirty 语义向外部流量传播。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_tag_access.v",
+          "hw/rtl/cache/VX_tag_store.v"
+        ],
+        "target_module_or_logic": "负责 fill、write、invalidate 以及基于 dirty 的 writeback 的 tag access 与 tag store 控制",
+        "commit_fix_summary": "该提交把 tag_store 中的 fill 与 write 行为拆开，让 fill 走显式 do_fill 路径，并在 bank 侧保持 fill 与 writeback 控制的分离，以修复与 redundant fill 相关的语义错误。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_tag_store 和 VX_tag_access 中，把 do_fill 与 do_write 合并回共享的 write_enable 风格路径，并在 VX_bank 中恢复更早版本里对 fill 与 writeback 的耦合控制。"
+      },
+      "expected_failure_mode": "冗余或碰撞的 fill 可能错误清除或保留 dirty 状态、跳过本应发生的 writeback，或者错误改写 tag 元数据，最终导致修改过的数据丢失或 cache line 状态错误。",
+      "evidence_for_injection": [
+        "提交在 VX_tag_store 中引入了显式 do_fill 和 do_write，说明旧的共享控制在某些情形下语义上是错误的。",
+        "提交信息明确指向 dirty block 上的 redundant-fill bug，而不仅仅是 critical-path 清理。",
+        "VX_bank.v 在同一个补丁里区分了 fill request 与 writeback，表明该元数据修复会影响外部可见的 cache 行为。"
+      ],
+      "notes": [
+        "本条目应理解为 fill 与 write 的 tag-state 语义修复。",
+        "后续提交 ce95c40aee45e7bc61a76eada543ac24256f2c36 继续修复 redundant fill 的生成时机，但这并不否定本提交修复的元数据语义问题。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "dataset_id": 351,
+  "original_review_id": 424,
+  "meta": {
+    "id": 424,
+    "repo": "gemmini",
+    "branch": "conv-fsm2",
+    "commit": "e0af6427832bf33cd06786759884b512dfedf49a",
+    "subject": "Fix bug in LoopConv"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "loop_control",
+    "summary": "Fixes convolution input-load chunk sizing by using the remaining input-channel count, not the remaining output-channel count, when forming each DMA load command.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a LoopConv bug.",
+      "The functional hunk changes loop-control logic in the LoopConv input-loader, a central DUT controller.",
+      "The changed value directly feeds the load command fields that determine how many input channels are moved per iteration."
+    ],
+    "disqualifiers": [
+      "The commit also contains debug-related edits and a separate busy-signal change, so the overall commit is mixed.",
+      "The clearest portable bug for reinjection is the LoopConv channel-bound fix in LoopConv.scala."
+    ],
+    "evidence": [
+      "In LoopConv.scala, `val K` changes from `ochs.zext() -& ich` to `ichs.zext() -& ich`.",
+      "The surrounding code shows `ich` is the input-channel iterator and `mvin_cmd.rs2` packs `K` into the load command.",
+      "The logic already caps `K` with `max_ichs_per_mvin`, so the bug is specifically which dimension supplies the remaining-channel bound."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopConv.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A convolution input loader must size each transfer from the remaining input-channel tile count. If the controller instead derives that bound from the output-channel dimension, the inner DMA loop uses the wrong problem dimension whenever input and output channel counts differ. The resulting transfer size can become too small or too large at the tail of the channel loop, corrupting which activation data is fetched for the convolution.",
+      "portable_injection_spec": {
+        "affected_mechanism": "convolution input-channel chunk sizing",
+        "trigger_condition": "A convolution layer where input-channel count differs from output-channel count, especially near the tail chunk of the input-channel loop.",
+        "injection_action": "Compute the remaining transfer chunk from the output-channel dimension instead of the input-channel dimension.",
+        "implementation_pattern": "swap_dimension_source in loop bound",
+        "portability_notes": [
+          "Apply this to the controller that emits activation-load or DMA commands for convolution input tiles.",
+          "The bug maps to designs that separately track input-channel and output-channel loop bounds.",
+          "Keep any existing max-burst or tile-size cap intact so only the dimension source is wrong."
+        ],
+        "concrete_injection_steps": [
+          "Find the state machine or loop generator that advances through convolution input channels.",
+          "Locate the expression that computes the remaining channel count for the current input-load request.",
+          "Replace the remaining-input-channel term with the remaining-output-channel term while leaving the saturation or min-with-max logic unchanged.",
+          "Preserve address generation and iterator updates so the failure comes from the wrong load length, not from a broader rewrite."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopConv.scala"
+        ],
+        "target_module_or_logic": "LoopConvLdInput `K` calculation for `mvin_cmd`",
+        "commit_fix_summary": "The fix changes the load-size term `K` to use `ichs - ich` instead of `ochs - ich` before packing it into the load command.",
+        "mutation_strategy": "swap_dimension_source",
+        "source_level_edit_anchor": "In `LoopConvLdInput`, the `val K = ...` expression immediately above `mvin_cmd.rs2` is the source-level anchor."
+      },
+      "expected_failure_mode": "Input DMA requests fetch the wrong number of channels for some tiles, leading to incorrect activation placement and wrong convolution results when channel counts are asymmetric.",
+      "evidence_for_injection": [
+        "The changed `K` expression is the only clear LoopConv functional correction in the patch.",
+        "The surrounding code packs `K` directly into `mvin_cmd.rs2`, tying the bug to transfer sizing rather than to debug logic.",
+        "The local iterator names and nearby address formula show that `ich` walks input channels, so `ochs` was the wrong dimension source."
+      ],
+      "notes": [
+        "The commit also adds `conv_cmd.valid` into `io.busy`, but that is a separate functional change and not needed for this injection target.",
+        "This bug is highly reusable across convolution controllers that tile along input channels."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "loop_control",
+    "summary": "该提交修复了卷积输入加载分块大小的计算：形成每条 DMA 加载命令时，应使用剩余输入通道数，而不是剩余输出通道数。",
+    "why_it_counts": [
+      "提交信息明确说明是在修复 LoopConv 缺陷。",
+      "功能性补丁修改的是 LoopConv 输入加载器中的循环控制逻辑，属于核心 DUT 控制路径。",
+      "被修改的值会直接进入 load command 字段，决定每次迭代搬运多少个输入通道。"
+    ],
+    "disqualifiers": [
+      "该提交还混入了一些调试相关改动以及一个独立的 busy 信号修复，因此整体是混合提交。",
+      "对可复用故障注入而言，最清晰的目标仍然是 LoopConv.scala 中的通道边界修复。"
+    ],
+    "evidence": [
+      "在 LoopConv.scala 中，`val K` 从 `ochs.zext() -& ich` 改为 `ichs.zext() -& ich`。",
+      "周围代码表明 `ich` 是输入通道迭代器，而 `mvin_cmd.rs2` 会把 `K` 打包进加载命令。",
+      "该逻辑本来就会用 `max_ichs_per_mvin` 对 `K` 做上限裁剪，因此真正的错误在于“剩余通道数”取自了错误的维度。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/LoopConv.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "卷积输入加载器必须根据“剩余输入通道分块数”来决定每次传输大小。如果控制器错误地从输出通道维度推导这个边界，那么当输入通道数与输出通道数不相等时，内层 DMA 循环就会沿着错误的问题维度前进。这样会在通道尾部分块处产生过小或过大的传输，导致卷积读取到错误的激活数据。",
+      "portable_injection_spec": {
+        "affected_mechanism": "卷积输入通道分块大小计算",
+        "trigger_condition": "卷积层的输入通道数与输出通道数不相等，尤其是在输入通道循环接近尾部分块时。",
+        "injection_action": "把剩余传输分块大小错误地从输出通道维度计算，而不是从输入通道维度计算。",
+        "implementation_pattern": "在循环边界中交换维度来源",
+        "portability_notes": [
+          "应作用在负责发出卷积激活加载或 DMA 命令的控制器上。",
+          "该故障适用于同时维护输入通道与输出通道循环边界的设计。",
+          "保留原有的最大 burst 或 tile 大小裁剪逻辑，只让维度来源出错。"
+        ],
+        "concrete_injection_steps": [
+          "找到推进卷积输入通道的状态机或循环生成器。",
+          "定位当前输入加载请求中“剩余通道数”的计算表达式。",
+          "在保留饱和或最小值裁剪逻辑不变的前提下，把“剩余输入通道数”替换成“剩余输出通道数”。",
+          "保持地址生成和迭代器更新逻辑不变，使故障主要体现在加载长度错误上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopConv.scala"
+        ],
+        "target_module_or_logic": "LoopConvLdInput 中 `mvin_cmd` 的 `K` 计算",
+        "commit_fix_summary": "修复把加载大小项 `K` 从 `ochs - ich` 改为 `ichs - ich`，随后将其打包进 load command。",
+        "mutation_strategy": "交换维度来源",
+        "source_level_edit_anchor": "源级锚点位于 `LoopConvLdInput` 中、`mvin_cmd.rs2` 上方的 `val K = ...` 表达式。"
+      },
+      "expected_failure_mode": "某些 tile 的输入 DMA 请求会搬运错误数量的通道，导致激活数据放置错误，并在通道数不对称时产生错误卷积结果。",
+      "evidence_for_injection": [
+        "补丁中最明确的 LoopConv 功能修复就是这个 `K` 表达式。",
+        "周围代码显示 `K` 会直接打包进 `mvin_cmd.rs2`，说明这是传输大小错误，而不是调试逻辑。",
+        "局部迭代器命名和地址公式都表明 `ich` 走的是输入通道，因此 `ochs` 明显是错误维度。"
+      ],
+      "notes": [
+        "提交里还把 `conv_cmd.valid` 加入 `io.busy`，但那是另一个功能改动，不必纳入本次注入目标。",
+        "这类缺陷在按输入通道做卷积分块的控制器中具有较强可移植性。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

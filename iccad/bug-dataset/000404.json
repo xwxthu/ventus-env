@@ -1,0 +1,139 @@
+{
+  "dataset_id": 404,
+  "original_review_id": 512,
+  "meta": {
+    "id": 512,
+    "repo": "ventus-gpgpu",
+    "branch": "develop",
+    "commit": "38ffe4fd90788546efb471cc27436f72edada229",
+    "subject": "fix: FPU ctrl signal regidx 5bit -> 8bit"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes an FPU control-side width mismatch. The FPU control bundle was carrying only a 5-bit destination register index even though the surrounding pipeline uses an 8-bit architectural register identifier.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a register-index width fix in FPU control logic.",
+      "The functional RTL hunk is in the execution pipeline's FPU wrapper.",
+      "Nearby pipeline code shows architectural register indices are 8 bits wide through regidx_width + regext_width."
+    ],
+    "disqualifiers": [
+      ".gitmodules updates are unrelated repository maintenance."
+    ],
+    "evidence": [
+      "execution.scala adds override val regIndex = UInt(8.W) inside TestFPUCtrl.",
+      "The FPU wrapper forwards io.in.bits.ctrl.reg_idxw into fpu.io.in.bits.ctrl.regIndex and later returns regIndex on writeback control.",
+      "Nearby Ventus parameter code defines regidx_width = 5 and regext_width = 3, matching an 8-bit architectural register id.",
+      "No other DUT logic changes appear in this commit."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/execution.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "An execution unit's sideband control must carry the full architectural destination register identifier whenever the register namespace extends beyond the base ISA field width. If that identifier is truncated inside the unit-specific control bundle, high register-index bits are silently dropped and the result is written back to the wrong architectural destination.",
+      "portable_injection_spec": {
+        "affected_mechanism": "destination register sideband width through a functional unit",
+        "trigger_condition": "The instruction targets a register whose architectural index uses extension bits above the base 5-bit field, and the result passes through the FPU control path.",
+        "injection_action": "Shrink the destination register field carried through the functional-unit control bundle so the high extension bits are lost.",
+        "implementation_pattern": "truncate width",
+        "portability_notes": [
+          "Apply this to any DUT that extends architectural register numbering beyond the base ISA field width.",
+          "The bug is about sideband metadata width, not the numerical FPU datapath itself.",
+          "If the target unit copies control bundles through wrappers or queues, inject the truncation at only one point to keep the failure mode attributable."
+        ],
+        "concrete_injection_steps": [
+          "Find the control field that carries the destination register id into and out of the FPU or vector execution unit.",
+          "Reduce that field to the base register-index width and drop any extension bits.",
+          "Leave the rest of the control bundle unchanged so only destination selection is corrupted.",
+          "Validate with instructions whose destination register number exceeds the base ISA range."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/execution.scala"
+        ],
+        "target_module_or_logic": "FPUexe TestFPUCtrl regIndex width override",
+        "commit_fix_summary": "The fix overrides TestFPUCtrl.regIndex to UInt(8.W) so the FPU control path preserves the full 8-bit register id carried by reg_idxw.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Remove the override val regIndex = UInt(8.W) line or shrink it back to a 5-bit field."
+      },
+      "expected_failure_mode": "FPU results destined for extended register numbers are written back with a truncated register id, causing writes to the wrong architectural register and downstream data corruption.",
+      "evidence_for_injection": [
+        "The fix is a one-line width correction on the exact control field that carries the destination register id through the FPU.",
+        "Nearby code shows reg_idxw entering and leaving the FPU path, so this field is architecturally relevant.",
+        "The architecture-level failure mechanism is simple register-index truncation."
+      ],
+      "notes": [
+        "The unrelated .gitmodules hunk should not be part of the injected mutation.",
+        "This bug is highly portable to any widened register namespace."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 FPU 控制侧的位宽不匹配问题。FPU 控制 bundle 里原先只携带 5 位目的寄存器索引，而周边流水线实际使用的是 8 位体系结构寄存器标识。",
+    "why_it_counts": [
+      "提交信息明确指出这是 FPU 控制里的寄存器索引位宽修复。",
+      "功能性 RTL 改动位于执行流水线的 FPU wrapper 中。",
+      "周边流水线代码表明体系结构寄存器索引宽度是 regidx_width + regext_width = 8 位。"
+    ],
+    "disqualifiers": [
+      ".gitmodules 更新只是仓库维护，与 DUT 修复无关。"
+    ],
+    "evidence": [
+      "execution.scala 在 TestFPUCtrl 中新增了 override val regIndex = UInt(8.W)。",
+      "FPU wrapper 把 io.in.bits.ctrl.reg_idxw 送入 fpu.io.in.bits.ctrl.regIndex，并在写回控制中再次取回该 regIndex。",
+      "附近的 Ventus 参数代码定义 regidx_width = 5、regext_width = 3，与 8 位体系结构寄存器 id 一致。",
+      "该提交没有其他 DUT 逻辑改动。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/execution.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "只要体系结构寄存器空间超出基础 ISA 的字段宽度，执行单元侧带控制里就必须传递完整的目的寄存器标识。如果该标识在单元内部控制 bundle 中被截断，高位寄存器索引会被静默丢弃，结果就会写回到错误的体系结构目的寄存器。",
+      "portable_injection_spec": {
+        "affected_mechanism": "功能单元中目的寄存器侧带字段的位宽",
+        "trigger_condition": "指令的目的寄存器编号使用了超过基础 5 位字段的扩展位，并且结果经过 FPU 控制路径返回。",
+        "injection_action": "缩小功能单元控制 bundle 中携带的目的寄存器字段，使高位扩展位在传输过程中被截断。",
+        "implementation_pattern": "truncate width",
+        "portability_notes": [
+          "适用于任何把体系结构寄存器编号扩展到基础 ISA 字段宽度之上的 DUT。",
+          "该缺陷属于侧带元数据位宽问题，不是 FPU 数值数据通路本身的错误。",
+          "如果目标单元通过 wrapper 或队列传递控制 bundle，最好只在一个点注入截断，便于归因。"
+        ],
+        "concrete_injection_steps": [
+          "找到进入和离开 FPU 或向量执行单元的目的寄存器 id 控制字段。",
+          "把该字段缩回基础寄存器索引位宽，丢弃所有扩展高位。",
+          "保持控制 bundle 其他字段不变，使故障只表现为目的寄存器选择错误。",
+          "用目的寄存器编号超出基础 ISA 范围的指令来验证回注缺陷。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/execution.scala"
+        ],
+        "target_module_or_logic": "FPUexe 中 TestFPUCtrl 的 regIndex 位宽覆盖",
+        "commit_fix_summary": "修复通过把 TestFPUCtrl.regIndex 覆盖为 UInt(8.W)，让 FPU 控制路径保留 reg_idxw 携带的完整 8 位寄存器 id。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "删除 override val regIndex = UInt(8.W) 这一行，或把它缩回 5 位字段。"
+      },
+      "expected_failure_mode": "当 FPU 结果写回到扩展寄存器编号时，寄存器 id 会被截断，导致写回到错误的体系结构寄存器，并进一步污染后续数据。",
+      "evidence_for_injection": [
+        "修复本身就是对 FPU 中承载目的寄存器 id 的控制字段做一行位宽校正。",
+        "附近代码显示 reg_idxw 会进入 FPU 路径并在返回时继续使用，因此该字段确实具有体系结构意义。",
+        "该缺陷在体系结构层面就是典型的寄存器索引截断。"
+      ],
+      "notes": [
+        "无关的 .gitmodules 改动不应成为注入内容。",
+        "该缺陷非常适合迁移到任何扩展寄存器命名空间的 DUT。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

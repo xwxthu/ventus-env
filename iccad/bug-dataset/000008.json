@@ -1,0 +1,131 @@
+{
+  "dataset_id": 8,
+  "original_review_id": 11,
+  "meta": {
+    "id": 11,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "35b4a1253d2f4501ac0cad50728c0d12c8dfc4b2",
+    "subject": "hardware: fix bug where l2a_is_restarted_flush could be incorrect"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes stale flush-restart tracking in the L2 arbiter so a new flush request is not mistaken for a restarted flush.",
+    "why_it_counts": [
+      "The commit message explicitly describes a race where a first-pass flush packet could look like a completed restarted flush and silently fail.",
+      "The patch changes hardware/core/l2_cache_arb.sv, a central L2 request arbiter module.",
+      "The fix explicitly clears l2a_is_restarted_flush on ordinary core requests and on idle cycles."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only touched file is hardware/core/l2_cache_arb.sv.",
+      "Two new assignments set l2a_is_restarted_flush to 0 in the core-request branch and in the no-request branch.",
+      "The restarted-request branch already set l2a_is_restarted_flush from is_restarted_flush, so the bug was stale state retention outside that branch."
+    ],
+    "touched_dut_files": [
+      "hardware/core/l2_cache_arb.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A cache arbiter often carries a meta bit that tells downstream logic whether a flush packet is a restarted or replayed flush or a fresh first-pass flush. The old logic failed to clear that bit on ordinary requests or idle cycles, so stale restart metadata could leak into a new flush and make it look like a replayed request.",
+      "portable_injection_spec": {
+        "affected_mechanism": "flush-restart state tracking in cache request arbitration",
+        "trigger_condition": "A restarted flush was seen recently, and a new core-originated flush arrives before the restart flag is explicitly cleared.",
+        "injection_action": "Leave the restart flag latched across unrelated requests or idle cycles instead of clearing it on non-restarted traffic.",
+        "implementation_pattern": "missing flag reset",
+        "portability_notes": [
+          "Apply this to any arbiter or pipeline register that tags cache-control requests as restarted or replayed.",
+          "The fault is about stale metadata retention, not about the flush opcode itself."
+        ],
+        "concrete_injection_steps": [
+          "Locate the register or pipeline field that forwards flush requests together with a restarted marker.",
+          "Remove the explicit clear of that marker on ordinary core requests and on idle cycles.",
+          "Keep the logic that sets the marker on genuine restarted flush traffic unchanged.",
+          "Do not alter request-valid handling."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/l2_cache_arb.sv"
+        ],
+        "target_module_or_logic": "l2a_is_restarted_flush register updates in l2_cache_arb",
+        "commit_fix_summary": "The fix adds explicit clears of l2a_is_restarted_flush when dispatching a new core request and when there is no request.",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "Delete the two clearing assignments to l2a_is_restarted_flush in the core-request branch and in the no-request branch."
+      },
+      "expected_failure_mode": "A fresh flush can be mistaken for a restarted or completed flush, causing the flush to terminate early or silently miss the intended cache state.",
+      "evidence_for_injection": [
+        "The commit message explicitly explains the stale-state race and silent flush failure mode.",
+        "The patch adds only clear assignments; no opcode or datapath changes are involved.",
+        "The modified module is the L2 arbiter that forwards requests and flush metadata."
+      ],
+      "notes": [
+        "This is a classic sticky-control-bit bug.",
+        "A reproducer needs at least one prior restarted flush followed by a new ordinary flush."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L2 仲裁器中的 flush-restart 状态残留问题，避免新的 flush 请求被误认成 restarted flush。",
+    "why_it_counts": [
+      "提交说明明确描述了一个竞争条件：第一次发出的 flush 包可能被看成已经开始处理过的 restarted flush，并且静默失败。",
+      "补丁修改的是 hardware/core/l2_cache_arb.sv，这是核心 L2 请求仲裁模块。",
+      "修复在普通 core 请求分支和空闲分支上显式清零 l2a_is_restarted_flush。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一被修改的文件是 hardware/core/l2_cache_arb.sv。",
+      "补丁新增了两处 l2a_is_restarted_flush 置 0，分别位于普通 core 请求分支和无请求分支。",
+      "restarted 请求分支原本就会根据 is_restarted_flush 设置该位，因此真正的问题是离开该分支后的陈旧状态残留。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/l2_cache_arb.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "缓存仲裁器通常会带一个元数据位，告诉下游当前 flush 包是 restarted 或 replayed flush，还是新的第一次 flush。旧逻辑在普通请求和空闲周期中没有清除这个标志，导致陈旧 restart 元数据泄漏到新的 flush 上，让它看起来像重放请求。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache 请求仲裁中的 flush-restart 状态跟踪",
+        "trigger_condition": "设计最近刚看到过一个 restarted flush，而在该标志清零前又到来了一个新的 core 发起 flush。",
+        "injection_action": "不要在无关请求或空闲周期中清除 restart 标志，让它跨周期保留。",
+        "implementation_pattern": "missing flag reset",
+        "portability_notes": [
+          "适用于任何会给 cache-control 请求附带 restarted 或 replayed 标记的仲裁器或流水寄存器。",
+          "该故障针对的是陈旧元数据残留，而不是 flush opcode 本身。"
+        ],
+        "concrete_injection_steps": [
+          "定位转发 flush 请求并携带 restarted 标记的寄存器或流水字段。",
+          "删除普通 core 请求分支和空闲分支中对该标记的显式清零。",
+          "保留真正 restarted flush 流量设置该标记的逻辑。",
+          "不要改动 request-valid 处理。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/l2_cache_arb.sv"
+        ],
+        "target_module_or_logic": "l2_cache_arb 中 l2a_is_restarted_flush 的更新逻辑",
+        "commit_fix_summary": "修复在派发新的 core 请求和无请求时都显式清零了 l2a_is_restarted_flush。",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "删除普通 core 请求分支和无请求分支里的两处 l2a_is_restarted_flush 清零赋值。"
+      },
+      "expected_failure_mode": "一个新的 flush 会被误认成 restarted 或已完成的 flush，导致 flush 提前结束或静默失败。",
+      "evidence_for_injection": [
+        "提交说明明确解释了陈旧状态竞争和静默 flush 失败模式。",
+        "补丁只新增了清零赋值，没有改动 opcode 或数据路径。",
+        "被修改的模块正是负责转发请求及其 flush 元数据的 L2 仲裁器。"
+      ],
+      "notes": [
+        "这是典型的 sticky 控制位 bug。",
+        "复现通常需要先发生一次 restarted flush，再发生一次新的普通 flush。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 349,
+  "original_review_id": 422,
+  "meta": {
+    "id": 422,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "a9d47bef17cab53ecdf7737f5e955063c5bb1b38",
+    "subject": "Fix relu6 bug and pooling bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "The fix stops garbage-address zero-write requests from being misclassified as full-width accumulator-row writes, which had broken relu6 and pooling writeback flows.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes relu6 and pooling bugs.",
+      "The only DUT logic change is in `Scratchpad`, a central write-path module.",
+      "The patch cleanly separates the zero-write sentinel path from the real full-width accumulator-row path."
+    ],
+    "disqualifiers": [
+      "The software test-submodule pointer bump is ancillary."
+    ],
+    "evidence": [
+      "In `src/main/scala/gemmini/Scratchpad.scala`, `writeData_is_full_width` gains `!write_issue_q.io.deq.bits.laddr.is_garbage()`.",
+      "`writeData_is_all_zeros` still uses `laddr.is_garbage()`, showing that the patch deliberately split the zero-write case from full-row writes.",
+      "No other DUT algorithm changes appear in the commit, matching the relu6/pooling write-path description."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Some accelerators use a sentinel or garbage local address to mean “write zeros” or “synthetic write” rather than “write a real accumulator row.” If the write-path classification logic also lets that sentinel satisfy the full-row accumulator-write condition, zero-fill or post-processing flows can take the wrong formatting path and corrupt stored activations.",
+      "portable_injection_spec": {
+        "affected_mechanism": "zero-write versus full-row accumulator-write classification",
+        "trigger_condition": "A relu6, pooling, or zero-fill path issues a write request marked by a garbage or sentinel local address.",
+        "injection_action": "Let the full-width accumulator-write predicate ignore the garbage or sentinel check.",
+        "implementation_pattern": "drop sentinel exclusion from full-width write detector",
+        "portability_notes": [
+          "Map “garbage address” to whatever sentinel encoding your DUT uses for synthetic zero writes or discarded writes.",
+          "The bug is about write formatting/path selection, not the arithmetic of relu6 or pooling itself.",
+          "The regression is most visible in flows that intentionally emit zero rows or masked-out outputs."
+        ],
+        "concrete_injection_steps": [
+          "Find the write-path logic that decides between full-row accumulator writes and synthetic zero-write handling.",
+          "Remove the guard that excludes garbage or sentinel addresses from the full-row path.",
+          "Leave the zero-write path itself present so one request can now satisfy both classifications incorrectly.",
+          "Trigger with relu6 or pooling outputs that use sentinel-address zero writes."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Gemmini scratchpad writer request classification",
+        "commit_fix_summary": "The fix adds `!laddr.is_garbage()` to `writeData_is_full_width`, separating zero-write requests from true full-accumulator-row writes.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In `src/main/scala/gemmini/Scratchpad.scala`, `writeData_is_full_width` changed from `is_acc_addr && read_full_acc_row` to also require `!is_garbage()`."
+      },
+      "expected_failure_mode": "Zero-write requests can take the full-width accumulator path, corrupting relu6 or pooling outputs and potentially clobbering accumulator rows.",
+      "evidence_for_injection": [
+        "The fix is a single guard term in the write-path classifier, making reinjection straightforward.",
+        "The zero-write path remains separately keyed on `is_garbage()`, so removing the guard recreates the original overlap.",
+        "The commit message ties the bug to relu6 and pooling flows, which are both consistent with synthetic zero-write traffic."
+      ],
+      "notes": [
+        "The test-submodule update is unrelated and should not be part of the mutation.",
+        "If you want the closest reproduction, keep all other write-path logic unchanged and only remove the sentinel exclusion guard."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "该修复阻止了 garbage 地址的零写请求被误判为整行 accumulator 写，从而修复了 relu6 和 pooling 的写回路径。",
+    "why_it_counts": [
+      "提交信息明确说明修复了 relu6 和 pooling 缺陷。",
+      "唯一的 DUT 逻辑改动位于 `Scratchpad`，这是核心写路径模块。",
+      "补丁把零写哨兵路径与真实的整行 accumulator 写路径明确区分开。"
+    ],
+    "disqualifiers": [
+      "软件测试子模块指针更新只是附带改动。"
+    ],
+    "evidence": [
+      "在 `src/main/scala/gemmini/Scratchpad.scala` 中，`writeData_is_full_width` 新增了 `!write_issue_q.io.deq.bits.laddr.is_garbage()`。",
+      "`writeData_is_all_zeros` 仍然使用 `laddr.is_garbage()`，说明补丁刻意把零写与整行写路径拆开。",
+      "该提交没有其他 DUT 算法性改动，这与 relu6/pooling 写路径缺陷的描述一致。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "有些加速器用某种哨兵或 garbage 本地地址表示“写零”或“合成写”，而不是“写真实的 accumulator 行”。如果写路径分类逻辑又允许这个哨兵同时满足整行 accumulator 写条件，那么零填充或后处理流程就会走错数据格式化路径，进而破坏输出激活值。",
+      "portable_injection_spec": {
+        "affected_mechanism": "零写与整行 accumulator 写的分类逻辑",
+        "trigger_condition": "relu6、pooling 或零填充路径发出了带 garbage/哨兵本地地址的写请求。",
+        "injection_action": "让整宽 accumulator 写条件忽略 garbage/哨兵地址检查。",
+        "implementation_pattern": "从整宽写检测条件中删除哨兵排除项",
+        "portability_notes": [
+          "把这里的 “garbage 地址” 映射为目标 DUT 中用于合成零写或丢弃写的哨兵编码。",
+          "该缺陷影响的是写格式/写路径选择，而不是 relu6 或 pooling 本身的算术。",
+          "在有意输出零行或被 mask 掉输出的流程中，这个问题最容易被观察到。"
+        ],
+        "concrete_injection_steps": [
+          "找到写路径中在“整行 accumulator 写”和“合成零写”之间做选择的逻辑。",
+          "删除其中阻止 garbage/哨兵地址进入整行写路径的保护条件。",
+          "保留零写路径本身不变，使一个请求现在可能被错误地同时满足两类分类。",
+          "用依赖哨兵地址零写的 relu6 或 pooling 输出触发该问题。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Gemmini scratchpad 的 writer 请求分类逻辑",
+        "commit_fix_summary": "该修复为 `writeData_is_full_width` 增加了 `!laddr.is_garbage()`，从而把零写请求和真实的整行 accumulator 写区分开。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 `src/main/scala/gemmini/Scratchpad.scala` 中，`writeData_is_full_width` 从 `is_acc_addr && read_full_acc_row` 改为还必须满足 `!is_garbage()`。"
+      },
+      "expected_failure_mode": "零写请求会错误地走整行 accumulator 写路径，从而破坏 relu6 或 pooling 输出，甚至覆盖 accumulator 行。",
+      "evidence_for_injection": [
+        "修复本质上是写路径分类器中的一个保护项，因此回注非常直接。",
+        "零写路径仍然独立地由 `is_garbage()` 触发，所以删除该保护项就能重建原有重叠。",
+        "提交信息把问题直接关联到 relu6 和 pooling 流程，这两者都与合成零写流量相符。"
+      ],
+      "notes": [
+        "测试子模块更新与该缺陷无关，不应纳入变异。",
+        "若想最接近原始问题，应保持其他写路径逻辑不变，只删除哨兵排除保护。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

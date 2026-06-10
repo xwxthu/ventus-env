@@ -1,0 +1,143 @@
+{
+  "dataset_id": 371,
+  "original_review_id": 456,
+  "meta": {
+    "id": 456,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "7c384eaf7fca4cdeff085c7f219417229ff0aaab",
+    "subject": "fixed snoop forwarding hang"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes a real snoop-forwarding liveness bug in cache control. The main behavioral fix is to release a snoop-forward tracking entry only after the snoop response handshake completes; related response arbiters were also changed from fixed priority to round-robin to reduce starvation risk.",
+    "why_it_counts": [
+      "The commit message names a concrete hang in snoop forwarding.",
+      "The patch modifies cache snoop-control RTL, not tests or software.",
+      "The key hunk changes entry-release timing from valid-only to valid-and-ready, which directly affects correctness of in-flight snoop tracking."
+    ],
+    "disqualifiers": [
+      "The same commit also includes README, Makefile, and formatting-only edits.",
+      "The arbiter swaps help liveness, but the smallest clearly reinjectable bug is the release-handshake condition."
+    ],
+    "evidence": [
+      "In hw/rtl/cache/VX_snp_forwarder.v, sfq_release changed from snp_rsp_valid to snp_rsp_valid && snp_rsp_ready.",
+      "The same module keeps a per-entry pending counter and uses sfq_release to free the CAM slot after all forwarded requests retire.",
+      "hw/rtl/cache/VX_snp_forwarder.v and hw/rtl/cache/VX_snp_rsp_arb.v both switch the snoop path from VX_fixed_arbiter to VX_rr_arbiter."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_snp_forwarder.v",
+      "hw/rtl/cache/VX_snp_rsp_arb.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a snoop-forwarding path, the controller typically allocates a tracking entry when a snoop request is fanned out and retires that entry only after the final snoop response is actually accepted downstream. If the entry is released when response valid asserts, instead of when the valid-ready handshake completes, backpressure can free the tracking slot too early. That breaks outstanding-completion accounting and can leave later snoops or responses stuck behind corrupted state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "snoop completion tracking",
+        "trigger_condition": "A snoop response becomes valid while the downstream consumer temporarily deasserts ready, especially with multiple forwarded subrequests or response contention.",
+        "injection_action": "Retire the snoop-tracking entry on response valid alone instead of on the completed response handshake.",
+        "implementation_pattern": "drop ready term from release condition",
+        "portability_notes": [
+          "Map this to any cache, coherence engine, or snoop-forwarder that allocates an entry per forwarded request and frees it on completion.",
+          "If the target DUT has no explicit CAM, apply the mutation to the structure that decrements the outstanding snoop count or marks the forwarded transaction done.",
+          "A fixed-priority arbiter can be restored as a secondary liveness stressor, but the primary bug is the premature release condition."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that marks a forwarded snoop transaction complete or frees its tracking slot.",
+          "Remove the downstream ready qualifier from that completion pulse so completion fires when response valid is asserted.",
+          "Keep the rest of the response datapath unchanged so backpressure still occurs and exposes the premature release.",
+          "Optionally revert round-robin snoop-response arbitration to fixed priority to increase starvation pressure after the state-corruption bug is reintroduced."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_snp_forwarder.v",
+          "hw/rtl/cache/VX_snp_rsp_arb.v"
+        ],
+        "target_module_or_logic": "snoop forwarder CAM-slot release and snoop response arbitration",
+        "commit_fix_summary": "The fix changes sfq_release to require snp_rsp_ready in addition to snp_rsp_valid, and it replaces fixed-priority arbiters on the snoop response path with round-robin arbiters.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_snp_forwarder.v, the release condition was changed from snp_rsp_valid to snp_rsp_valid && snp_rsp_ready. The same commit changed snoop-path arbiters from VX_fixed_arbiter to VX_rr_arbiter."
+      },
+      "expected_failure_mode": "A snoop-forward entry can be freed before its response is accepted, leading to lost completion state, stuck snoop responses, or a cache coherence hang under backpressure.",
+      "evidence_for_injection": [
+        "VX_snp_forwarder.v shows that sfq_release directly controls release_slot of the snoop CAM buffer.",
+        "The module maintains pending_cntrs per forwarded entry, so early release corrupts the lifetime of an in-flight snoop.",
+        "The commit message explicitly identifies the symptom as a snoop forwarding hang."
+      ],
+      "notes": [
+        "The handshake mutation in VX_snp_forwarder.v is the smallest and most reusable reinjection target.",
+        "The round-robin arbiter change is real but should be treated as secondary grounding, not the primary portable injection step."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 cache snoop forwarding 中真实的活性错误。最核心的行为修复是：只有在 snoop 响应完成 valid-ready 握手后才释放 snoop-forward 跟踪项；相关响应仲裁器也从 fixed priority 改成了 round-robin，以降低饥饿风险。",
+    "why_it_counts": [
+      "提交信息明确指出了 snoop forwarding hang。",
+      "补丁修改的是 cache snoop 控制 RTL，而不是测试或软件。",
+      "关键 hunk 把条目释放时机从仅 valid 改为 valid 且 ready，这会直接影响在途 snoop 跟踪的正确性。"
+    ],
+    "disqualifiers": [
+      "同一提交还包含 README、Makefile 和纯格式化修改。",
+      "仲裁器替换也有助于活性，但最小且最清晰的可回注故障仍是释放握手条件。"
+    ],
+    "evidence": [
+      "在 hw/rtl/cache/VX_snp_forwarder.v 中，sfq_release 从 snp_rsp_valid 改为 snp_rsp_valid && snp_rsp_ready。",
+      "同一模块维护每个条目的 pending counter，并用 sfq_release 在所有转发请求完成后释放 CAM 槽位。",
+      "hw/rtl/cache/VX_snp_forwarder.v 和 hw/rtl/cache/VX_snp_rsp_arb.v 都把 snoop 路径上的 VX_fixed_arbiter 改成了 VX_rr_arbiter。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_snp_forwarder.v",
+      "hw/rtl/cache/VX_snp_rsp_arb.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 snoop-forwarding 路径中，控制器通常会在 snoop 请求被扇出时分配一个跟踪项，并且只有在最终 snoop 响应真正被下游接收后才释放该项。如果在响应 valid 出现时就释放，而不是等 valid-ready 握手完成，就会在背压场景下过早释放跟踪槽位。这会破坏未完成 snoop 的完成计数，进而让后续 snoop 或响应卡死。",
+      "portable_injection_spec": {
+        "affected_mechanism": "snoop 完成跟踪",
+        "trigger_condition": "snoop 响应已经 valid，但下游消费者临时拉低 ready，尤其是在存在多个被转发子请求或响应竞争时。",
+        "injection_action": "仅凭响应 valid 就退休 snoop 跟踪项，而不是等响应握手真正完成后再退休。",
+        "implementation_pattern": "去掉释放条件中的 ready 项",
+        "portability_notes": [
+          "可映射到任意会为每个转发请求分配跟踪项、并在完成时释放该项的 cache、一致性引擎或 snoop-forwarder。",
+          "如果目标 DUT 没有显式 CAM，就把故障注入到“减少未完成 snoop 计数”或“标记转发事务完成”的逻辑上。",
+          "如需额外增强活性压力，可把 round-robin 仲裁器改回 fixed priority，但主故障仍是过早释放条件。"
+        ],
+        "concrete_injection_steps": [
+          "找到标记 forwarded snoop 完成或释放其跟踪槽位的逻辑。",
+          "去掉完成脉冲中的下游 ready 限定，使其在响应 valid 时就触发。",
+          "保持其余响应数据路径不变，让背压仍然存在并暴露过早释放问题。",
+          "可选地把 snoop 响应仲裁从 round-robin 改回 fixed priority，以在重新引入状态错误后增加饥饿概率。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_snp_forwarder.v",
+          "hw/rtl/cache/VX_snp_rsp_arb.v"
+        ],
+        "target_module_or_logic": "snoop forwarder 的 CAM 槽位释放与 snoop 响应仲裁逻辑",
+        "commit_fix_summary": "修复把 sfq_release 改成同时要求 snp_rsp_valid 和 snp_rsp_ready，并把 snoop 响应路径上的 fixed-priority 仲裁器替换成 round-robin。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_snp_forwarder.v 中，释放条件从 snp_rsp_valid 改成了 snp_rsp_valid && snp_rsp_ready。同一提交还把 snoop 路径仲裁器从 VX_fixed_arbiter 改成 VX_rr_arbiter。"
+      },
+      "expected_failure_mode": "snoop-forward 条目可能在响应真正被接收前就被释放，导致完成状态丢失、snoop 响应卡住，或在背压场景下出现一致性挂起。",
+      "evidence_for_injection": [
+        "VX_snp_forwarder.v 表明 sfq_release 直接驱动 snoop CAM buffer 的 release_slot。",
+        "该模块维护每个转发条目的 pending_cntrs，因此过早释放会破坏在途 snoop 的生命周期。",
+        "提交信息明确把症状描述为 snoop forwarding hang。"
+      ],
+      "notes": [
+        "VX_snp_forwarder.v 中的握手条件变异是最小且最可复用的故障回注点。",
+        "round-robin 仲裁变更是真实修复的一部分，但应作为次级依据，而不是主注入步骤。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

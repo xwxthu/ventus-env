@@ -1,0 +1,133 @@
+{
+  "dataset_id": 33,
+  "original_review_id": 40,
+  "meta": {
+    "id": 40,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "95ca49a85ff4e00493275b9f9d065a2421e31b39",
+    "subject": "writeback cache fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "The bank-local flush state machine was acknowledging completion too early; the fix waits for the final downstream handshake and emits completion as a separate done pulse.",
+    "why_it_counts": [
+      "The patch is localized RTL control logic in the bank flush unit.",
+      "It corrects flush completion semantics rather than performance or style.",
+      "A wrong completion pulse can cause maintenance sequencing errors even when data storage is unchanged."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_bank_flush.sv adds STATE_DONE between FLUSH and IDLE.",
+      "The terminal transition in STATE_FLUSH now requires both the last counter value and flush_out_ready.",
+      "flush_in_ready is now driven only in STATE_DONE, creating a one-cycle completion pulse after the final accepted flush beat."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank_flush.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A maintenance walker that scans cache lines or ways must not report completion merely because its internal counter reached the last entry. It must wait until the final flush or maintenance beat is actually accepted downstream, and it should usually return completion as a clean, separate pulse. Otherwise the controller can acknowledge flush completion before the last operation was consumed or can lose the completion event entirely.",
+      "portable_injection_spec": {
+        "affected_mechanism": "terminal flush-handshake completion",
+        "trigger_condition": "The flush walker reaches its last line or way while the downstream consumer is not yet ready to accept that final maintenance beat.",
+        "injection_action": "Allow the walker to leave the flush state as soon as the terminal count is reached, without waiting for the final ready or accept handshake, and merge completion into the same transition.",
+        "implementation_pattern": "skip terminal handshake and remove done pulse state",
+        "portability_notes": [
+          "Apply this to a bank-local or set-walk maintenance FSM that emits one operation per line or per way.",
+          "The counter and address-generation logic should remain unchanged; only the terminal completion condition should be weakened.",
+          "A separate done state or registered completion pulse is the main protection being removed."
+        ],
+        "concrete_injection_steps": [
+          "Locate the maintenance FSM that iterates over lines or ways during flush.",
+          "Identify the condition that currently waits for both terminal count and downstream acceptance.",
+          "Change the terminal transition so it depends only on the counter reaching the last element.",
+          "Collapse or remove the separate completion-pulse state so completion is reported immediately."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank_flush.sv"
+        ],
+        "target_module_or_logic": "bank-local flush state machine around STATE_FLUSH and STATE_DONE",
+        "commit_fix_summary": "The fix adds STATE_DONE, waits for flush_out_ready on the last flush iteration, and generates flush_in_ready only from the done state to create a clean completion pulse.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove STATE_DONE in VX_bank_flush.sv, restore the direct FLUSH-to-IDLE transition, and stop requiring flush_out_ready on the final counter value."
+      },
+      "expected_failure_mode": "The flush requester can observe completion before the last flush beat is accepted, or it can miss a clean done pulse, leading to premature unlock or incomplete maintenance.",
+      "evidence_for_injection": [
+        "The only touched file is VX_bank_flush.sv, isolating the bug to the flush FSM.",
+        "The fix specifically strengthens the final FLUSH exit condition with flush_out_ready.",
+        "Completion signaling moved from an internal register side effect to an explicit done state."
+      ],
+      "notes": [
+        "This bug is portable to any maintenance FSM with a terminal handshake.",
+        "Keep the scan counter and target-address generation intact when reinjecting the fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "bank 本地 flush 状态机原本会过早确认完成；修复要求等待最后一次下游握手成功后，再以独立 done 脉冲返回完成。",
+    "why_it_counts": [
+      "补丁是 bank flush 单元中的局部 RTL 控制逻辑修复。",
+      "它修正的是 flush 完成语义，而不是性能或代码风格。",
+      "即使存储阵列不变，错误的完成脉冲也会导致维护时序出错。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_bank_flush.sv 在 FLUSH 和 IDLE 之间新增了 STATE_DONE。",
+      "STATE_FLUSH 的终止转移现在同时要求计数到最后一项且 flush_out_ready 为真。",
+      "flush_in_ready 现在只在 STATE_DONE 驱动，从而在最后一个 flush beat 被接受后产生单周期完成脉冲。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank_flush.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "执行 cache line 或 cache way 扫描的维护型 walker，不能仅因为内部计数器走到最后一个元素就报告完成。它必须等待最后一个 flush 或维护 beat 真正被下游接受，并且通常要以独立、干净的完成脉冲形式返回。否则控制器可能在最后一个操作尚未被消费时就确认 flush 完成，或者直接丢掉完成事件。",
+      "portable_injection_spec": {
+        "affected_mechanism": "flush 末尾握手的完成判定",
+        "trigger_condition": "flush walker 已经走到最后一个 line 或 way，但下游消费者此时还没有准备好接收最后一个维护 beat。",
+        "injection_action": "让 walker 只要内部计数到最后一项就退出 flush 状态，而不等待最后一次 ready 或 accept 握手，并把完成信号和这次状态转移合并。",
+        "implementation_pattern": "skip terminal handshake and remove done pulse state",
+        "portability_notes": [
+          "把该故障映射到每 line 或每 way 发出一次操作的 bank 本地或 set-walk 维护状态机上。",
+          "计数器和地址生成逻辑应保持不变，只削弱终止完成条件。",
+          "独立的 done 状态或寄存的完成脉冲，是这次修复提供的主要保护。"
+        ],
+        "concrete_injection_steps": [
+          "定位 flush 期间按 line 或 way 迭代的维护状态机。",
+          "找出当前同时等待终止计数和下游接受的条件。",
+          "把该终止转移改为只依赖计数器到达最后一个元素。",
+          "折叠或删除独立的完成脉冲状态，使完成立即返回。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank_flush.sv"
+        ],
+        "target_module_or_logic": "bank 本地 flush 状态机中的 STATE_FLUSH 与 STATE_DONE",
+        "commit_fix_summary": "修复增加了 STATE_DONE，在最后一次 flush 迭代上等待 flush_out_ready，并只在 done 状态驱动 flush_in_ready，以产生干净的完成脉冲。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 VX_bank_flush.sv 中的 STATE_DONE，恢复 FLUSH 直接回到 IDLE，并在计数到最后一项时不再要求 flush_out_ready。"
+      },
+      "expected_failure_mode": "flush 请求方可能在最后一个 flush beat 尚未被接受时就看到完成，或者收不到干净的 done 脉冲，导致过早解锁或维护不完整。",
+      "evidence_for_injection": [
+        "唯一被修改的文件是 VX_bank_flush.sv，说明故障集中在 flush FSM。",
+        "修复明确强化了 FLUSH 最后一次退出时对 flush_out_ready 的要求。",
+        "完成信号从内部寄存副作用改成了显式的 done 状态。"
+      ],
+      "notes": [
+        "该故障模式可以迁移到任何带末尾握手的维护状态机。",
+        "重新注入时应保持扫描计数器和目标地址生成逻辑不变。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "dataset_id": 325,
+  "original_review_id": 392,
+  "meta": {
+    "id": 392,
+    "repo": "vortex",
+    "branch": "tensor_unit",
+    "commit": "bbc44350b7ef7e84ed620278d3949100b6241c7b",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "operand_collection",
+    "summary": "This commit fixes collector pinning for ordered execution classes by separating LSU traffic and ordered SFU or CSR-like traffic onto different dedicated collectors.",
+    "why_it_counts": [
+      "The patch changes active collector-selection logic in a core issue-stage RTL module.",
+      "The code comments explicitly tie the change to ordering constraints for LSU and CSR-like control accesses.",
+      "The functional edit is localized and reversible; the VX_schedule change is formatting only."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "In VX_operands.sv, EX_LSU is changed to select collector 0 instead of collector 1.",
+      "The SFU rule is broadened from EX_SFU plus inst_sfu_is_wctl(...) to all EX_SFU traffic, and the comment now says CSR access should be ordered as well.",
+      "The VX_schedule.sv hunk is alignment-only and does not change behavior."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Some execution classes must be serialized for correctness, but not all of them should share the same pre-execution collector. Memory operations may need one stable queue, while ordered control-side operations such as CSR or warp-control requests may need a different stable queue. If one class is only partially pinned, or the dedicated queues are swapped, ordered operations can interleave incorrectly or contend through the wrong collector.",
+      "portable_injection_spec": {
+        "affected_mechanism": "dedicated collector mapping for multiple ordered execution classes",
+        "trigger_condition": "The DUT has multiple operand collectors or issue queues, and both memory traffic and ordered control-side traffic can be in flight.",
+        "injection_action": "Narrow the ordered-control pinning back to a small opcode subset and/or swap the dedicated collector assignment between the memory class and the control class.",
+        "implementation_pattern": "swap dedicated queues or narrow ordered-class predicate",
+        "portability_notes": [
+          "Use whatever instruction class in the target DUT carries ordering-sensitive system, CSR, or warp-control behavior.",
+          "The exact collector numbers are not portable; what matters is separating the two ordered classes onto stable but distinct queues.",
+          "If the target design has only one collector, this bug does not apply."
+        ],
+        "concrete_injection_steps": [
+          "Locate the collector-selection logic that special-cases ordered memory operations and ordered control-side operations.",
+          "Restrict the control-side rule so only one special opcode stays pinned, or swap which dedicated collector each class uses.",
+          "Keep the generic collector path unchanged so only the class-specific ordering policy regresses."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_operands.sv"
+        ],
+        "target_module_or_logic": "select_opcs collector-pinning logic for EX_LSU and EX_SFU",
+        "commit_fix_summary": "The fix moves EX_LSU to collector 0, pins all EX_SFU traffic to collector 1, and updates the comment to include CSR ordering.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the old mapping where EX_LSU was pinned to collector 1 and only inst_sfu_is_wctl(...) traffic was pinned to collector 0."
+      },
+      "expected_failure_mode": "Ordered memory and control-side operations can be routed through the wrong collectors, causing out-of-order issue, interference between serialized classes, or incorrect CSR or warp-control sequencing.",
+      "evidence_for_injection": [
+        "The diff changes both the collector index and the opcode predicate.",
+        "The updated source comment explicitly extends the ordering requirement to CSR access.",
+        "No other behavioral file in the commit changes the execution semantics."
+      ],
+      "notes": [
+        "A minimal reinjection is to narrow the EX_SFU rule back to inst_sfu_is_wctl(...).",
+        "A fuller replay is to also swap the LSU and SFU dedicated collector indices back to the old mapping."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "operand_collection",
+    "summary": "该提交修复了需要保持顺序的执行类别的 collector 固定策略，把 LSU 流量与需要保持顺序的 SFU/CSR 类流量分到不同的专用 collector 上。",
+    "why_it_counts": [
+      "补丁修改了核心发射阶段 RTL 模块中的有效 collector 选择逻辑。",
+      "代码注释明确把该修改与 LSU 以及 CSR 类控制访问的顺序约束关联起来。",
+      "功能性改动局部且可逆；VX_schedule 的变更仅为格式调整。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 VX_operands.sv 中，EX_LSU 从原来的 collector 1 改为选择 collector 0。",
+      "SFU 规则从 EX_SFU 且 inst_sfu_is_wctl(...) 扩大为所有 EX_SFU 流量，注释也改为说明 CSR 访问同样需要保持顺序。",
+      "VX_schedule.sv 的 hunk 只有对齐变化，没有行为差异。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "有些执行类别为了正确性必须串行化，但它们未必应该共享同一个执行前 collector。内存操作可能需要一个稳定队列，而 CSR、warp-control 等需要保持顺序的控制类操作可能需要另一个稳定队列。如果某一类只被部分固定，或者两个专用队列被交换，顺序敏感操作就可能错误交错，或者通过不合适的 collector 发生竞争。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多个有序执行类别的专用 collector 映射",
+        "trigger_condition": "DUT 具有多个操作数 collector 或发射队列，并且内存流量与有序控制流量可以同时在飞。",
+        "injection_action": "把控制类的固定条件重新缩窄到少数特定 opcode，并且或交换内存类与控制类的专用 collector 映射。",
+        "implementation_pattern": "交换专用队列或收窄有序类别谓词",
+        "portability_notes": [
+          "在目标 DUT 中，可把这里的控制类映射到任何顺序敏感的系统、CSR 或 warp-control 指令类别。",
+          "collector 的具体编号并不具备可移植性，关键在于把两个有序类别固定到不同且稳定的队列上。",
+          "如果目标设计只有一个 collector，则该故障不适用。"
+        ],
+        "concrete_injection_steps": [
+          "定位对有序内存操作和有序控制类操作做特殊处理的 collector 选择逻辑。",
+          "把控制类规则缩回只覆盖一个特殊子操作，或者交换两个类别使用的专用 collector。",
+          "保持通用 collector 路径不变，只让类别专属的顺序策略退化。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_operands.sv"
+        ],
+        "target_module_or_logic": "EX_LSU 与 EX_SFU 的 select_opcs collector 固定逻辑",
+        "commit_fix_summary": "修复把 EX_LSU 改到 collector 0，把所有 EX_SFU 流量固定到 collector 1，并在注释中加入了 CSR 顺序要求。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复旧映射：EX_LSU 固定到 collector 1，且只有 inst_sfu_is_wctl(...) 的流量固定到 collector 0。"
+      },
+      "expected_failure_mode": "有序内存操作和有序控制操作会被送入错误的 collector，导致乱序发射、两个串行化类别彼此干扰，或者 CSR/warp-control 时序错误。",
+      "evidence_for_injection": [
+        "该差异同时修改了 collector 编号和 opcode 判定条件。",
+        "更新后的源码注释明确把顺序要求扩展到了 CSR 访问。",
+        "该提交中没有其他行为性文件改变执行语义。"
+      ],
+      "notes": [
+        "最小重注入方式是把 EX_SFU 规则重新缩窄为 inst_sfu_is_wctl(...)。",
+        "若想更完整回放原始缺陷，还应把 LSU 与 SFU 的专用 collector 编号一起改回旧映射。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

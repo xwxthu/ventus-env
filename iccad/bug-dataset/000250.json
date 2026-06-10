@@ -1,0 +1,131 @@
+{
+  "dataset_id": 250,
+  "original_review_id": 300,
+  "meta": {
+    "id": 300,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "e3459d602b63eb8317b3998da08e5c167121482b",
+    "subject": "mshr early acceptance error fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "The patch fixes an L2 MSHR scheduling bug by suppressing schedule.d.valid while an A-channel request from the same MSHR is still pending.",
+    "why_it_counts": [
+      "MSHR.scala changes io.schedule.d.valid to also require sche_a_valid to be false.",
+      "sche_a_valid tracks whether this MSHR still has an outstanding schedule.a request.",
+      "Without this gate, the MSHR can advertise D-side work too early and be accepted in the wrong order."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Single-line change in ventus/src/L2cache/MSHR.scala.",
+      "sche_a_valid is set on allocate and cleared only when io.schedule.a.fire.",
+      "io.schedule.d.valid already depended on io.valid and sink_d_reg, and now also blocks on sche_a_valid."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/L2cache/MSHR.scala"
+      ],
+      "target_module_or_logic": "MSHR schedule.d valid gating against outstanding schedule.a",
+      "mutation_strategy": "restore_old_condition",
+      "suggested_edit": "Change io.schedule.d.valid back to io.valid and sink_d_reg, removing the extra gate on sche_a_valid.",
+      "expected_failure_mode": "The scheduler accepts D-side work before the miss request for the same MSHR has launched, creating premature acceptance or ordering errors.",
+      "notes": [],
+      "portable_bug_context": "An MSHR entry that still owes an outbound miss request should not simultaneously advertise downstream completion-side work as ready. If D-side scheduling becomes visible too early, the scheduler can accept work before the miss request has actually launched.",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR A-side versus D-side schedule ordering",
+        "trigger_condition": "An MSHR has return-path data or status while its outbound request side is still pending.",
+        "injection_action": "Allow D-side schedule valid to ignore the flag that an A-side request is still outstanding.",
+        "implementation_pattern": "drop pending-request exclusion from ready/valid predicate",
+        "portability_notes": [
+          "The reusable bug is premature visibility of a later transaction stage while an earlier stage is still pending."
+        ],
+        "concrete_injection_steps": [
+          "Find the predicate that marks an MSHR eligible for D/refill/response-side scheduling.",
+          "Remove the term that suppresses eligibility while a request-side launch is still pending.",
+          "Stress with delayed request-side issuance and observe early acceptance."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/MSHR.scala"
+        ],
+        "target_module_or_logic": "io.schedule.d.valid qualification against sche_a_valid",
+        "commit_fix_summary": "The fix adds !sche_a_valid to io.schedule.d.valid so D-side scheduling stays hidden until the A-side schedule request has fired.",
+        "mutation_strategy": "remove_pending_a_gate_from_d_valid",
+        "source_level_edit_anchor": "At the io.schedule.d.valid assignment near the top of MSHR.scala, remove the !sche_a_valid term."
+      },
+      "evidence_for_injection": [
+        "sche_a_valid also drives io.schedule.a.valid in the surrounding code.",
+        "The fix is a one-line schedule-visibility gate, so reinjection is precise."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该补丁修复了 L2 MSHR 调度错误：当同一个 MSHR 的 A 通道请求仍未完成时，不再提前拉高 schedule.d.valid。",
+    "why_it_counts": [
+      "MSHR.scala 把 io.schedule.d.valid 修改为额外要求 sche_a_valid 为假。",
+      "sche_a_valid 用于跟踪该 MSHR 是否仍有未完成的 schedule.a 请求。",
+      "没有这个门控时，MSHR 可能过早暴露 D 侧工作，从而以错误顺序被接受。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "ventus/src/L2cache/MSHR.scala 中是单行修改。",
+      "sche_a_valid 在 allocate 时置位，只在 io.schedule.a.fire 时清零。",
+      "io.schedule.d.valid 原本依赖 io.valid 和 sink_d_reg，现在还会受 sche_a_valid 阻塞。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/L2cache/MSHR.scala"
+      ],
+      "target_module_or_logic": "MSHR 中 schedule.d 相对 outstanding schedule.a 的 valid 门控",
+      "mutation_strategy": "restore_old_condition",
+      "suggested_edit": "把 io.schedule.d.valid 改回仅依赖 io.valid 和 sink_d_reg，去掉对 sche_a_valid 的额外门控。",
+      "expected_failure_mode": "调度器会在同一 MSHR 的 miss 请求真正发出前就接受 D 侧工作，产生过早接受或次序错误。",
+      "notes": [],
+      "portable_bug_context": "如果某个 MSHR 条目仍然欠着一个对外 miss 请求，它就不应该同时把完成侧工作对调度器暴露为 ready。如果 D 侧调度过早变得可见，调度器就可能在 miss 请求真正发出前先接受后续阶段工作。",
+      "portable_injection_spec": {
+        "affected_mechanism": "MSHR 中 A 侧与 D 侧的调度次序",
+        "trigger_condition": "某个 MSHR 已经带有返回路径数据或状态，但其对外请求侧仍处于 pending。",
+        "injection_action": "让 D 侧 schedule valid 忽略“同一条目仍有 A 侧请求未发出”的标志。",
+        "implementation_pattern": "从 ready/valid 谓词中删除 pending-request 排斥项",
+        "portability_notes": [
+          "可复用的错误本质是：更早事务阶段尚未完成时，就过早暴露更晚阶段工作。"
+        ],
+        "concrete_injection_steps": [
+          "找到把某个 MSHR 标记为可进行 D/refill/response-side 调度的谓词。",
+          "删除其中“request-side 仍 pending 时禁止可用”的条件。",
+          "在 request-side 发射被延迟时观察是否出现过早接受。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/MSHR.scala"
+        ],
+        "target_module_or_logic": "针对 sche_a_valid 的 io.schedule.d.valid 限定",
+        "commit_fix_summary": "该修复在 io.schedule.d.valid 中加入 !sche_a_valid，使 D 侧调度在 A-side schedule 请求真正 fire 前保持不可见。",
+        "mutation_strategy": "remove_pending_a_gate_from_d_valid",
+        "source_level_edit_anchor": "在 MSHR.scala 顶部附近的 io.schedule.d.valid 赋值处，去掉 !sche_a_valid。"
+      },
+      "evidence_for_injection": [
+        "周边代码里 sche_a_valid 也驱动 io.schedule.a.valid。",
+        "修复只是单行的调度可见性门控，因此 reinjection 很精确。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

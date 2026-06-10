@@ -1,0 +1,149 @@
+{
+  "dataset_id": 342,
+  "original_review_id": 414,
+  "meta": {
+    "id": 414,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "d021ce83b6986b3973bd75bbf3bd5aa63d8acca7",
+    "subject": "Fix tlb miss during scatter/gather memory access"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "The main fix preserves multicycle scatter/gather progress across trap and `eret`, while the same commit also hardens decode so ITLB-miss/illegal instructions do not present as valid memory or branch ops.",
+    "why_it_counts": [
+      "The commit message explicitly describes a scatter/gather TLB-miss correctness bug.",
+      "The patch adds trap-state plumbing in control registers and writeback RTL, which is central DUT behavior.",
+      "The same commit also fixes a second DUT-side decode bug by clearing branch/memory/cache-control flags for illegal instructions."
+    ],
+    "disqualifiers": [
+      "Also includes emulator-side synchronization changes.",
+      "Also includes MMU-disabled compile cleanup in fetch/tag logic."
+    ],
+    "evidence": [
+      "`hardware/core/control_registers.sv` adds `CR_SUBCYCLE` storage and records `wb_fault_subcycle` when a fault is taken.",
+      "`hardware/core/writeback_stage.sv` exports `wb_fault_subcycle` and restores `cr_eret_subcycle` on `BRANCH_ERET` rollbacks instead of always using the live subcycle.",
+      "`hardware/core/instruction_decode_stage.sv` gates `is_branch`, `is_memory_access`, and `is_cache_control` with `is_legal_instruction`, matching the ITLB-miss side-effect fix described in the commit message."
+    ],
+    "touched_dut_files": [
+      "hardware/core/control_registers.sv",
+      "hardware/core/defines.sv",
+      "hardware/core/instruction_decode_stage.sv",
+      "hardware/core/writeback_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A multicycle vector memory operation must resume from the exact element or lane that faulted. If trap state saves only the PC and not the current subcycle, exception return replays the instruction from the wrong element, which can repeat or skip individual gather/scatter accesses. This commit also fixes decode hardening for invalid instructions, but the replay-state bug is the clearer fault-injection target.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multicycle memory-op fault replay state",
+        "trigger_condition": "A scatter/gather memory instruction takes a TLB miss or similar trap after some elements have already executed, then resumes through exception return.",
+        "injection_action": "Do not save or do not restore the element/subcycle index for the faulting multicycle memory operation.",
+        "implementation_pattern": "drop trap-state progress field or ignore saved replay index on exception return",
+        "portability_notes": [
+          "Map “subcycle” to whatever per-lane or per-element progress state your DUT uses for multicycle vector memory instructions.",
+          "The bug can be injected either when trap state is captured or when exception return reconstructs restart state.",
+          "The issue only manifests on operations that can partially complete before faulting; scalar single-cycle accesses will usually not expose it."
+        ],
+        "concrete_injection_steps": [
+          "Locate the trap/exception state that records restart information for multicycle memory operations.",
+          "Remove the snapshot of the active lane or element index when a memory-side fault is taken.",
+          "Or preserve the snapshot but ignore it on exception return and restart from the live or default lane index.",
+          "Keep the rollback PC intact so the injected bug isolates replay-state corruption rather than changing control flow broadly."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/control_registers.sv",
+          "hardware/core/defines.sv",
+          "hardware/core/writeback_stage.sv"
+        ],
+        "target_module_or_logic": "Nyuzi trap/eret replay state for scatter-gather subcycle recovery",
+        "commit_fix_summary": "The fix adds a control-register field for subcycle state, captures it on faults in writeback, and restores it on `eret` rollbacks; the same commit also gates several decode outputs with legality to avoid ITLB-miss side effects.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In `hardware/core/writeback_stage.sv`, `wb_fault_subcycle` was added and `BRANCH_ERET` rollback switched to `cr_eret_subcycle`; `hardware/core/control_registers.sv` adds `CR_SUBCYCLE` storage for that state."
+      },
+      "expected_failure_mode": "After returning from a TLB miss or interrupt in the middle of scatter/gather, execution resumes at the wrong lane, causing repeated accesses, skipped elements, bad pointers, or corrupted memory results.",
+      "evidence_for_injection": [
+        "The commit message says the current subcycle must be saved when a fault occurs and restored on `eret`.",
+        "The RTL change spans both trap capture and exception-return rollback, showing the bug is about replay state rather than ordinary decode.",
+        "A second DUT fix in decode confirms the commit is genuinely about hardware correctness, even though the replay-state bug is the primary injection target."
+      ],
+      "notes": [
+        "The decode-hardening change is real but secondary; this dataset entry focuses on the replay-state bug because it yields a clearer, portable mutation.",
+        "Emulator edits are not part of the hardware injection target."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交的主要修复是让多周期 scatter/gather 在 trap 与 `eret` 之间保留执行进度；同一提交还增强了译码，使 ITLB miss/非法指令不再伪装成有效的 memory 或 branch 操作。",
+    "why_it_counts": [
+      "提交信息明确描述了 scatter/gather 在 TLB miss 下的正确性缺陷。",
+      "补丁在控制寄存器和 writeback RTL 中增加了 trap 状态传递，这是核心 DUT 行为。",
+      "同一提交还修复了第二个 DUT 缺陷：对非法指令清除 branch/memory/cache-control 标志。"
+    ],
+    "disqualifiers": [
+      "同时包含模拟器侧的同步修改。",
+      "同时包含 MMU 关闭场景下的取指/标记逻辑编译清理。"
+    ],
+    "evidence": [
+      "`hardware/core/control_registers.sv` 增加了 `CR_SUBCYCLE` 状态，并在 fault 发生时记录 `wb_fault_subcycle`。",
+      "`hardware/core/writeback_stage.sv` 导出了 `wb_fault_subcycle`，并在 `BRANCH_ERET` 回滚时使用 `cr_eret_subcycle`，而不是始终使用当前 subcycle。",
+      "`hardware/core/instruction_decode_stage.sv` 用 `is_legal_instruction` 门控 `is_branch`、`is_memory_access` 和 `is_cache_control`，与提交说明中的 ITLB miss 副作用修复一致。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/control_registers.sv",
+      "hardware/core/defines.sv",
+      "hardware/core/instruction_decode_stage.sv",
+      "hardware/core/writeback_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "多周期向量内存操作必须从发生 fault 的确切元素或 lane 继续执行。如果 trap 状态只保存 PC 而不保存当前 subcycle，异常返回后就会从错误的元素重放该指令，导致 scatter/gather 中的单个访问被重复或跳过。该提交还修复了非法指令的译码加固问题，但更适合作为故障注入目标的是重放状态缺陷。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多周期内存操作的 fault 重放状态",
+        "trigger_condition": "scatter/gather 内存指令在部分元素已执行后发生 TLB miss 或类似 trap，然后通过异常返回恢复。",
+        "injection_action": "不保存或不恢复发生 fault 的多周期内存操作的元素/subcycle 索引。",
+        "implementation_pattern": "删除 trap 进度字段，或在异常返回时忽略保存的重放索引",
+        "portability_notes": [
+          "这里的 “subcycle” 应映射到目标 DUT 中多周期向量内存操作使用的 lane 或元素进度状态。",
+          "该缺陷既可以在 trap 状态捕获时注入，也可以在异常返回恢复状态时注入。",
+          "只有会在 fault 前部分完成的操作才容易暴露该问题；标量单周期访问通常看不出来。"
+        ],
+        "concrete_injection_steps": [
+          "找到记录多周期内存操作重启信息的 trap/异常状态结构。",
+          "去掉 memory-side fault 发生时对当前 lane 或元素索引的保存。",
+          "或者保留保存逻辑，但在异常返回时忽略该字段，改为从默认或当前 lane 恢复。",
+          "保留回滚 PC 不变，使注入后的故障主要体现为重放进度损坏，而不是大范围控制流变化。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/control_registers.sv",
+          "hardware/core/defines.sv",
+          "hardware/core/writeback_stage.sv"
+        ],
+        "target_module_or_logic": "Nyuzi 中 scatter-gather 的 trap/eret subcycle 恢复状态",
+        "commit_fix_summary": "该修复增加了 subcycle 控制寄存器字段，在 writeback 中于 fault 时捕获该状态，并在 `eret` 回滚时恢复；同一提交也对若干译码输出增加了合法性门控。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 `hardware/core/writeback_stage.sv` 中新增了 `wb_fault_subcycle`，并把 `BRANCH_ERET` 的回滚改为使用 `cr_eret_subcycle`；`hardware/core/control_registers.sv` 为该状态增加了 `CR_SUBCYCLE` 存储。"
+      },
+      "expected_failure_mode": "scatter/gather 在 TLB miss 或中断后返回时会从错误的 lane 恢复，导致重复访问、元素丢失、错误指针访问或内存结果损坏。",
+      "evidence_for_injection": [
+        "提交信息明确说明 fault 发生时需要保存当前 subcycle，并在 `eret` 时恢复。",
+        "RTL 改动同时覆盖了 trap 捕获和异常返回回滚，说明问题核心在于重放状态。",
+        "同一提交还修复了译码问题，进一步表明它确实是在修正 DUT 行为而非仅做重构。"
+      ],
+      "notes": [
+        "译码加固改动是真实修复，但属于次要问题；本数据项聚焦于更容易跨 DUT 复用的重放状态缺陷。",
+        "模拟器修改不属于硬件故障注入目标。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

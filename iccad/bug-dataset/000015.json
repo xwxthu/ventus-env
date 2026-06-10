@@ -1,0 +1,133 @@
+{
+  "dataset_id": 15,
+  "original_review_id": 20,
+  "meta": {
+    "id": 20,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "7e74724ed3cfd7855c939b4b81a99e476490a912",
+    "subject": "update cdma to fix bit width issue for large cube height in dc mode"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes CDMA DC-mode request grain selection for large cube heights by widening the remaining-slice counter and comparing it against a width-matched fetch_grain.",
+    "why_it_counts": [
+      "The patch changes request sizing logic in NV_NVDLA_CDMA_dc.v, a central DUT data-fetch path.",
+      "The edited signals req_slice_left, is_req_grain_last, and req_cur_grain_w determine how much height each DMA request covers.",
+      "The commit message directly identifies a large cube height bit-width bug in DC mode."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "req_slice_left widens from 12 bits to 14 bits and its overflow monitor narrows from 3 bits to 1 bit.",
+      "is_req_grain_last now compares req_slice_left against {2'd0, fetch_grain} instead of an unextended fetch_grain.",
+      "req_cur_grain_w now truncates req_slice_left only after the last-grain decision, using req_slice_left[11:0] on the true branch."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a DMA engine breaks a tall feature map into fetch grains, it must keep the full remaining-height width until after deciding whether the current request is the last grain. If the remaining-height value is too narrow, or if it is compared against a smaller fetch_grain without width alignment, the last-grain decision becomes configuration dependent and wrong for large heights.",
+      "portable_injection_spec": {
+        "affected_mechanism": "remaining-height based request grain selection",
+        "trigger_condition": "DC-mode fetches on cubes tall enough that the remaining height cannot be represented safely in the old narrow width.",
+        "injection_action": "Narrow the remaining-height counter and compare it directly against a smaller fetch_grain without width extension.",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "Map this to any DMA or loader that slices a large height dimension into fixed request grains.",
+          "The key error is to decide last request size from a truncated remainder, not to change the programmed fetch grain itself.",
+          "If the design already zero-extends constants before compare, remove that extension as part of the mutation."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that computes remaining height or remaining slices before issuing the next request.",
+          "Reduce that remainder signal to the stale narrow width used before the fix.",
+          "Compare the narrowed remainder directly against the fetch-grain constant without explicit width matching.",
+          "Use the truncated remainder as the final request size only in the last-grain case."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA DC-mode req_slice_left and last-grain selection",
+        "commit_fix_summary": "The fix widens req_slice_left to 14 bits, compares it against a zero-extended fetch_grain, and only truncates to 12 bits when forming req_cur_grain_w for the last request.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore req_slice_left to 12 bits, compare is_req_grain_last against fetch_grain without {2'd0,...} extension, and let req_cur_grain_w select the truncated req_slice_left directly."
+      },
+      "expected_failure_mode": "Large DC-mode cubes can choose the wrong last request size, causing under-fetch, over-fetch, or malformed request sequencing near the end of the height dimension.",
+      "evidence_for_injection": [
+        "req_height_cnt_d1 is updated by req_cur_grain_w, so a wrong last-grain decision directly perturbs future request boundaries.",
+        "The overflow assertion on mon_req_slice_left confirms the original signal width was part of the bug surface.",
+        "The commit fixes both the compare and the selected data path, which is exactly what a portable reinjection must restore."
+      ],
+      "notes": [
+        "This bug is a width-and-compare pairing issue; mutating only one side may weaken the original failure mode.",
+        "The failure should be tested with tall cubes rather than small regression shapes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 DC 模式下大 cube height 的 CDMA 请求粒度选择问题：扩展剩余 slice 计数器位宽，并用位宽匹配后的 fetch_grain 做比较。",
+    "why_it_counts": [
+      "补丁修改的是 NV_NVDLA_CDMA_dc.v 中的请求尺寸逻辑，这是 DUT 的核心数据抓取路径。",
+      "被修改的 req_slice_left、is_req_grain_last 和 req_cur_grain_w 直接决定每个 DMA 请求覆盖多少高度。",
+      "提交信息直接指出这是 DC 模式下 large cube height 的位宽缺陷。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "req_slice_left 从 12 位扩展到 14 位，对应的 overflow monitor 也从 3 位缩减为 1 位。",
+      "is_req_grain_last 现在会把 req_slice_left 与 {2'd0, fetch_grain} 比较，而不是和未扩展的 fetch_grain 比较。",
+      "req_cur_grain_w 现在只在 last-grain 判定之后才截断 req_slice_left，即 true 分支上使用 req_slice_left[11:0]。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当 DMA 引擎把一个很高的特征图拆成多个 fetch grain 时，必须先以完整位宽保留剩余高度，再决定当前请求是否是最后一个 grain。如果剩余高度信号过窄，或者它与更小位宽的 fetch_grain 直接比较而没有做位宽对齐，那么最后一拍粒度判定就会变成配置相关，并在大高度场景下出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "基于剩余高度的请求粒度选择",
+        "trigger_condition": "DC 模式抓取场景中，cube 高度足够大，使得剩余高度无法安全地被旧的窄位宽表示。",
+        "injection_action": "把剩余高度计数器缩回窄位宽，并在比较时直接拿它和更小位宽的 fetch_grain 相比而不做位宽扩展。",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "可映射到任何按固定 request grain 切分大高度维度的 DMA 或 loader。",
+          "关键错误在于用被截断的 remainder 来做最后一次请求的判定，而不是修改 fetch grain 的编程值本身。",
+          "如果目标设计已经在比较前对常量做零扩展，则应把这一步一起去掉。"
+        ],
+        "concrete_injection_steps": [
+          "找到发出下一次请求前用于计算剩余高度或剩余 slice 的逻辑。",
+          "把该 remainder 信号缩回修复前使用的旧窄位宽。",
+          "在比较时直接让缩窄后的 remainder 与 fetch-grain 常量比较，不做显式位宽匹配。",
+          "只在 last-grain 分支上使用被截断的 remainder 作为最终请求大小。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA DC 模式下的 req_slice_left 与 last-grain 选择逻辑",
+        "commit_fix_summary": "修复把 req_slice_left 扩展到 14 位，用零扩展后的 fetch_grain 做比较，并只在形成最后一个请求的 req_cur_grain_w 时才截断到 12 位。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "可通过把 req_slice_left 恢复为 12 位、让 is_req_grain_last 直接与 fetch_grain 比较而不加 {2'd0,...} 扩展，并让 req_cur_grain_w 直接选择被截断后的 req_slice_left 来回注。"
+      },
+      "expected_failure_mode": "在大型 DC 模式 cube 上，设计可能会选择错误的最后一次请求大小，从而在高度维度末端产生少抓、过抓或错误的请求序列。",
+      "evidence_for_injection": [
+        "req_height_cnt_d1 会用 req_cur_grain_w 更新，因此 last-grain 判定一旦出错，后续请求边界会立刻偏移。",
+        "mon_req_slice_left 上的 overflow assertion 说明原始信号位宽本身就是故障表面的一部分。",
+        "该提交同时修复比较逻辑和被选中的数据路径，这也正是便携式回注时应恢复的行为。"
+      ],
+      "notes": [
+        "这是一个位宽与比较同时出错的问题；只改一边可能无法完全复现原始失效模式。",
+        "验证该故障时应优先使用高高度 cube，而不是较小的回归测试形状。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

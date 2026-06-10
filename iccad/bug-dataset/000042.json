@@ -1,0 +1,137 @@
+{
+  "dataset_id": 42,
+  "original_review_id": 50,
+  "meta": {
+    "id": 50,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "fa4e5dbe995355a923783595e1bb0ba54d4fc97c",
+    "subject": "Fix a bug where instruction retire perf events were counted when an instruction was rolled back"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "perf_counter",
+    "summary": "Fixes retire-event generation so architecturally exposed performance counters do not count instructions that are rolled back instead of truly retired.",
+    "why_it_counts": [
+      "The commit message explicitly describes a rollback-versus-retire hardware bug.",
+      "The patch changes writeback RTL that generates performance events consumed by the core performance-counter block.",
+      "The new condition preserves the special branch case that can redirect control while still legitimately retiring."
+    ],
+    "disqualifiers": [
+      "The impact is on architecturally visible counter accuracy rather than the main execution datapath."
+    ],
+    "evidence": [
+      "wb_perf_instruction_retire changed from any valid writeback-stage instruction to a condition additionally gated by !wb_rollback_en or a valid branch instruction.",
+      "The same always_ff block already arbitrates rollbacks and writeback, so this is the commit-point retirement signal rather than a test hook.",
+      "core.sv wires wb_perf_instruction_retire into perf_events, which are counted by performance_counters and exposed through control-register state."
+    ],
+    "touched_dut_files": [
+      "hardware/core/writeback_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a speculative pipeline, a late-stage instruction can be valid for writeback timing purposes even though the same cycle also triggers a rollback that squashes it. A retire performance event must therefore be qualified by real commit semantics, not just by pipeline validity. Otherwise the machine over-reports retired instructions, except in special cases such as branches that both retire and redirect control.",
+      "portable_injection_spec": {
+        "affected_mechanism": "retire-event qualification under rollback",
+        "trigger_condition": "An instruction reaches commit or writeback in a cycle where the core is also rolling back that thread or pipeline, excluding any architecturally valid redirect case that still counts as retired.",
+        "injection_action": "Count every valid late-stage instruction as retired without filtering out rollback cycles.",
+        "implementation_pattern": "drop rollback predicate from the retire counter event",
+        "portability_notes": [
+          "This applies to designs with performance counters or trace events that claim to count retired instructions.",
+          "If the design has a documented exception such as retiring branches on redirects, preserve that exception in the fixed version and remove it for reinjection only if it existed in the buggy version.",
+          "The bug is still a DUT bug because software can observe the wrong count through control/status registers."
+        ],
+        "concrete_injection_steps": [
+          "Locate the signal that increments or emits the retired-instruction event at commit or writeback.",
+          "Remove the gating that suppresses the event when a rollback, squash, or flush is active for that instruction.",
+          "Leave the rest of the writeback datapath intact so only the retire accounting becomes optimistic.",
+          "If the implementation has a special-case retire-on-redirect path, collapse it back into the unconditional valid-based event."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/writeback_stage.sv"
+        ],
+        "target_module_or_logic": "writeback_stage retired-instruction performance-event generation",
+        "commit_fix_summary": "The fix changes wb_perf_instruction_retire so it is suppressed on rollback cycles except when a valid branch instruction still legitimately retires.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore wb_perf_instruction_retire to the old unconditional valid check over fx5, ix, and dd instruction-valid signals."
+      },
+      "expected_failure_mode": "Retired-instruction counters overcount on squashed or rolled-back instructions, especially during branch redirects, traps, or rollback-causing memory events.",
+      "evidence_for_injection": [
+        "The patch only changes the retire-event predicate, not the counter block or tests.",
+        "The fix explicitly references wb_rollback_en, tying the event to commit semantics.",
+        "The signal feeds the core-wide perf_events bus, so the incorrect behavior is externally observable."
+      ],
+      "notes": [
+        "This mutation targets observability correctness rather than arithmetic or control-flow correctness.",
+        "A good regression stimulus is a workload with frequent rollbacks and reads of the retire counter."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "perf_counter",
+    "summary": "该提交修复了退休事件生成逻辑，避免架构上可见的性能计数器把被回滚的指令也计为已退休指令。",
+    "why_it_counts": [
+      "提交信息明确描述了“回滚”与“退休”判定混淆的硬件缺陷。",
+      "补丁修改的是 writeback RTL 中生成性能事件的逻辑，而这些事件会送入核心性能计数器模块。",
+      "新条件保留了分支这种“虽然重定向控制流但仍然合法退休”的特殊情况。"
+    ],
+    "disqualifiers": [
+      "影响主要体现在架构可见的计数器准确性，而不是主执行数据通路。"
+    ],
+    "evidence": [
+      "wb_perf_instruction_retire 从“任一写回级有效指令都计数”变为还必须满足 !wb_rollback_en，或属于仍可合法退休的有效分支指令。",
+      "同一个 always_ff 块本身就在处理 rollback 与 writeback，因此这里是提交点语义，不是测试钩子。",
+      "core.sv 将 wb_perf_instruction_retire 接入 perf_events，再由 performance_counters 计数并通过控制寄存器状态对外暴露。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/writeback_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在带投机执行的流水线中，晚期流水级中的指令即使在时序上“有效”，同周期也可能因为 rollback 被真正冲刷掉。因此“退休性能事件”必须用真实提交语义来限定，而不能只看流水线 valid。否则机器会把并未真正提交的指令也统计为已退休；只有像分支这种既会重定向控制流又能合法退休的特例除外。",
+      "portable_injection_spec": {
+        "affected_mechanism": "rollback 条件下的退休事件限定",
+        "trigger_condition": "某条指令到达提交或写回阶段时，同周期核心也在对该线程或该流水线执行 rollback；但不包括那些架构上仍算退休的重定向特例。",
+        "injection_action": "让所有晚期流水级有效指令都无条件产生 retired 事件，不再过滤 rollback 周期。",
+        "implementation_pattern": "从退休计数事件中删除 rollback 谓词",
+        "portability_notes": [
+          "适用于任何提供“已退休指令数”性能计数器或跟踪事件的设计。",
+          "如果设计中存在“重定向但仍退休”的明确特例，修复版应保留它；重注入时只在原始缺陷版本确实缺少过滤的情况下移除该限定。",
+          "之所以仍属于 DUT bug，是因为软件能通过控制/状态寄存器观察到错误计数。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 commit 或 writeback 处用于累加或发出 retired-instruction 事件的信号。",
+          "删除该事件在 rollback、squash 或 flush 活跃时的抑制条件。",
+          "保持其它写回数据通路不变，使错误只体现在退休统计过于乐观。",
+          "如果实现中对 redirect 指令做了特例处理，可把它重新并回“只看 valid”式的无条件事件。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/writeback_stage.sv"
+        ],
+        "target_module_or_logic": "writeback_stage 中已退休指令性能事件的生成逻辑",
+        "commit_fix_summary": "修复让 wb_perf_instruction_retire 在 rollback 周期被抑制，只保留“有效分支仍可合法退休”的例外。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 wb_perf_instruction_retire 恢复成旧的无条件 valid 判定，即只看 fx5、ix、dd 三条路径的 instruction_valid。"
+      },
+      "expected_failure_mode": "已退休指令计数器会在被 squash 或 rollback 的指令上过计数，尤其容易出现在分支重定向、trap 或引发 rollback 的访存事件中。",
+      "evidence_for_injection": [
+        "补丁只改了退休事件谓词，没有改计数器模块本身，也不是测试改动。",
+        "修复显式引用 wb_rollback_en，说明问题就在提交语义判定。",
+        "该信号最终送入核心级 perf_events 总线，因此错误行为对软件可见。"
+      ],
+      "notes": [
+        "该变异针对的是可观察性正确性，而不是算术结果或控制流本身。",
+        "适合用高 rollback 频率的工作负载并读取 retire counter 来回归验证。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

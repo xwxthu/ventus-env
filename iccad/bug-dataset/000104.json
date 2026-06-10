@@ -1,0 +1,147 @@
+{
+  "dataset_id": 104,
+  "original_review_id": 131,
+  "meta": {
+    "id": 131,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "0709d656ca66222dfe0128b8294973122ab5ef07",
+    "subject": "writeback cache fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes writeback-cache eviction correctness by changing read-during-write hazard handling and by making fill/flush operations explicitly read victim tag, data, and dirty-byte state.",
+    "why_it_counts": [
+      "The commit subject explicitly says writeback cache fixes.",
+      "The substantive logic changes are in core cache-bank, tag, and data-array DUT files.",
+      "The patch corrects real writeback behavior around victim readout, fill/flush handling, and eviction hazard timing."
+    ],
+    "disqualifiers": [
+      "The commit also includes unrelated decode/ALU cleanup and generic RAM assertion plumbing.",
+      "Several cache sub-fixes are bundled together, so the reinjection should target one isolated mechanism instead of reverting the entire commit wholesale."
+    ],
+    "evidence": [
+      "VX_cache_bank replaces the old coarse rdw_hazard_st0/rdw_hazard_st1 scheme with separate hazard selectors that block replay, fills, and flushes at different points.",
+      "mem_rsp_ready and line_flush_ready are newly gated by rdw_hazard2_sel, while fill/flush are no longer suppressed later by the old rdw_hazard_st1 gate.",
+      "VX_cache_data now computes line_read so writeback fills and flushes actively read victim data and dirty-byte state.",
+      "VX_cache_tags now reads tag RAM on writeback fill/flush as well, instead of assuming fills and flushes never stall."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_data.sv",
+      "hw/rtl/cache/VX_cache_tags.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A writeback cache must capture the victim line's tag, data, and dirty-byte information when a fill or flush evicts a line. If eviction-related reads are suppressed, or if hazard handling stalls the path too late after victim selection, the writeback request can be built from stale metadata or stale data. That causes incorrect dirty eviction behavior even when ordinary cache hits still work.",
+      "portable_injection_spec": {
+        "affected_mechanism": "writeback victim readout and eviction hazard handling",
+        "trigger_condition": "A fill or flush needs to evict a dirty line, especially when another cache write or RAM read-during-write hazard is nearby in the pipeline.",
+        "injection_action": "Prevent the eviction path from reading fresh victim tag/data/dirty state during fill/flush, or suppress the eviction path only after it has already entered the pipeline.",
+        "implementation_pattern": "drop victim-read enable on eviction path or restore late RDW hazard stall",
+        "portability_notes": [
+          "Map this to the replacement/eviction path of any writeback cache that must read arrays to assemble a writeback request.",
+          "The most reusable hook is the victim snapshot: tag, line data, and dirty mask must all correspond to the evicted line in the same transaction.",
+          "A smaller but still representative mutation is to disable array reads on fill/flush while leaving normal load-hit reads intact."
+        ],
+        "concrete_injection_steps": [
+          "In the eviction path, stop asserting the tag/data/dirty-array read enables for fill or flush operations that evict a line.",
+          "Or reintroduce a late pipeline stall that masks fill/flush or writeback queue push after victim selection, rather than blocking the conflicting operation earlier.",
+          "Keep normal cache-hit read/write behavior unchanged so the failure is concentrated on dirty eviction and flush traffic."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv",
+          "hw/rtl/cache/VX_cache_data.sv",
+          "hw/rtl/cache/VX_cache_tags.sv"
+        ],
+        "target_module_or_logic": "writeback eviction path, victim array reads, and RDW hazard gating",
+        "commit_fix_summary": "The fix retimes read-during-write hazard control in VX_cache_bank and adds explicit fill/flush read enables in VX_cache_data and VX_cache_tags so victim state is read correctly for writeback and flush operations.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Reintroduce the old rdw_hazard-based masking of fill/flush or mreq_queue_push, and remove the fill/flush read enables that were added in VX_cache_data and VX_cache_tags."
+      },
+      "expected_failure_mode": "Dirty evictions can use stale victim metadata or stale data, leading to incorrect writebacks, corrupted cache state, or replay/flush anomalies.",
+      "evidence_for_injection": [
+        "The fixed cache data path explicitly reads arrays on fill/flush in writeback mode, which the older version did not do correctly.",
+        "The bank-level hazard logic was split into multiple cases, showing that the old single stall bit was not timing-safe for every eviction case.",
+        "The commit subject and file concentration both point to writeback-cache correctness rather than performance tuning."
+      ],
+      "notes": [
+        "The generic RAM assertion additions are validation aids, not the primary bug fix.",
+        "A single representative reinjection can target the victim-read enable bug without reverting unrelated cleanup in the same commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交通过调整写回缓存中的读写同周期冲突处理，并让 fill/flush 显式读取 victim 的 tag、data 和 dirty-byte 状态，修复了 writeback cache 的正确性问题。",
+    "why_it_counts": [
+      "提交标题明确写明是 writeback cache fixes。",
+      "实质性的逻辑修改集中在核心缓存 bank、tag array 和 data array 的 DUT 文件中。",
+      "补丁修正了 victim 读取、fill/flush 处理以及 eviction hazard 时序上的真实写回行为错误。"
+    ],
+    "disqualifiers": [
+      "该提交还包含与此无关的 decode/ALU 清理以及通用 RAM 断言布线。",
+      "多个缓存子修复被打包在同一提交里，因此回注故障时应选择一个隔离良好的机制，而不是机械地整包回滚。"
+    ],
+    "evidence": [
+      "VX_cache_bank 把旧的粗粒度 rdw_hazard_st0/rdw_hazard_st1 方案拆成了多个 hazard 选择信号，分别在不同阶段阻塞 replay、fill 和 flush。",
+      "mem_rsp_ready 与 line_flush_ready 新增了 rdw_hazard2_sel gate，而 fill/flush 不再像旧逻辑那样在更晚阶段被 rdw_hazard_st1 直接压掉。",
+      "VX_cache_data 现在通过 line_read 让 writeback 模式下的 fill/flush 主动读取 victim data 和 dirty-byte 状态。",
+      "VX_cache_tags 也会在 writeback 的 fill/flush 上读取 tag RAM，而不再假设 fill/flush 绝不会 stall。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache_bank.sv",
+      "hw/rtl/cache/VX_cache_data.sv",
+      "hw/rtl/cache/VX_cache_tags.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "写回缓存在 fill 或 flush 需要驱逐一条 cache line 时，必须抓取 victim line 的 tag、data 和 dirty-byte 信息。如果与驱逐相关的读操作被压掉，或者 hazard 处理在 victim 已经被选中之后才过晚地把路径 stall 掉，那么最终构造出的 writeback 请求就可能使用过期的元数据或过期的数据。这样即使普通命中路径仍然工作，dirty eviction 也会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "writeback victim readout and eviction hazard handling",
+        "trigger_condition": "fill 或 flush 需要驱逐一条 dirty line，且流水线附近同时存在另一次 cache write 或 RAM 的 read-during-write hazard。",
+        "injection_action": "阻止驱逐路径在 fill/flush 时读取最新的 victim tag/data/dirty 状态，或者只在请求已进入流水线后才去压制驱逐路径。",
+        "implementation_pattern": "drop victim-read enable on eviction path or restore late RDW hazard stall",
+        "portability_notes": [
+          "把该故障映射到任何需要通过读取阵列内容来组装 writeback 请求的 writeback cache 的 replacement/eviction 路径。",
+          "最可移植的锚点是 victim 快照：tag、整行 data 和 dirty mask 必须在同一次事务里对应同一条被驱逐的 line。",
+          "一个更小但仍有代表性的变异是：仅关闭 fill/flush 上的阵列读使能，保留普通 load-hit 读取不变。"
+        ],
+        "concrete_injection_steps": [
+          "在驱逐路径上，停止对会驱逐 cache line 的 fill 或 flush 断言 tag/data/dirty 阵列读使能。",
+          "或者重新引入一种过晚的流水线 stall：在 victim 已经被选中之后再把 fill/flush 或 writeback queue push 压掉，而不是在更早的冲突点阻塞。",
+          "保持普通 cache-hit 的读写行为不变，使错误主要集中在 dirty eviction 与 flush 流量上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache_bank.sv",
+          "hw/rtl/cache/VX_cache_data.sv",
+          "hw/rtl/cache/VX_cache_tags.sv"
+        ],
+        "target_module_or_logic": "writeback eviction path, victim array reads, and RDW hazard gating",
+        "commit_fix_summary": "修复在 VX_cache_bank 中重新定时了读写同周期 hazard 控制，并在 VX_cache_data 与 VX_cache_tags 中增加了 fill/flush 的显式读使能，从而让 writeback 和 flush 操作能正确读取 victim 状态。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "重新引入旧的 rdw_hazard 对 fill/flush 或 mreq_queue_push 的压制，并移除 VX_cache_data 与 VX_cache_tags 新增的 fill/flush 读使能。"
+      },
+      "expected_failure_mode": "dirty eviction 可能使用过期的 victim 元数据或过期数据，导致 writeback 错误、cache 状态损坏，或 replay/flush 异常。",
+      "evidence_for_injection": [
+        "修复后的 cache data 路径会在 writeback 模式的 fill/flush 上显式读取阵列，而旧版本对此处理不正确。",
+        "bank 级 hazard 逻辑被拆成多个 case，说明旧的单一 stall bit 对所有驱逐场景都不安全。",
+        "提交标题与改动文件集中度都表明这是 writeback cache 正确性问题，而不是性能调优。"
+      ],
+      "notes": [
+        "新增的通用 RAM 断言主要是验证辅助，不是主要的 bug fix。",
+        "一个具有代表性的回注可以只针对 victim-read enable 缺陷，而不必回滚提交中的其他清理项。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

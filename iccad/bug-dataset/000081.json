@@ -1,0 +1,139 @@
+{
+  "dataset_id": 81,
+  "original_review_id": 102,
+  "meta": {
+    "id": 102,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "45e8e293b4d23b8ceca196ec83c1bc72060e5c55",
+    "subject": "coreRsp_Q overflow fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache_response_backpressure",
+    "summary": "This commit fixes an L1 DCache response-stage bug where read-hit and miss-return replies were not held across core-response queue backpressure, allowing replies to be overwritten or dropped.",
+    "why_it_counts": [
+      "The commit message explicitly describes a core response queue overflow fix.",
+      "The substantive logic change is in the L1 DCache response datapath, not in tooling.",
+      "The patch adds ready-qualified holding for both hit-generated and miss-generated core responses."
+    ],
+    "disqualifiers": [
+      "The patch also comments out one pipeline assertion and changes a test timeout, but those edits are ancillary."
+    ],
+    "evidence": [
+      "readHit_st2 changes from RegNext(readHit_st1) to held state instead of a one-cycle pulse.",
+      "A new readHit_st2 && !coreRsp_Q.io.enq.ready branch re-drives the cached read data while the response queue is stalled.",
+      "coreRsp_st2_valid_from_coreReq_Reg changes from RegNext(...) to RegEnable(..., coreRsp_Q.io.enq.ready).",
+      "coreRsp_st2_valid_from_memRsp likewise changes from RegNext(...) to RegEnable(..., coreRsp_Q.io.enq.ready)."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A pipelined cache often generates a core-visible response one stage before a downstream response FIFO or Decoupled interface accepts it. If the response-valid and response-data state advances unconditionally, backpressure causes a hit reply or miss return to be overwritten, replayed incorrectly, or dropped. The fix makes the response stage hold its state until enqueue is actually accepted.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache response hold under backpressure",
+        "trigger_condition": "A load hit or miss return reaches the response stage while the downstream core-response queue is not ready.",
+        "injection_action": "Allow the response stage valid/data markers to advance for only one cycle even when the downstream enqueue is stalled.",
+        "implementation_pattern": "remove ready gating from response hold registers and delete stall-time replay logic",
+        "portability_notes": [
+          "Apply this to the stage that latches cache hit data or miss-return data before a FIFO, queue, or ready/valid boundary.",
+          "If the DUT has separate hit-generated and miss-generated valid bits, both should lose their downstream-ready qualification to match the original bug class.",
+          "The bug is about control-state retention under stall, not about SRAM read contents or request decode."
+        ],
+        "concrete_injection_steps": [
+          "Find the register or small queue that stores a core response between cache lookup completion and response enqueue.",
+          "Replace a held or ready-gated response-valid register with an unconditional one-cycle pipeline register, or remove the ready term from its enable.",
+          "Remove the branch that reissues cached response data when the response queue remains full.",
+          "Keep the downstream response queue unchanged so only the response-retention behavior becomes faulty."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala"
+        ],
+        "target_module_or_logic": "DataCache coreRsp_Q enqueue path around readHit_st2 and coreRsp_st2_valid_from_* tracking",
+        "commit_fix_summary": "The fix turns readHit_st2 into held state, adds an explicit replay path when coreRsp_Q is not ready, and changes both core-request and miss-response valid tracking from unconditional RegNext to ready-gated RegEnable logic.",
+        "mutation_strategy": "restore_unconditional_pipeline",
+        "source_level_edit_anchor": "In commit 45e8e293/7dbd257b, readHit_st2 stops being RegNext(readHit_st1), a readHit_st2 && !coreRsp_Q.io.enq.ready data branch is added, and response-valid registers become gated by coreRsp_Q.io.enq.ready."
+      },
+      "expected_failure_mode": "Under response backpressure, load-hit or miss-return replies can be lost, delayed incorrectly, or mismatched to requests, potentially surfacing as queue overflow symptoms or missing core responses.",
+      "evidence_for_injection": [
+        "The modified logic sits directly between cache-hit/miss-return generation and coreRsp_Q enqueue.",
+        "Both hit and miss response valid paths are changed to hold state until downstream ready.",
+        "The added stall branch only exists to preserve response data when enqueue cannot happen in the current cycle."
+      ],
+      "notes": [
+        "The assertion comment-out and test timeout edit are not part of the reusable fault model.",
+        "Dataset items 81 and 82 are the same hardware fix on two branches."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache_response_backpressure",
+    "summary": "该提交修复了 L1 DCache 响应级的一个错误：当核心响应队列回压时，read-hit 与 miss-return 回复没有被保持，导致回复可能被覆盖或丢失。",
+    "why_it_counts": [
+      "提交信息明确说明修复的是核心响应队列 overflow。",
+      "实质性修改位于 L1 DCache 的响应数据通路，而不是工具或测试基础设施。",
+      "补丁为 hit 产生的回复和 miss 产生的回复都加入了受 ready 约束的保持逻辑。"
+    ],
+    "disqualifiers": [
+      "补丁还顺带注释掉一个流水线断言并修改了测试超时，但这些改动是附带噪声。"
+    ],
+    "evidence": [
+      "readHit_st2 从 RegNext(readHit_st1) 改成了可保持状态，而不是单周期脉冲。",
+      "新增的 readHit_st2 && !coreRsp_Q.io.enq.ready 分支会在响应队列阻塞时重新驱动缓存的读数据。",
+      "coreRsp_st2_valid_from_coreReq_Reg 从 RegNext(...) 改为 RegEnable(..., coreRsp_Q.io.enq.ready)。",
+      "coreRsp_st2_valid_from_memRsp 也从 RegNext(...) 改为 RegEnable(..., coreRsp_Q.io.enq.ready)。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在带流水线的 cache 中，核心可见的回复通常会先在一个阶段生成，再进入下游的 FIFO 或 ready/valid 接口。如果回复的 valid 与 data 状态不管下游是否接收都继续前进，那么一旦出现回压，hit 回复或 miss 返回就会被覆盖、错误重放或直接丢失。本次修复的本质就是让响应级在真正入队之前一直保持状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache response hold under backpressure",
+        "trigger_condition": "当 load hit 或 miss return 到达响应级，而下游核心响应队列还没有 ready 时。",
+        "injection_action": "让响应级的 valid/data 标记即使在下游入队被阻塞时也只保持一个周期后继续前进。",
+        "implementation_pattern": "remove ready gating from response hold registers and delete stall-time replay logic",
+        "portability_notes": [
+          "把这个故障映射到 cache lookup 完成后、进入 FIFO/队列/ready-valid 边界之前的回复保持级。",
+          "如果目标 DUT 分开保存 hit 回复 valid 和 miss 回复 valid，应同时去掉这两条路径上的下游 ready 约束。",
+          "这个 bug 的核心是阻塞条件下的控制状态保持错误，而不是 SRAM 数据内容本身。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 cache 命中或 miss 返回之后、正式送入核心回复接口之前保存回复的寄存器或小队列。",
+          "把受 ready 控制的回复 valid 保持寄存器改成无条件单周期流水寄存器，或者删掉其使能条件中的 ready。",
+          "删除在响应队列满时重放缓存回复数据的分支。",
+          "保持下游回复队列本身不变，只让回复保持行为出错。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala"
+        ],
+        "target_module_or_logic": "DataCache 中围绕 readHit_st2 与 coreRsp_st2_valid_from_* 的 coreRsp_Q 入队路径",
+        "commit_fix_summary": "修复把 readHit_st2 改成可保持状态，在 coreRsp_Q 未 ready 时加入显式重放分支，并把 coreReq 与 missRsp 的 valid 跟踪从无条件 RegNext 改成受 ready 控制的 RegEnable。",
+        "mutation_strategy": "restore_unconditional_pipeline",
+        "source_level_edit_anchor": "在提交 45e8e293/7dbd257b 中，readHit_st2 不再是 RegNext(readHit_st1)，新增了 readHit_st2 && !coreRsp_Q.io.enq.ready 分支，多个 response-valid 寄存器也改为由 coreRsp_Q.io.enq.ready 门控。"
+      },
+      "expected_failure_mode": "当响应路径出现回压时，load-hit 或 miss-return 回复可能丢失、错误延迟，或与请求错配，表现为 overflow、超时或缺失的核心回复。",
+      "evidence_for_injection": [
+        "修改后的逻辑正好位于 cache 命中或 miss 返回生成之后、coreRsp_Q 入队之前。",
+        "命中回复和 miss 回复两条 valid 路径都被改成了等到下游 ready 才前进。",
+        "新增的阻塞分支唯一目的就是在无法入队时保留回复数据。"
+      ],
+      "notes": [
+        "被注释掉的断言和测试超时调整不属于可复用的故障模型。",
+        "数据集条目 81 和 82 对应的是两个分支上的同一硬件修复。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "dataset_id": 444,
+  "original_review_id": 588,
+  "meta": {
+    "id": 588,
+    "repo": "miaow",
+    "branch": "master",
+    "commit": "a1afa21aefaa60375aefa04c1576f37c61f7b5ff",
+    "subject": "Fix typo that was resulting in the wrong register address being used for vector operations in the LSU. Overhaul tracemon to properly deal with vector load operations. Vector stores still pending."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "This is a clear LSU DUT bug-fix: the second VGPR source address for vector memory operations was incorrectly driven from the scalar-source mux and is corrected to use the VGPR-source mux.",
+    "why_it_counts": [
+      "The commit message explicitly describes a wrong register address used by the LSU.",
+      "The functional RTL fix is a direct one-line source-selection correction in the LSU.",
+      "The tracemon overhaul is ancillary and does not change the core hardware fix."
+    ],
+    "disqualifiers": [
+      "The commit also includes a large tracemon update."
+    ],
+    "evidence": [
+      "src/verilog/rtl/lsu/lsu_op_manager.v changes vgpr_source2_addr from muxed_sgpr_source2_addr to muxed_vgpr_source2_addr.",
+      "The changed assignment is in the LSU register-address output section that feeds vector memory operations.",
+      "The commit message matches the exact signal-level mistake in the patch.",
+      "The tracemon changes are for observing vector loads and are not required to explain the hardware fix."
+    ],
+    "touched_dut_files": [
+      "src/verilog/rtl/lsu/lsu_op_manager.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A vector LSU often reads separate scalar and vector register operands through different mux trees or register-file ports. If the address sent to a vector source port is accidentally taken from the scalar-source selector instead of the vector-source selector, vector memory operations will fetch operands from the wrong register namespace even though the rest of the LSU control flow is unchanged.",
+      "portable_injection_spec": {
+        "affected_mechanism": "vector-source register address selection",
+        "trigger_condition": "A vector load or store operation needs the second vector source address, especially when scalar and vector register spaces have distinct mux paths.",
+        "injection_action": "Drive a vector source-address port from the scalar-source address mux or another wrong register-bank selector.",
+        "implementation_pattern": "swap source-bank selector",
+        "portability_notes": [
+          "This maps to any GPU or vector LSU that has separate scalar and vector operand address paths.",
+          "The most reusable mutation is miswiring only one source address, leaving enable signals and the rest of the LSU untouched.",
+          "If the DUT names differ, look for the port that feeds the second vector operand address into the register file."
+        ],
+        "concrete_injection_steps": [
+          "Locate the combinational assignment or mux output that drives the second vector register source address for the LSU.",
+          "Reconnect that address to the scalar-source selector or another incorrect source-address path.",
+          "Keep the vector read-enable signals unchanged so the LSU still attempts the vector operand read.",
+          "Run vector LSU operations that depend on the second vector source and observe incorrect register fetches."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/verilog/rtl/lsu/lsu_op_manager.v"
+        ],
+        "target_module_or_logic": "vgpr_source2_addr assignment in lsu_op_manager",
+        "commit_fix_summary": "The fix changes the second VGPR source address output from muxed_sgpr_source2_addr to muxed_vgpr_source2_addr in the LSU output wiring.",
+        "mutation_strategy": "swap_signal",
+        "source_level_edit_anchor": "In lsu_op_manager.v, revert the vgpr_source2_addr assignment so it again uses muxed_sgpr_source2_addr instead of muxed_vgpr_source2_addr."
+      },
+      "expected_failure_mode": "Vector memory operations read the wrong second register address, causing incorrect vector operand selection and downstream load or store corruption even though the LSU still appears to execute normally.",
+      "evidence_for_injection": [
+        "The DUT fix is isolated to a single LSU address-selection assignment.",
+        "The commit message explicitly states that the wrong register address was used for vector operations.",
+        "No broader protocol or timing interpretation is required to understand the failure."
+      ],
+      "notes": [
+        "This is a very narrow and reusable fault: misroute one vector operand address onto the wrong register-bank selector.",
+        "The tracemon changes do not need to be reverted for fault injection."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "这是一个明确的 LSU DUT 修复：向量内存操作使用的第二个 VGPR 源地址原本错误地来自标量源 mux，修复后改为来自 VGPR 源 mux。",
+    "why_it_counts": [
+      "提交信息明确说明 LSU 使用了错误的寄存器地址。",
+      "功能 RTL 修复是在 LSU 中直接改正一条源选择连线。",
+      "tracemon 的大改只是辅助内容，不改变核心硬件修复。"
+    ],
+    "disqualifiers": [
+      "该提交也包含较大的 tracemon 更新。"
+    ],
+    "evidence": [
+      "src/verilog/rtl/lsu/lsu_op_manager.v 把 vgpr_source2_addr 从 muxed_sgpr_source2_addr 改为 muxed_vgpr_source2_addr。",
+      "这个被修改的赋值位于 LSU 的寄存器地址输出区域，会直接驱动向量内存操作。",
+      "提交信息与补丁中的具体信号级错误完全一致。",
+      "tracemon 的改动是为了观察 vector load，不是解释该硬件修复所必需的内容。"
+    ],
+    "touched_dut_files": [
+      "src/verilog/rtl/lsu/lsu_op_manager.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "向量 LSU 往往通过不同的 mux 树或寄存器文件端口去读取标量和向量操作数。如果发给向量源端口的地址误取自标量源选择器而不是向量源选择器，那么即便 LSU 其余控制流程不变，向量内存操作仍会从错误的寄存器命名空间读取操作数。",
+      "portable_injection_spec": {
+        "affected_mechanism": "向量源寄存器地址选择",
+        "trigger_condition": "向量 load 或 store 需要第二个向量源地址时，尤其是在标量与向量寄存器空间具有不同 mux 路径的设计中。",
+        "injection_action": "让某个向量源地址端口由标量源地址 mux 或其他错误的寄存器 bank 选择器驱动。",
+        "implementation_pattern": "swap source-bank selector",
+        "portability_notes": [
+          "这适用于任何在 LSU 中区分标量和向量操作数地址路径的 GPU 或向量处理器。",
+          "最可复用的变异方式是只错接一个源地址，保持 enable 信号和 LSU 其他部分不变。",
+          "若 DUT 命名不同，就去找驱动 LSU 第二个向量操作数地址进入寄存器文件的那个端口。"
+        ],
+        "concrete_injection_steps": [
+          "定位驱动 LSU 第二个向量寄存器源地址的组合赋值或 mux 输出。",
+          "把该地址重新连接到标量源选择路径或其他错误的源地址路径。",
+          "保持向量读使能信号不变，让 LSU 仍然尝试进行向量操作数读取。",
+          "运行依赖第二个向量源的向量 LSU 操作，并观察错误的寄存器读取。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/verilog/rtl/lsu/lsu_op_manager.v"
+        ],
+        "target_module_or_logic": "lsu_op_manager 中的 vgpr_source2_addr 赋值",
+        "commit_fix_summary": "该修复把 LSU 输出连线中的第二个 VGPR 源地址，从 muxed_sgpr_source2_addr 改成了 muxed_vgpr_source2_addr。",
+        "mutation_strategy": "swap_signal",
+        "source_level_edit_anchor": "在 lsu_op_manager.v 中，把 vgpr_source2_addr 的赋值改回旧行为，让它再次使用 muxed_sgpr_source2_addr，而不是 muxed_vgpr_source2_addr。"
+      },
+      "expected_failure_mode": "向量内存操作会读取错误的第二个寄存器地址，导致向量操作数选择错误，并进一步造成 load 或 store 的结果损坏，即使 LSU 表面上仍在正常执行。",
+      "evidence_for_injection": [
+        "这个 DUT 修复被隔离为 LSU 中的一条地址选择赋值。",
+        "提交信息明确指出向量操作使用了错误的寄存器地址。",
+        "理解该故障不需要更复杂的协议或时序解释。"
+      ],
+      "notes": [
+        "这是一个非常窄且可复用的故障：把一个向量操作数地址错误地路由到另一个寄存器 bank 选择器上。",
+        "做故障注入时不需要回退 tracemon 的改动。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

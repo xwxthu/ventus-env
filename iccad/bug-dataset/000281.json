@@ -1,0 +1,135 @@
+{
+  "dataset_id": 281,
+  "original_review_id": 338,
+  "meta": {
+    "id": 338,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "172940133197e3942594de0ec20bf7d049c33ada",
+    "subject": "imadd hardware bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_alignment",
+    "summary": "Fixes a multi-cycle IMADD pipeline bug by carrying instruction-sideband state and the third operand through multiplier latency, and by correcting the output hold enable polarity.",
+    "why_it_counts": [
+      "The patch fixes arithmetic datapath behavior in DUT RTL.",
+      "Without the added pipeline carry, IMADD can use control and operand values from a different instruction.",
+      "The output register enable fix changes whether completed IMADD results are held correctly under backpressure."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_imadd adds op_mod_s and data_in3_s and extends mul_shift_reg to pipeline them alongside uuid, wid, tmask, PC, rd, and wb.",
+      "The multiply result shift changes from op_mod to op_mod_s.",
+      "The add stage changes from data_in3 to data_in3_s.",
+      "The final VX_pipe_register enable changes from stall_out to ~stall_out."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_imadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix addresses state misalignment in a multi-cycle arithmetic pipeline. An IMADD-style unit launches a multiply, then later applies mode-dependent post-processing and adds a third operand. Any sideband values needed after the multiply latency must be delayed with the result. If the design instead reads live control or operand inputs at completion time, a later instruction can overwrite them and corrupt the older operation. The same commit also fixes the final output register so it advances when downstream is ready and holds when stalled.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-cycle arithmetic operand and control alignment",
+        "trigger_condition": "Back-to-back multi-cycle arithmetic instructions carry different post-multiply mode bits or different addends, especially when the result stage experiences backpressure.",
+        "injection_action": "Make the completion stage consume current decode/input signals instead of the delayed sideband values that belong to the in-flight operation.",
+        "implementation_pattern": "drop pipeline carry for sideband operands or invert stall guard",
+        "portability_notes": [
+          "Apply this to any pipeline where a result returns after several cycles but final-stage logic still depends on opcode modifiers, rounding mode, lane mask, or a third source operand.",
+          "The cleanest reusable mutation is to stop delaying the sideband fields rather than to change arithmetic itself.",
+          "A secondary variant is to invert the final output-register enable so the stage updates on stall and holds when ready."
+        ],
+        "concrete_injection_steps": [
+          "Identify the metadata and source operands that must stay aligned with a multi-cycle multiply or MAC result.",
+          "Remove one or more of those fields from the latency-matching pipeline registers, or reconnect the final stage to the live input bus instead of the delayed copy.",
+          "Keep the main multiply pipeline intact so the bug is specifically a state-alignment fault, not a disabled unit.",
+          "If a backpressure variant is desired, flip the hold/advance condition on the final result register so it updates in the wrong ready or stall state."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_imadd.sv"
+        ],
+        "target_module_or_logic": "VX_imadd multiplier-latency sideband carry and output pipe register",
+        "commit_fix_summary": "The commit adds op_mod and data_in3 to mul_shift_reg, switches the post-multiply shift and add to the delayed copies, and fixes pipe_reg enable polarity.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_imadd, remove op_mod/data_in3 from mul_shift_reg and reconnect the post-multiply logic to live op_mod/data_in3; optionally restore pipe_reg enable to stall_out."
+      },
+      "expected_failure_mode": "Completed IMADD operations can be shifted by the wrong amount, add the wrong third operand, or mishandle backpressure so valid results are lost, blocked, or overwritten.",
+      "evidence_for_injection": [
+        "Before the fix, the post-multiply shift used live op_mod even though the multiplier itself is multi-cycle.",
+        "Before the fix, the add stage used live data_in3 rather than a latency-matched copy.",
+        "The output register in the parent revision updated only when stall_out was high, which contradicts the hold-on-stall pattern used by VX_shift_register."
+      ],
+      "notes": [
+        "For a portable dataset entry, the sideband-alignment bug is the primary injection target because it is architecture-reusable.",
+        "The output-enable polarity fix is a valid secondary fault variant from the same commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "pipeline_alignment",
+    "summary": "该提交修复了多周期 IMADD 流水线中的状态对齐错误：把指令侧带状态和第三操作数一起跨乘法延迟传递，并修正了输出保持寄存器的使能极性。",
+    "why_it_counts": [
+      "补丁修复的是 DUT RTL 中的算术数据通路行为。",
+      "如果不把这些侧带状态一起流水化，IMADD 在完成时可能会取到另一条指令的控制位或加数。",
+      "输出寄存器使能修复会改变结果在回压下能否被正确保持。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_imadd 新增 op_mod_s 和 data_in3_s，并扩展 mul_shift_reg 以随 uuid、wid、tmask、PC、rd、wb 一起传递。",
+      "乘法结果后的移位从 op_mod 改为 op_mod_s。",
+      "加法阶段从 data_in3 改为 data_in3_s。",
+      "最终 VX_pipe_register 的 enable 从 stall_out 改为 ~stall_out。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_imadd.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对的是多周期算术流水线中的状态错位问题。IMADD 这类单元先发起乘法，若干周期后再执行与模式相关的后处理并加上第三操作数。凡是在乘法延迟之后还要用到的侧带值，都必须与结果一起延迟。如果设计在完成阶段重新读取实时控制位或实时输入操作数，那么后一条指令就可能覆盖前一条尚未完成操作所需的状态。该提交同时还修复了最终输出寄存器的保持条件，使其在下游 ready 时前推、在 stall 时保持。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多周期算术单元的操作数与控制状态对齐",
+        "trigger_condition": "连续发射的多周期算术指令携带不同的后处理模式位或不同的第三操作数，尤其是在结果阶段存在回压时。",
+        "injection_action": "让完成阶段重新使用当前输入总线上的控制位或操作数，而不是使用与在途操作对应的延迟副本。",
+        "implementation_pattern": "删除侧带字段的流水化传递或翻转 stall 保护条件",
+        "portability_notes": [
+          "适用于任何结果会在多个周期后返回、但最终阶段仍依赖 opcode modifier、舍入模式、lane mask 或第三源操作数的流水线。",
+          "最通用的变异方式是停止延迟这些侧带字段，而不是直接篡改乘法器本身。",
+          "第二种变体是翻转最终输出寄存器的使能，使其在 stall 时更新、在 ready 时保持。"
+        ],
+        "concrete_injection_steps": [
+          "定位那些必须与多周期乘法或 MAC 结果保持对齐的元数据和源操作数。",
+          "把其中一个或多个字段从延迟匹配寄存器中移除，或把最终阶段重新接回实时输入总线而不是延迟副本。",
+          "保持主乘法流水线不变，使故障体现为状态对齐错误而不是单元被禁用。",
+          "若需要回压类变体，可翻转最终结果寄存器的保持/推进条件，使其在错误的 ready 或 stall 状态下更新。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_imadd.sv"
+        ],
+        "target_module_or_logic": "VX_imadd 中跨乘法延迟的侧带状态传递与输出流水寄存器",
+        "commit_fix_summary": "该提交把 op_mod 和 data_in3 加入 mul_shift_reg，使乘法后的移位和加法都使用延迟副本，并修正了 pipe_reg 的 enable 极性。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_imadd 中，把 op_mod/data_in3 从 mul_shift_reg 中移除，并让乘法后逻辑重新使用实时 op_mod/data_in3；可选地把 pipe_reg enable 恢复为 stall_out。"
+      },
+      "expected_failure_mode": "IMADD 完成时可能按错误的位数移位、加上错误的第三操作数，或在回压下丢失、阻塞、覆盖有效结果。",
+      "evidence_for_injection": [
+        "修复前，乘法后的移位使用的是实时 op_mod，而乘法器本身是多周期单元。",
+        "修复前，加法阶段使用的是实时 data_in3，而不是与乘法延迟对齐的副本。",
+        "父版本中的输出寄存器只有在 stall_out 为高时才更新，这与 VX_shift_register 的 stall 保持语义相反。"
+      ],
+      "notes": [
+        "作为可移植的数据集条目，首选注入目标应是侧带状态错位，因为它更容易映射到其他 DUT。",
+        "输出使能极性错误可作为同一提交中的第二种故障变体。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "dataset_id": 17,
+  "original_review_id": 22,
+  "meta": {
+    "id": 22,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "4fe084e1996669c465c2c8923bc52fc9701d9c83",
+    "subject": "fix cdma feature write address wrap issue"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "Fixes CDMA feature-data CBUF write-index wrap detection by deriving the bank-span threshold from the configured bank depth instead of a hardcoded 9-bit shift.",
+    "why_it_counts": [
+      "The patch changes CDMA write-address wrap logic in DUT buffer indexing code.",
+      "The edited predicate determines when a computed CBUF write index has crossed a bank boundary and must wrap.",
+      "The commit message explicitly identifies a feature write address wrap bug."
+    ],
+    "disqualifiers": [
+      "The diff updates embedded generator directives that produce the wrap predicate, rather than a separately regenerated emitted line."
+    ],
+    "evidence": [
+      "The commit replaces the hardcoded is_cbuf_idx_wrap threshold {1'b0, data_bank, 9'b0} with an eperl-generated threshold based on bank_depth_bits.",
+      "The surrounding logic computes cbuf_idx_inc from idx_base, idx_grain_offset, idx_h_offset, and idx_w_offset_add before testing wrap.",
+      "This commit only changes the wrap-detection predicate; the wrapped-address subtraction is fixed in the next commit cb1377f01c1637ade05d606fa0692d76c3cd9699."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Circular buffer write pointers must compare against the true configured bank span before deciding that an address has wrapped. If the wrap comparator uses a stale hardcoded stride, wrap detection becomes configuration dependent. On designs whose bank depth differs from the baked-in constant, writes can cross the legal bank boundary before wrap is noticed, or wrap too early.",
+      "portable_injection_spec": {
+        "affected_mechanism": "buffer write-index wrap detection threshold",
+        "trigger_condition": "A write index approaches or crosses a bank boundary on configurations where the real bank depth is not the hardcoded value.",
+        "injection_action": "Replace the parameterized wrap threshold with a fixed stride constant from an older configuration.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "Map this to any ring or banked buffer address generator that compares an incremented index against a bank-span threshold.",
+          "The reinjected fault should target the wrap comparator, not the index increment itself.",
+          "If the DUT expresses bank depth as a log2 parameter, mutate the shift or zero padding derived from that parameter."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that decides whether a computed write index has crossed the bank boundary.",
+          "Replace the configured bank-span expression with a stale fixed literal stride.",
+          "Keep the wrapped-address datapath unchanged so the error source is specifically late or early wrap detection.",
+          "Exercise a configuration whose bank depth differs from the stale literal."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA cbuf_idx_inc wrap comparator for feature writes",
+        "commit_fix_summary": "The fix generates is_cbuf_idx_wrap from bank_depth_bits instead of the old hardcoded 9-bit bank stride constant.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Restore the old is_cbuf_idx_wrap comparator using {1'b0, data_bank, 9'b0}, or otherwise hardcode the bank-span threshold instead of deriving it from NVDLA_CBUF_BANK_DEPTH."
+      },
+      "expected_failure_mode": "Feature-data writes can detect CBUF wrap too early or too late, sending write indices into the wrong bank region when bank depth differs from the stale constant.",
+      "evidence_for_injection": [
+        "The patch changes only the wrap predicate and leaves the cbuf_idx_w arithmetic otherwise intact in this commit.",
+        "The bank depth is explicitly parameterized in the new eperl helper variable bank_depth_bits.",
+        "A follow-up commit fixes the subtraction path separately, confirming this commit addresses wrap detection itself."
+      ],
+      "notes": [
+        "Confidence is medium because the checked-in diff edits generator directives, but the intended emitted hardware change is explicit.",
+        "For a non-generator DUT, inject the stale threshold directly in the wrap comparator."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "addressing",
+    "summary": "该提交修复了 CDMA feature-data 的 CBUF 写索引回绕检测：使用配置得到的 bank depth 来推导阈值，而不是硬编码的 9 位移位常量。",
+    "why_it_counts": [
+      "补丁修改的是 DUT 缓冲区索引代码中的 CDMA 写地址回绕逻辑。",
+      "被修改的谓词决定计算得到的 CBUF 写索引何时跨过 bank 边界并需要回绕。",
+      "提交信息明确指出这是 feature write address wrap 缺陷。"
+    ],
+    "disqualifiers": [
+      "该 diff 修改的是生成 wrap 谓词的嵌入式 generator 指令，而不是单独重新生成后的最终代码行。"
+    ],
+    "evidence": [
+      "提交把硬编码的 is_cbuf_idx_wrap 阈值 {1'b0, data_bank, 9'b0} 改成基于 bank_depth_bits 的 eperl 生成形式。",
+      "周边逻辑会先用 idx_base、idx_grain_offset、idx_h_offset 和 idx_w_offset_add 计算 cbuf_idx_inc，然后才判断是否回绕。",
+      "该提交只修复回绕检测谓词；真正的回绕后地址减法在下一条提交 cb1377f01c1637ade05d606fa0692d76c3cd9699 中修复。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "环形缓冲区写指针在判断地址是否已经回绕前，必须与真实配置的 bank 跨度比较。如果回绕比较器使用了过时的硬编码跨度，回绕检测就会依赖具体配置。当设计的 bank depth 与写死常量不同时，写入可能在检测到回绕前就越过合法边界，或过早回绕。",
+      "portable_injection_spec": {
+        "affected_mechanism": "缓冲区写索引的回绕检测阈值",
+        "trigger_condition": "在真实 bank depth 与硬编码值不一致的配置上，写索引接近或跨过 bank 边界。",
+        "injection_action": "用旧配置里的固定跨度常量替换参数化回绕阈值。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "可映射到任何把增量索引与 bank 跨度阈值比较的环形或分 bank 缓冲区地址生成器。",
+          "回注应针对回绕比较器，而不是索引增量本身。",
+          "如果 DUT 用 log2 参数表示 bank depth，应修改由该参数导出的移位量或补零位数。"
+        ],
+        "concrete_injection_steps": [
+          "找到判断计算得到的写索引是否跨过 bank 边界的逻辑。",
+          "把配置得到的 bank-span 表达式替换成过时的固定字面跨度。",
+          "保持回绕后地址数据通路不变，使错误来源明确集中在回绕检测过早或过晚。",
+          "使用一个 bank depth 与旧字面常量不同的配置来触发该故障。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "feature write 路径上 CDMA 的 cbuf_idx_inc 回绕比较器",
+        "commit_fix_summary": "修复通过使用 bank_depth_bits 生成 is_cbuf_idx_wrap，而不是继续使用旧的固定 9 位 bank 跨度常量。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "可通过恢复使用 {1'b0, data_bank, 9'b0} 的 is_cbuf_idx_wrap 比较器，或者用硬编码 bank-span 阈值替代从 NVDLA_CBUF_BANK_DEPTH 导出的表达式来回注。"
+      },
+      "expected_failure_mode": "当 bank depth 与旧常量不一致时，feature-data 写入会过早或过晚地检测到 CBUF 回绕，从而把写索引送入错误的 bank 区域。",
+      "evidence_for_injection": [
+        "该补丁只修改回绕谓词，而在这一提交中 cbuf_idx_w 的其他算术保持不变。",
+        "新的 eperl 辅助变量 bank_depth_bits 明确说明 bank depth 已参数化。",
+        "后续提交单独修复了减法路径，证明本提交针对的确实是回绕检测本身。"
+      ],
+      "notes": [
+        "之所以给 medium 置信度，是因为 checked-in diff 改的是 generator 指令，但其发射出的硬件变化非常明确。",
+        "若目标 DUT 不是生成器 RTL，可直接在回绕比较器里植入旧的阈值。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

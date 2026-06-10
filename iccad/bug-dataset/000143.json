@@ -1,0 +1,147 @@
+{
+  "dataset_id": 143,
+  "original_review_id": 179,
+  "meta": {
+    "id": 179,
+    "repo": "gemmini",
+    "branch": "bert",
+    "commit": "204ace4529e831111843011c412053e06feeb1ef",
+    "subject": "fix longstanding unrelated bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "normalization_sequence",
+    "summary": "This commit fixes two real control bugs: a stray unconditional B-input start in ExecuteController and incorrect layernorm store and norm-command progression.",
+    "why_it_counts": [
+      "It updates live DUT control logic in ExecuteController, LoopMatmul, StoreController, and NormCmd.",
+      "The patch removes an unconditional start_inputting_b := true.B that overrode transpose-dependent gating for single-mul execution.",
+      "The layernorm store FSM now advances statistic ID, command phase, and row counters coherently and avoids sending reset-style norm commands on intermediate blocks."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "ExecuteController.scala deletes a second start_inputting_b assignment that forced B inputting on unconditionally.",
+      "LoopMatmul.scala introduces ln_stat_ids and next_cmd and changes next_row and next_i progression to depend on command phase as well as stat ID and j.",
+      "StoreController.scala rewrites laddr.norm_cmd on non-final blocks with NormCmd.non_reset_version so only the final block keeps the reset-like command."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala",
+      "src/main/scala/gemmini/LoopMatmul.scala",
+      "src/main/scala/gemmini/NormCmd.scala",
+      "src/main/scala/gemmini/StoreController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Multi-pass normalization operations such as layernorm and softmax usually require a store-side controller to walk through several statistic phases for each row while preserving partial state across intermediate memory blocks. If the FSM advances row, statistic ID, and phase counters out of sync, or if it sends a reset/finalization command on every intermediate block instead of only the last block, partial statistics are destroyed and later phases consume the wrong state. That mechanism is portable across different DUTs even though this commit also includes a separate one-line input-start bug in ExecuteController.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-pass normalization store sequencing",
+        "trigger_condition": "Layernorm or softmax output spans multiple blocks and requires more than one normalization phase per row.",
+        "injection_action": "Advance the normalization counters without a dedicated phase term and/or keep issuing reset-like commands on intermediate blocks instead of converting them to non-reset accumulation commands.",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "Map this to the controller that sequences normalization-related storebacks or post-processing passes, not to generic DMA code.",
+          "The fault is about preserving partial statistics across tiled store operations; any DUT with row-by-row normalization and blocked memory traffic has an equivalent point.",
+          "A separate small bug in this commit forces a B operand path on unconditionally, but the normalization-sequencing issue is the cleaner reusable injection target."
+        ],
+        "concrete_injection_steps": [
+          "Locate the FSM or microcode that iterates through per-row normalization phases and statistic IDs during storeback.",
+          "Remove the phase counter from the next-row and next-iteration advance condition so rows or iterations wrap too early.",
+          "Restore reset or finalization commands on intermediate blocks instead of converting them to non-reset accumulation variants.",
+          "Run a multi-block layernorm or softmax workload and check for skipped rows, prematurely reset statistics, or wrong normalized outputs."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala",
+          "src/main/scala/gemmini/StoreController.scala",
+          "src/main/scala/gemmini/NormCmd.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "LoopMatmulStC ln_st state progression and StoreController intermediate-block norm_cmd rewriting; secondary ExecuteController B-start gating",
+        "commit_fix_summary": "The fix adds ln_stat_ids and ln_cmd-aware progression in LoopMatmul, introduces NormCmd.non_reset_version for intermediate stores, and removes a stray unconditional start_inputting_b assignment.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Revert the ln_st next_cmd and next_row logic to the older stat-id-only progression and stop rewriting non-final laddr.norm_cmd through NormCmd.non_reset_version; optionally restore start_inputting_b := true.B in ExecuteController."
+      },
+      "expected_failure_mode": "Layernorm or softmax storebacks can reset partial statistics too early, skip or repeat rows, or use the wrong normalization phase; the secondary execute bug can also force B-side input feed when transpose gating should block it.",
+      "evidence_for_injection": [
+        "The patch explicitly introduces a new normalization phase variable, which shows the previous FSM was missing a real sequencing dimension.",
+        "The StoreController change only alters non-final block behavior, matching a bug where intermediate blocks were treated like final ones.",
+        "NormCmd.non_reset_version maps MEAN to SUM and INV_STDDEV to VARIANCE, directly tying the fix to preservation of partial statistics.",
+        "The ExecuteController change is an independent control bug removal and confirms this commit is not just refactoring."
+      ],
+      "notes": [
+        "For dataset portability, the normalization-sequencing bug is the primary injection target.",
+        "The ExecuteController B-start override is a valid secondary one-line fault if an additional mutation is needed."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "normalization_sequence",
+    "summary": "该提交修复了两个真实控制错误：ExecuteController 中多余的无条件 B 输入启动，以及 layernorm 的 store 和 norm-command 推进错误。",
+    "why_it_counts": [
+      "它修改了 ExecuteController、LoopMatmul、StoreController 和 NormCmd 中正在执行的 DUT 控制逻辑。",
+      "补丁删除了一个无条件的 start_inputting_b := true.B，它会覆盖 single-mul 执行里依赖 transpose 的门控。",
+      "layernorm 的 store 状态机现在能一致地推进 statistic ID、命令阶段和行计数，并避免在中间 block 上发送 reset 风格的 norm 命令。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "ExecuteController.scala 删除了第二个 start_inputting_b 赋值，该赋值会无条件强制启动 B 输入。",
+      "LoopMatmul.scala 新增了 ln_stat_ids 和 next_cmd，并把 next_row 与 next_i 的推进改为同时依赖命令阶段、stat ID 和 j。",
+      "StoreController.scala 通过 NormCmd.non_reset_version 重写非最终 block 的 laddr.norm_cmd，使只有最后一个 block 保留 reset 风格命令。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/ExecuteController.scala",
+      "src/main/scala/gemmini/LoopMatmul.scala",
+      "src/main/scala/gemmini/NormCmd.scala",
+      "src/main/scala/gemmini/StoreController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "像 layernorm、softmax 这样的多阶段归一化操作，通常需要 store 侧控制器在每一行上遍历多个统计阶段，并在中间 memory block 之间保留部分状态。如果状态机对行号、statistic ID 和阶段计数的推进不同步，或者在每个中间 block 上都错误地下发 reset 或 finalize 命令，而不是只在最后一个 block 上这样做，那么部分统计量就会被提前销毁，后续阶段也会消费到错误状态。这个机理在不同 DUT 上都成立，尽管该提交还顺手修复了 ExecuteController 中一个独立的一行启动错误。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多阶段归一化的 store 序列推进",
+        "trigger_condition": "layernorm 或 softmax 输出跨越多个 block，且每行需要多个归一化阶段。",
+        "injection_action": "在没有独立阶段项的情况下推进归一化计数器，和/或在中间 block 上继续下发 reset 风格命令，而不是转换成非 reset 的累加命令。",
+        "implementation_pattern": "restore_old_condition",
+        "portability_notes": [
+          "把它映射到负责归一化相关 storeback 或后处理阶段推进的控制器，而不是普通 DMA 代码。",
+          "核心故障是跨分块 store 时部分统计量没有被正确保留；任何按行归一化并带有 blocked memory traffic 的 DUT 都有对应位置。",
+          "该提交里另一个小 bug 是无条件强制 B 操作数路径启动，但更适合作为跨 DUT 注入目标的是归一化序列推进错误。"
+        ],
+        "concrete_injection_steps": [
+          "定位在 storeback 期间推进每行归一化阶段和 statistic ID 的状态机或微码。",
+          "从 next-row 与 next-iteration 的推进条件里去掉阶段计数，使行或迭代过早回绕。",
+          "在中间 block 上恢复 reset 或 finalize 命令，而不是把它们改成非 reset 的累加变体。",
+          "运行跨多个 block 的 layernorm 或 softmax 工作负载，检查是否出现行被跳过、统计量被提前清零或归一化结果错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/LoopMatmul.scala",
+          "src/main/scala/gemmini/StoreController.scala",
+          "src/main/scala/gemmini/NormCmd.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "LoopMatmulStC 的 ln_st 状态推进与 StoreController 中间 block 的 norm_cmd 重写；次要锚点是 ExecuteController 的 B-start 门控",
+        "commit_fix_summary": "修复在 LoopMatmul 中加入了 ln_stat_ids 和 ln_cmd 感知的推进逻辑，在 StoreController 中通过 NormCmd.non_reset_version 处理非最终 store，并删除了多余的无条件 start_inputting_b 赋值。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 ln_st 的 next_cmd 与 next_row 逻辑回退到旧的只看 stat-id 的推进方式，并停止使用 NormCmd.non_reset_version 重写非最终 laddr.norm_cmd；也可选地恢复 ExecuteController 中的 start_inputting_b := true.B。"
+      },
+      "expected_failure_mode": "layernorm 或 softmax 的 storeback 可能过早清空部分统计量、跳过或重复某些行，或者在错误阶段上工作；次要的 execute bug 还会在本应受 transpose 门控限制时强制启动 B 侧输入。",
+      "evidence_for_injection": [
+        "补丁显式引入了新的归一化阶段变量，说明旧状态机缺少真实的序列维度。",
+        "StoreController 的修改只影响非最终 block，这正对应中间 block 被误当成最终 block 的 bug。",
+        "NormCmd.non_reset_version 把 MEAN 映射到 SUM、把 INV_STDDEV 映射到 VARIANCE，直接体现了修复的本质是保留部分统计量。",
+        "ExecuteController 的改动是一个独立控制 bug 的删除，说明该提交并非纯重构。"
+      ],
+      "notes": [
+        "为了数据集的可移植性，这里把归一化序列推进错误作为主要注入目标。",
+        "如果需要额外的一行变异点，ExecuteController 中的 B-start 覆盖也是有效的次要故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "dataset_id": 392,
+  "original_review_id": 487,
+  "meta": {
+    "id": 487,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "6c7f1eb60d3e110de7a4b4df845fdcbe4d368bb1",
+    "subject": "Fix bug where writing to supervisor page from user mode faults but still writes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "This commit fixes a real privilege-enforcement bug in the memory side-effect path: a user-mode access to a supervisor page could raise a fault but still perform the store or MMIO side effect.",
+    "why_it_counts": [
+      "The commit message states a concrete wrong hardware behavior.",
+      "The patch changes the RTL enables that commit stores and I/O accesses in the data-cache stage.",
+      "The added test checks that the fault occurs and the protected word remains unchanged."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "dcache_data_stage.sv introduces a shared supervisor_fault signal derived from dt_tlb_supervisor and cr_supervisor_en.",
+      "dd_store_en is newly gated by !supervisor_fault, preventing the write from committing after the permission fault.",
+      "dd_io_write_en and dd_io_read_en are also gated by !supervisor_fault, blocking MMIO side effects on the same fault.",
+      "data_supervisor_fault_write.c verifies that the fault fires and the memory word stays at 0x12345678."
+    ],
+    "touched_dut_files": [
+      "hardware/core/dcache_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a classic privilege-check ordering error. The access-control logic detects that a user-mode memory operation targets a supervisor-only page, but the commit or side-effect enable path ignores that fault and still lets the store or I/O transaction happen. This creates a protection violation with observable memory or device side effects even though the core reports an exception.",
+      "portable_injection_spec": {
+        "affected_mechanism": "privileged store and MMIO side-effect suppression after translation/permission check",
+        "trigger_condition": "A non-privileged store or MMIO access resolves to a page or region marked supervisor-only",
+        "injection_action": "Allow the store or I/O commit-enable path to ignore the already-detected supervisor-fault condition.",
+        "implementation_pattern": "drop fault-gating term from side-effect enable",
+        "portability_notes": [
+          "Map this to the stage that turns a translated memory request into an actual cache write, store-buffer enqueue, or MMIO transaction.",
+          "The key bug is not failing to raise the fault; it is raising the fault while still letting the side effect escape.",
+          "A store-only reinjection is enough to reproduce the original bug, but including MMIO enables broadens the same mechanism."
+        ],
+        "concrete_injection_steps": [
+          "Find the boolean that represents a privilege or supervisor-page violation after TLB lookup or region decode.",
+          "Remove that boolean from the write-enable or request-valid expression that launches stores or MMIO accesses.",
+          "Keep the exception-reporting path intact so the fault is still raised while the side effect incorrectly commits."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/dcache_data_stage.sv"
+        ],
+        "target_module_or_logic": "data-cache commit enables for stores and I/O accesses after TLB permission check",
+        "commit_fix_summary": "The fix computes supervisor_fault once and uses it to gate dd_store_en, dd_io_write_en, dd_io_read_en, and the recorded supervisor-fault status.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "Remove the added !supervisor_fault term from dd_store_en and the dd_io_* enable expressions in dcache_data_stage.sv."
+      },
+      "expected_failure_mode": "A user-mode access to a supervisor page still traps, but protected memory or MMIO state is modified anyway.",
+      "evidence_for_injection": [
+        "The only DUT RTL file changed is the data-cache stage that commits memory side effects.",
+        "The new supervisor_fault signal is threaded directly into the store and I/O enable logic.",
+        "The added write test checks both the trap and the absence of a write side effect, matching the intended failure mechanism."
+      ],
+      "notes": [
+        "Injecting the bug on the store path alone is the narrowest reproduction of the original issue."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "tlb",
+    "summary": "该提交修复了真实的权限执行缺陷：用户态访问 supervisor 页时虽然会产生 fault，但 store 或 MMIO 副作用仍可能被执行。",
+    "why_it_counts": [
+      "提交信息直接描述了具体的错误硬件行为。",
+      "补丁修改了数据缓存阶段中提交 store 和 I/O 访问的 RTL 使能条件。",
+      "新增测试检查 fault 会发生，且受保护字不会被改写。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "dcache_data_stage.sv 引入了统一的 supervisor_fault 信号，由 dt_tlb_supervisor 和 cr_supervisor_en 推导。",
+      "dd_store_en 新增 !supervisor_fault 门控，阻止权限 fault 后仍提交写操作。",
+      "dd_io_write_en 和 dd_io_read_en 也新增 !supervisor_fault 门控，阻止同类 fault 下的 MMIO 副作用。",
+      "data_supervisor_fault_write.c 验证了 fault 发生后，该内存字仍保持 0x12345678。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/dcache_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "这是典型的权限检查顺序错误。访问控制逻辑已经检测到用户态内存操作命中了 supervisor-only 页，但提交/副作用使能路径忽略了该 fault，仍让 store 或 I/O 事务真正发生。因此即使核心报告了异常，内存或设备状态仍然被错误修改。",
+      "portable_injection_spec": {
+        "affected_mechanism": "地址翻译/权限检查之后对特权 store 与 MMIO 副作用的抑制",
+        "trigger_condition": "非特权 store 或 MMIO 访问解析到 supervisor-only 页或区域时",
+        "injection_action": "让 store 或 I/O 的提交使能路径忽略已经检测到的 supervisor fault 条件。",
+        "implementation_pattern": "从副作用使能中删除 fault 门控项",
+        "portability_notes": [
+          "把该缺陷映射到把已翻译内存请求转成 cache 写、store-buffer 入队或 MMIO 事务的那一级。",
+          "关键错误不是没有报 fault，而是报 fault 的同时仍让副作用逃逸出去。",
+          "只在 store 路径回注入就足以复现原始缺陷；如果也恢复 MMIO 路径，则是同一机制的更宽版本。"
+        ],
+        "concrete_injection_steps": [
+          "定位 TLB 查询或区域解码之后表示权限违规或 supervisor-page 违规的布尔信号。",
+          "把这个布尔值从发起 store 或 MMIO 访问的 write-enable/request-valid 表达式中删除。",
+          "保留异常上报路径不变，使 fault 仍然出现，但副作用被错误提交。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/dcache_data_stage.sv"
+        ],
+        "target_module_or_logic": "TLB 权限检查之后的数据缓存 store 与 I/O 提交使能逻辑",
+        "commit_fix_summary": "修复先统一计算 supervisor_fault，再用它门控 dd_store_en、dd_io_write_en、dd_io_read_en 以及记录下来的 supervisor fault 状态。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "在 dcache_data_stage.sv 中删除 dd_store_en 和 dd_io_* enable 表达式里新增的 !supervisor_fault 项。"
+      },
+      "expected_failure_mode": "用户态访问 supervisor 页时仍会触发 trap，但受保护内存或 MMIO 状态仍被错误修改。",
+      "evidence_for_injection": [
+        "唯一改动的 DUT RTL 文件就是负责提交内存副作用的数据缓存阶段。",
+        "新的 supervisor_fault 信号被直接接入 store 和 I/O 使能逻辑。",
+        "新增的写测试同时检查 trap 与“没有发生写副作用”，与目标失效机制完全对应。"
+      ],
+      "notes": [
+        "如果想做最窄的回注入，只恢复 store 路径上的缺陷即可。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

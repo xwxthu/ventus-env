@@ -1,0 +1,145 @@
+{
+  "dataset_id": 398,
+  "original_review_id": 499,
+  "meta": {
+    "id": 499,
+    "repo": "tiny-tpu",
+    "branch": "main",
+    "commit": "446ca16079b656f3e448e596b70898b5e3d5fe1f",
+    "subject": "FIXED RESETTING TO ZERO BUG IN EVERY MODULE -- DONT FORGET TO DO THIS IN THE FUTURE!!!"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "pipeline_valid",
+    "summary": "This commit fixes stale-data leakage in several RTL pipeline stages: when the valid/input-enable path went low, output data registers were not explicitly cleared, so downstream logic could observe old values from a previous cycle.",
+    "why_it_counts": [
+      "The commit message explicitly describes a repeatable hardware bug pattern.",
+      "The patch changes RTL in computation stages, not just tests, by clearing output registers when valid is absent.",
+      "Leaking stale data across invalid cycles is a real DUT behavior bug in simple streaming pipelines."
+    ],
+    "disqualifiers": [
+      "The commit also updates generated simulation artifacts and waveforms.",
+      "The supporting tests are lightweight and somewhat noisy, so the evidence is weaker than in the other commits."
+    ],
+    "evidence": [
+      "src/pe.sv adds psum_out <= 0 in the !pe_valid_in path so an idle PE no longer retains the prior MAC result.",
+      "src/bias.sv adds output_out <= 0 when the bias-valid condition is false.",
+      "src/leaky_relu.sv adds out <= 0 when lr_valid_out is deasserted.",
+      "The related test change in test_layer1.py deasserts the start pulse on the next cycle, matching a stale-data-after-valid-drop scenario."
+    ],
+    "touched_dut_files": [
+      "src/pe.sv",
+      "src/bias.sv",
+      "src/leaky_relu.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a stale-register-hold error on an invalid or idle cycle. A pipeline stage correctly drops its valid signal when no new input is present, but it leaves the output data register unchanged. If downstream logic or verification looks at the data bus without perfectly gating on valid, an old activation, partial sum, or post-processing result can re-enter the computation.",
+      "portable_injection_spec": {
+        "affected_mechanism": "data-path register clearing when valid deasserts",
+        "trigger_condition": "A stage produces valid output in one cycle and then sees valid/input-enable deasserted in a later cycle",
+        "injection_action": "Keep the output data register unchanged on invalid cycles instead of clearing it to zero or a benign idle value.",
+        "implementation_pattern": "drop invalid-cycle clear on output register",
+        "portability_notes": [
+          "Map this to simple streaming stages such as PEs, activation units, bias-add stages, or format converters.",
+          "The bug is most dangerous when downstream logic partially relies on the data bus even when valid is low, or when valid is not propagated consistently.",
+          "Any neutral idle value is acceptable for the fix; the injected bug is specifically to retain the previous live result."
+        ],
+        "concrete_injection_steps": [
+          "Find the sequential block that updates output data and valid together.",
+          "In the branch where valid/input-enable is false, remove the assignment that clears the output data register.",
+          "Preserve the valid deassertion so the stage appears idle while its old data remains on the bus."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/pe.sv",
+          "src/bias.sv",
+          "src/leaky_relu.sv"
+        ],
+        "target_module_or_logic": "output register behavior on invalid cycles in PE, bias, and activation stages",
+        "commit_fix_summary": "The fix explicitly writes zero to stage outputs when the valid path is false, instead of only dropping the valid flag.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Remove the newly added output-clearing assignments in the invalid branches of pe.sv, bias.sv, and leaky_relu.sv while keeping the valid signals deasserted."
+      },
+      "expected_failure_mode": "After a valid result is produced, later idle cycles can still carry stale data values, causing spurious partial sums or activations to leak downstream.",
+      "evidence_for_injection": [
+        "All three RTL edits add the same pattern: clear data when valid is not asserted.",
+        "The PE change is especially direct because it prevents an old MAC output from surviving an idle cycle.",
+        "The associated test tweak toggles the start signal around the next cycle, which is consistent with the reported stale-after-idle behavior."
+      ],
+      "notes": [
+        "This repository is less polished than the others, so the claim is real but supported by a smaller evidence base."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "pipeline_valid",
+    "summary": "该提交修复了多个 RTL 流水级中的陈旧数据泄漏问题：当 valid/input-enable 变低时，输出数据寄存器没有被显式清零，导致下游逻辑可能看到前一拍残留的旧值。",
+    "why_it_counts": [
+      "提交信息明确描述了一个可重复出现的硬件缺陷模式。",
+      "补丁通过在 valid 不存在时清零输出寄存器来修改计算级 RTL，而不是只改测试。",
+      "在无效周期里泄漏陈旧数据是简单流式流水线中的真实 DUT 行为缺陷。"
+    ],
+    "disqualifiers": [
+      "该提交也更新了生成的仿真产物和波形文件。",
+      "配套测试较轻且有些噪声，因此证据强度弱于本批中的其他提交。"
+    ],
+    "evidence": [
+      "src/pe.sv 在 !pe_valid_in 路径新增 psum_out <= 0，使空闲 PE 不再保留上一拍的 MAC 结果。",
+      "src/bias.sv 在 bias-valid 条件不满足时新增 output_out <= 0。",
+      "src/leaky_relu.sv 在 lr_valid_out 去使能时新增 out <= 0。",
+      "相关测试修改 test_layer1.py 在下一拍拉低 start，符合“valid 掉下去后仍出现陈旧数据”的场景。"
+    ],
+    "touched_dut_files": [
+      "src/pe.sv",
+      "src/bias.sv",
+      "src/leaky_relu.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该缺陷属于无效或空闲周期下的寄存器保留错误。某个流水级在没有新输入时会正确拉低 valid，但输出数据寄存器保持原值不变。如果下游逻辑或验证环境没有做到对 valid 的完全门控，旧的激活值、部分和或后处理结果就可能重新进入计算。",
+      "portable_injection_spec": {
+        "affected_mechanism": "valid 去使能时的数据通路寄存器清零行为",
+        "trigger_condition": "某一级在一个周期产生有效输出，随后某个周期 valid/input-enable 被拉低",
+        "injection_action": "在无效周期里保持输出数据寄存器原值，而不是把它清零到 0 或安全空闲值。",
+        "implementation_pattern": "删除无效周期下的输出寄存器清零",
+        "portability_notes": [
+          "把该缺陷映射到 PE、激活单元、bias-add 级或格式转换级等简单流式 stage。",
+          "当下游逻辑在 valid 为低时仍部分依赖 data bus，或 valid 传播并不完全一致时，该缺陷最危险。",
+          "修复后的空闲值不一定非要是 0，但回注入的关键是让前一次真实结果在总线上残留。"
+        ],
+        "concrete_injection_steps": [
+          "定位同时更新输出数据与 valid 的时序 always_ff 块。",
+          "在 valid/input-enable 为假时，删除清零输出数据寄存器的赋值。",
+          "保留 valid 的去使能逻辑，使该级看起来空闲，但总线上仍留有旧数据。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/pe.sv",
+          "src/bias.sv",
+          "src/leaky_relu.sv"
+        ],
+        "target_module_or_logic": "PE、bias、activation 级在无效周期的输出寄存器行为",
+        "commit_fix_summary": "修复在 valid 路径为假时显式把输出写成 0，而不是只拉低 valid 信号。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "删除 pe.sv、bias.sv、leaky_relu.sv 的无效分支里新增的输出清零赋值，但保留 valid 信号去使能。"
+      },
+      "expected_failure_mode": "在产生过一次有效结果之后，后续空闲周期仍可能携带陈旧数据，导致伪造的部分和或激活值继续向下游泄漏。",
+      "evidence_for_injection": [
+        "三个 RTL 修改都在做同一种事情：valid 不为真时清空数据。",
+        "PE 的修改最直接，因为它阻止旧的 MAC 输出穿过空闲周期。",
+        "相关测试通过切换下一拍 start 信号，和报告的“空闲后残留数据”行为一致。"
+      ],
+      "notes": [
+        "这个仓库整体工程化程度较弱，因此该结论虽然成立，但支撑证据相对更少。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

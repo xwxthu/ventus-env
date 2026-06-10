@@ -1,0 +1,153 @@
+{
+  "dataset_id": 339,
+  "original_review_id": 408,
+  "meta": {
+    "id": 408,
+    "repo": "vortex",
+    "branch": "bug_fixes",
+    "commit": "14f9858d4569905f637d1759dc42ed519ad03bfa",
+    "subject": "cache flush refactoring"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Although labeled as refactoring, this commit fixes DCR-triggered cache flush semantics by turning a sideband flush request into a real dcache flush transaction and by separating pre-arbitration and post-arbitration tag widths.",
+    "why_it_counts": [
+      "The patch changes how a software-triggered flush propagates through the actual cache hierarchy, not just module boundaries.",
+      "A new DUT module injects a synthetic MEM_REQ_FLAG_FLUSH request into the dcache request path and waits for a response-based completion.",
+      "The tag-width split is needed because the flush arbitration adds a selector bit to the dcache port tag."
+    ],
+    "disqualifiers": [
+      "The commit message says refactoring and the diff is broad, so the bug mechanism must be inferred from old and new flush paths rather than from the subject alone.",
+      "There is no focused regression in the commit showing the failing flush scenario."
+    ],
+    "evidence": [
+      "Before this commit, DCR flush used cache_flush_if sideband signaling through VX_cache_init, which locally drove flush_begin/flush_end.",
+      "In the old passthrough path, VX_cache_wrap tied flush_end high and completed the external flush without issuing a downstream memory-bus flush request.",
+      "The new VX_dcr_flush module synthesizes a MEM_REQ_FLAG_FLUSH request, arbitrates it with dcache port 0, and reports done when the flush response returns.",
+      "VX_gpu_pkg splits DCACHE_CORE_TAG_WIDTH from the wider post-arbitration DCACHE_TAG_WIDTH so the extra arbiter select bit is carried correctly."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_pkg.sv",
+      "hw/rtl/core/VX_dcr_data.sv",
+      "hw/rtl/core/VX_dcr_flush.sv",
+      "hw/rtl/core/VX_mem_unit.sv",
+      "hw/rtl/interfaces/VX_dcr_flush_if.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A control-plane cache flush is only correct if it is serialized with normal cache traffic, propagated through the same request path that reaches downstream cache levels, and acknowledged only after the hierarchy completes it. If the design handles flush through a local sideband FSM instead, it can report completion before lower levels are flushed or before in-flight traffic is properly ordered. If the flush request is arbitrated onto an existing port, the tag path must also expand and contract correctly across the arbiter.",
+      "portable_injection_spec": {
+        "affected_mechanism": "hierarchical cache-flush request injection and completion tracking",
+        "trigger_condition": "A software- or CSR-triggered cache flush when the hierarchy includes downstream cache levels, passthrough levels, or request arbitration on the flush path.",
+        "injection_action": "Handle the flush as a local sideband event instead of injecting it as a normal cache request, and optionally keep the old narrow tag width across the new arbitration point.",
+        "implementation_pattern": "bypass_request_path",
+        "portability_notes": [
+          "The essential portable bug is early or incomplete flush completion caused by bypassing the normal request/response path.",
+          "If the DUT has no explicit sideband flush interface, the same bug can be injected by acknowledging flush when only the nearest cache level is drained.",
+          "On designs that arbitrate flush onto an existing request port, incorrect tag-width adaptation is a second realistic mutation."
+        ],
+        "concrete_injection_steps": [
+          "Find the path that services a CSR-, DCR-, or firmware-triggered full-cache flush.",
+          "Replace request-path injection with a local control FSM that flushes only the nearby cache controller and reports done without waiting for a downstream flush transaction to return.",
+          "If the flush shares an existing request port through arbitration, leave the tag width unchanged across the arbiter so the extra selection metadata is lost or misinterpreted."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_dcr_data.sv",
+          "hw/rtl/core/VX_dcr_flush.sv",
+          "hw/rtl/core/VX_mem_unit.sv",
+          "hw/rtl/VX_gpu_pkg.sv"
+        ],
+        "target_module_or_logic": "DCR-triggered flush injection on dcache port 0 and associated tag-width handling",
+        "commit_fix_summary": "The fix removes the old cache_flush_if sideband path, adds VX_dcr_flush to inject a synthetic MEM_REQ_FLAG_FLUSH request through the dcache path, returns done from the response, and splits pre-arb and post-arb dcache tag widths.",
+        "mutation_strategy": "restore_sideband_flush_path",
+        "source_level_edit_anchor": "Revert DCR flush back to the old cache_flush_if-style sideband completion model and collapse DCACHE_CORE_TAG_WIDTH back into the post-arbitration DCACHE_TAG_WIDTH."
+      },
+      "expected_failure_mode": "A DCR-triggered cache flush can complete too early, fail to propagate through lower cache levels, or mis-handle responses at the arbitration point, leaving stale cache state or causing flush completion anomalies.",
+      "evidence_for_injection": [
+        "Old VX_cache_init handled cache_flush_if.req locally with flush_begin/flush_end signaling.",
+        "Old passthrough VX_cache_wrap explicitly completed external flush immediately instead of emitting a downstream flush request.",
+        "New VX_dcr_flush creates a synthetic request carrying MEM_REQ_FLAG_FLUSH and derives done from its response."
+      ],
+      "notes": [
+        "This is the least clean-cut item in the batch because the commit is broad and labeled as refactoring, so confidence stays medium.",
+        "The portable injection should focus on incomplete hierarchical flush propagation rather than on source-file specifics."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "尽管提交标题写的是 refactoring，但该提交实际上修复了 DCR 触发的 cache flush 语义：它把旁路 flush 请求改成真正的 dcache flush 事务，并区分了仲裁前后的 tag 宽度。",
+    "why_it_counts": [
+      "补丁改变的是软件触发 flush 如何沿真实 cache 层级传播，而不仅仅是模块边界重排。",
+      "新的 DUT 模块会向 dcache 请求路径注入合成的 MEM_REQ_FLAG_FLUSH 请求，并通过响应返回来判定完成。",
+      "tag 宽度拆分是必要的，因为 flush 仲裁会在 dcache 端口 tag 上增加一个选择位。"
+    ],
+    "disqualifiers": [
+      "提交信息写的是 refactoring，而且 diff 范围较大，因此必须通过旧路径和新路径的对比来推断真实缺陷机制，不能只看标题。",
+      "该提交没有附带一个专门展示 flush 失败场景的聚焦回归测试。"
+    ],
+    "evidence": [
+      "在该提交之前，DCR flush 通过 cache_flush_if 侧带信号接入 VX_cache_init，并在本地驱动 flush_begin/flush_end。",
+      "旧的 passthrough 路径里，VX_cache_wrap 会把 flush_end 直接视为完成，因此外部 flush 会在没有发出下游 memory-bus flush 请求的情况下完成。",
+      "新的 VX_dcr_flush 模块会合成一个 MEM_REQ_FLAG_FLUSH 请求，把它与 dcache port 0 仲裁，并在 flush 响应返回时报告 done。",
+      "VX_gpu_pkg 把 DCACHE_CORE_TAG_WIDTH 与更宽的仲裁后 DCACHE_TAG_WIDTH 分开定义，从而正确携带额外的仲裁选择位。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_gpu_pkg.sv",
+      "hw/rtl/core/VX_dcr_data.sv",
+      "hw/rtl/core/VX_dcr_flush.sv",
+      "hw/rtl/core/VX_mem_unit.sv",
+      "hw/rtl/interfaces/VX_dcr_flush_if.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "控制面发起的 cache flush 只有在以下条件都满足时才是正确的：它与正常 cache 流量串行化，通过能到达下游 cache 层级的同一请求路径传播，并且只在整个层级真正完成后才应答。如果设计把 flush 只当作本地侧带 FSM 事件处理，就可能在下层 cache 尚未刷掉、或者与在途请求尚未正确有序时过早返回完成。如果 flush 还要通过仲裁复用现有端口，那么 tag 路径也必须在仲裁前后正确扩展和收缩。",
+      "portable_injection_spec": {
+        "affected_mechanism": "层级化 cache flush 的请求注入与完成跟踪",
+        "trigger_condition": "软件或 CSR 触发的 cache flush，且该层级中存在下游 cache、passthrough 层，或者 flush 路径需要与普通请求共享仲裁端口。",
+        "injection_action": "把 flush 当成本地侧带事件处理，而不是把它注入正常 cache 请求路径；可选地，在新增仲裁点上继续使用旧的窄 tag 宽度。",
+        "implementation_pattern": "bypass_request_path",
+        "portability_notes": [
+          "最核心的可移植缺陷，是因为绕过正常请求/响应路径而导致 flush 过早完成或不完整。",
+          "如果 DUT 没有显式侧带 flush 接口，也可以通过“只在最近一级 cache 清空后就返回完成”来注入同类缺陷。",
+          "对于把 flush 仲裁到已有请求端口上的设计，错误的 tag 宽度适配也是一个现实的次级变体。"
+        ],
+        "concrete_injection_steps": [
+          "定位处理 CSR、DCR 或固件触发全局 cache flush 的路径。",
+          "用一个本地控制 FSM 取代请求路径注入，使其只刷新附近的 cache 控制器，并在没有等待下游 flush 事务返回时就报告 done。",
+          "如果 flush 通过仲裁共享已有请求端口，则保持仲裁前后 tag 宽度不变，让新增的选择元数据丢失或被误解释。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_dcr_data.sv",
+          "hw/rtl/core/VX_dcr_flush.sv",
+          "hw/rtl/core/VX_mem_unit.sv",
+          "hw/rtl/VX_gpu_pkg.sv"
+        ],
+        "target_module_or_logic": "dcache port 0 上的 DCR 触发 flush 注入以及相关 tag 宽度处理",
+        "commit_fix_summary": "该修复移除了旧的 cache_flush_if 侧带路径，新增 VX_dcr_flush 通过 dcache 路径注入合成的 MEM_REQ_FLAG_FLUSH 请求，并由响应返回来指示 done，同时拆分了仲裁前后的 dcache tag 宽度。",
+        "mutation_strategy": "restore_sideband_flush_path",
+        "source_level_edit_anchor": "把 DCR flush 改回旧的 cache_flush_if 风格侧带完成模型，并把 DCACHE_CORE_TAG_WIDTH 合并回仲裁后的 DCACHE_TAG_WIDTH。"
+      },
+      "expected_failure_mode": "DCR 触发的 cache flush 可能过早完成、无法向下游 cache 层级传播，或者在仲裁点上错误处理响应，最终留下陈旧 cache 状态或产生 flush 完成异常。",
+      "evidence_for_injection": [
+        "旧的 VX_cache_init 会在本地用 flush_begin/flush_end 处理 cache_flush_if.req。",
+        "旧的 passthrough VX_cache_wrap 会立即完成外部 flush，而不会发出下游 flush 请求。",
+        "新的 VX_dcr_flush 会创建携带 MEM_REQ_FLAG_FLUSH 的合成请求，并用其响应来产生 done。"
+      ],
+      "notes": [
+        "这是本批次里最不干净的一个条目，因为提交较大且标题写成 refactoring，所以置信度保持为 medium。",
+        "可移植注入描述应以“层级 flush 传播不完整”为主，而不是依赖源代码文件细节。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 240,
+  "original_review_id": 288,
+  "meta": {
+    "id": 288,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "3b2c2211e59789256ac15781264d5aca7f7b49df",
+    "subject": "directory valid signal bug fixed."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This follow-up fixes the phase alignment of the clean-line bypass in the directory flush walker by using the registered dirty bit alone, instead of mixing it with a current-cycle flush_issue term.",
+    "why_it_counts": [
+      "The patch is a real control correction inside the L2 directory maintenance walker.",
+      "It refines the condition that decides whether the walker may bypass result waiting on the current line.",
+      "Using the wrong pipeline phase here can still stall or misadvance flush progress."
+    ],
+    "disqualifiers": [
+      "This is a narrow follow-up to the previous clean-line progress fix."
+    ],
+    "evidence": [
+      "The clean-line bypass changes from !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue) to !RegNext(status_reg(flush_set).dirty(flush_way)).",
+      "The modified expression remains inside the flushCount update condition in Directory_test.scala.",
+      "The change removes dependence on a current-cycle control term from a registered dirty-status test."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a maintenance walker decides whether the current line is clean enough to skip result waiting, that decision must use metadata from the correct pipeline phase. If a registered dirty-status bit is combined with a current-cycle issue signal, the design mixes phases and can misclassify the entry. The walker may then stall on a clean line or advance when it should not.",
+      "portable_injection_spec": {
+        "affected_mechanism": "phase-aligned clean-line detection in maintenance traversal",
+        "trigger_condition": "The walker bases its skip-or-wait decision on registered line metadata while the control issue signal changes across the same boundary.",
+        "injection_action": "Reintroduce a current-cycle issue term into the registered dirty-status check.",
+        "implementation_pattern": "misalign_pipeline_guard",
+        "portability_notes": [
+          "This applies to any pipelined flush, invalidate, or scrub walker that combines registered metadata with live control signals.",
+          "The same bug can be expressed as using metadata from cycle N with a control predicate from cycle N+1, or vice versa."
+        ],
+        "concrete_injection_steps": [
+          "Find the condition that decides whether the current line requires a downstream maintenance result or may be skipped as clean.",
+          "If that condition already uses a registered dirty or valid bit, add back a live issue or enable signal from the wrong cycle into the same predicate.",
+          "Leave the rest of the walker unchanged so the failure isolates phase misalignment rather than the existence of the clean-line bypass itself."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "registered dirty-status test in the flushCount clean-line bypass",
+        "commit_fix_summary": "The commit removes flush_issue from inside the RegNext dirty test so clean-line detection uses a correctly aligned registered predicate.",
+        "mutation_strategy": "misalign_pipeline_guard",
+        "source_level_edit_anchor": "In Directory_test.scala, the bypass term changes from !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue) to !RegNext(status_reg(flush_set).dirty(flush_way))."
+      },
+      "expected_failure_mode": "Flush or invalidate progress becomes phase-sensitive and can intermittently stall on clean lines or advance at the wrong time.",
+      "evidence_for_injection": [
+        "The only changed logic is the exact predicate that phase-aligns the clean-line bypass.",
+        "The predicate sits directly inside the flushCount update condition.",
+        "This commit immediately follows the prior clean-line progress fix, confirming that the remaining bug was timing alignment rather than maintenance intent."
+      ],
+      "notes": [
+        "This is a precise timing-oriented mutation and is most useful on pipelined maintenance walkers.",
+        "If another DUT has no explicit flush_issue signal, use any equivalent live control bit that is one cycle out of phase with the registered line metadata."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "这个后续提交修复了 directory flush walker 中 clean-line bypass 的时序对齐：它只使用寄存后的 dirty bit，而不再把它和当前周期的 flush_issue 混在一起判断。",
+    "why_it_counts": [
+      "补丁是在 L2 directory 维护 walker 内部做的真实控制修正。",
+      "它细化了用于决定当前 line 能否跳过结果等待的条件。",
+      "这里如果使用了错误的流水相位，就仍然会导致 flush 进度停滞或误推进。"
+    ],
+    "disqualifiers": [
+      "这是前一个 clean-line 进度修复之后的窄范围跟进提交。"
+    ],
+    "evidence": [
+      "clean-line bypass 从 !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue) 改成了 !RegNext(status_reg(flush_set).dirty(flush_way))。",
+      "被修改的表达式仍然位于 Directory_test.scala 的 flushCount 推进条件里。",
+      "这次修改去掉了寄存 dirty 判断中对当前周期控制项的依赖。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当维护 walker 决定当前 line 是否足够“干净”从而可以跳过结果等待时，这个判断必须使用正确流水阶段的元数据。如果把寄存后的 dirty 状态和当前周期的 issue 信号混在一起，就会发生相位错配，导致当前条目被误分类。结果是 walker 可能在 clean line 上停住，或者在不该前进时提前推进。",
+      "portable_injection_spec": {
+        "affected_mechanism": "维护遍历中 clean-line 检测的相位对齐",
+        "trigger_condition": "walker 需要基于寄存后的 line 元数据做 skip-or-wait 决策，而控制 issue 信号又在同一边界发生变化。",
+        "injection_action": "在寄存 dirty 状态判断里重新加入一个当前周期的 issue 控制项。",
+        "implementation_pattern": "misalign_pipeline_guard",
+        "portability_notes": [
+          "该模式适用于任何会把寄存元数据与即时控制信号混用的流水化 flush/invalidate/scrub walker。",
+          "在另一套 DUT 上，同类错误也可以表现为：把第 N 周期的元数据与第 N+1 周期的控制谓词混在一起使用，或反之。"
+        ],
+        "concrete_injection_steps": [
+          "找到决定当前 line 是否需要下游维护结果、或者是否可按 clean line 旁路的判断条件。",
+          "如果该条件已经使用了寄存后的 dirty/valid bit，就再加入一个来自错误周期的即时 issue/enable 信号。",
+          "保持 walker 其余逻辑不变，使故障专门体现为时序对齐错误，而不是完全删除 clean-line bypass。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "flushCount clean-line bypass 中的寄存 dirty 状态判断",
+        "commit_fix_summary": "该提交把 flush_issue 从 RegNext 的 dirty 测试里移除，使 clean-line 检测使用对齐正确的寄存谓词。",
+        "mutation_strategy": "misalign_pipeline_guard",
+        "source_level_edit_anchor": "在 Directory_test.scala 中，旁路项从 !RegNext(status_reg(flush_set).dirty(flush_way) && flush_issue) 改成了 !RegNext(status_reg(flush_set).dirty(flush_way))。"
+      },
+      "expected_failure_mode": "flush 或 invalidate 的进度会变得对相位敏感，可能在 clean line 上间歇性停住，或在错误时机前进。",
+      "evidence_for_injection": [
+        "本次提交唯一改变的就是 clean-line bypass 的相位对齐谓词。",
+        "这个谓词直接位于 flushCount 的推进条件之内。",
+        "该提交紧跟前一个 clean-line 进度修复，说明剩余问题是时序对齐，而不是维护意图本身。"
+      ],
+      "notes": [
+        "这是一个精确的时序型变异点，最适合用在流水化的维护 walker 上。",
+        "如果另一套 DUT 没有显式 flush_issue 信号，可改用任意与寄存 line 元数据错相一拍的等价控制位。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

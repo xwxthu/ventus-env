@@ -1,0 +1,139 @@
+{
+  "dataset_id": 209,
+  "original_review_id": 252,
+  "meta": {
+    "id": 252,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "5c97a66a1d021dcbed974ca1ca55e893f5856a4f",
+    "subject": "reconv PC fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "branch_join",
+    "summary": "Fixes reconvergence-PC handshaking so the SIMT stack samples a reconvergence PC only when a real issue-stage SIMT event is valid, instead of accepting always-valid or flow-through metadata.",
+    "why_it_counts": [
+      "The patch changes valid and ready behavior on a core SIMT reconvergence path.",
+      "Both touched files are active DUT pipeline modules.",
+      "The failing mechanism is a clear sideband-metadata handshake bug with a direct reverse mutation."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "pipe.scala changes simt_stack.io.pc_reconv.valid from true.B to issue.io.out_SIMT.valid.",
+      "branch_join.scala changes PC_reconv_buf from Queue(io.pc_reconv, 1, flow = true) to Queue(io.pc_reconv, 1).",
+      "branch_join.scala removes the explicit assignments that forced PC_reconv_buf.ready in lockstep with branch_ctl and if_mask handling.",
+      "The patch does not touch tests or infrastructure files."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/branch_join.scala",
+      "ventus/src/pipeline/pipe.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A reconvergence PC is sideband control metadata paired with SIMT branch or join events. It is only valid when the corresponding issue-stage control transaction is valid. If the metadata path is marked valid all the time, or if a flow-through queue lets that metadata bypass normal decoupled handshaking, the branch controller can consume a stale or unrelated reconvergence PC for the wrong warp event. The result is incorrect rejoin targets, repeated join processing, or control deadlock.",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT reconvergence metadata handshake",
+        "trigger_condition": "No new SIMT control event is being issued, or downstream backpressure exists, but the reconvergence-PC sideband path still appears valid and ready.",
+        "injection_action": "Make reconvergence-PC valid independent of the real producer fire and or bypass normal decoupled buffering so stale metadata can flow through.",
+        "implementation_pattern": "force sideband valid high; use flow-through buffer with manual ready forcing",
+        "portability_notes": [
+          "Map this to any branch, SIMT, or microcode controller where sideband reconvergence metadata travels separately from the main control token.",
+          "The key fault is decoupling metadata validity from the control event that should own it.",
+          "Driving valid high alone may be enough on some DUTs; restoring both always-valid and flow-through behavior most closely matches the source commit."
+        ],
+        "concrete_injection_steps": [
+          "Find the producer that sends reconvergence or rejoin PC metadata alongside branch or join control information.",
+          "Replace the true producer-valid signal with a constant-high valid or another overly permissive condition.",
+          "Change any single-entry buffer on that sideband path to a flow-through form, or manually force its ready signal based on downstream control readiness instead of true metadata consumption.",
+          "Leave the main branch-control path otherwise intact so the failure appears as stale metadata pairing rather than total control loss."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/branch_join.scala",
+          "ventus/src/pipeline/pipe.scala"
+        ],
+        "target_module_or_logic": "pipe to branch_join reconvergence-PC valid and queue handshake path",
+        "commit_fix_summary": "The commit makes simt_stack.io.pc_reconv.valid depend on issue.io.out_SIMT.valid, converts PC_reconv_buf from a flow-through queue to a normal queue, and removes manual ready forcing on that buffer.",
+        "mutation_strategy": "restore always-valid producer and flow-through queue behavior",
+        "source_level_edit_anchor": "Drive simt_stack.io.pc_reconv.valid back to true.B, make PC_reconv_buf flow-through again, and reintroduce explicit PC_reconv_buf.ready assignments tied to branch control handling."
+      },
+      "expected_failure_mode": "A warp consumes the wrong reconvergence PC, causing incorrect join targets, duplicated or missed reconvergence events, or warp-level control hangs.",
+      "evidence_for_injection": [
+        "The pre-fix producer marked pc_reconv valid permanently high even when no issue-stage SIMT event was present.",
+        "The pre-fix branch_join logic also used a flow-through queue and explicit ready steering for PC_reconv_buf, which weakens decoupled pairing between payload and event.",
+        "The fix aligns both valid generation and buffering discipline, indicating the bug was stale metadata being consumed out of context."
+      ],
+      "notes": [
+        "Restoring both edits best recreates the original bug, but driving valid high alone may already expose the failure.",
+        "This is a portable mutation for any design that transports branch metadata on a sideband decoupled channel."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "branch_join",
+    "summary": "该提交修复了 reconvergence PC 的握手逻辑，使 SIMT stack 只会在真实的 issue 阶段 SIMT 事件有效时采样 reconvergence PC，而不会接受常高 valid 或 flow-through 传来的元数据。",
+    "why_it_counts": [
+      "补丁修改的是核心 SIMT reconvergence 路径上的 valid 和 ready 行为。",
+      "两个被修改文件都是活跃的 DUT 流水线模块。",
+      "失效机制是明确的 sideband 元数据握手错误，能够直接做反向注入。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "pipe.scala 把 simt_stack.io.pc_reconv.valid 从 true.B 改成 issue.io.out_SIMT.valid。",
+      "branch_join.scala 把 PC_reconv_buf 从 Queue(io.pc_reconv, 1, flow = true) 改成 Queue(io.pc_reconv, 1)。",
+      "branch_join.scala 删除了原先那组把 PC_reconv_buf.ready 与 branch_ctl 和 if_mask 处理强行绑在一起的显式赋值。",
+      "该补丁没有修改测试或基础设施文件。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/branch_join.scala",
+      "ventus/src/pipeline/pipe.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "reconvergence PC 是与 SIMT branch 或 join 事件配对出现的 sideband 控制元数据。只有对应的 issue 阶段控制事务有效时，它才真正有效。如果这条元数据路径始终被标记为 valid，或者 flow-through 队列让它绕过正常的 decoupled 握手，那么 branch 控制器就可能在错误的 warp 事件上消费到陈旧或无关的 reconvergence PC。结果会是错误的 rejoin 目标、重复的 join 处理，甚至控制死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT reconvergence 元数据握手",
+        "trigger_condition": "没有新的 SIMT 控制事件发射，或下游存在背压，但 reconvergence-PC sideband 路径仍然表现为 valid 且 ready 时。",
+        "injection_action": "让 reconvergence-PC 的 valid 脱离真实生产者 fire 条件，和或绕过正常的 decoupled 缓冲，使陈旧元数据能够直接流过。",
+        "implementation_pattern": "把 sideband valid 强制拉高；使用带手工 ready 控制的 flow-through 缓冲",
+        "portability_notes": [
+          "可映射到任何把 reconvergence 或 rejoin PC 作为 sideband 元数据、与主控制 token 分开传输的 branch、SIMT 或微码控制器。",
+          "关键故障点是：元数据的有效性不再由真正拥有它的控制事件决定。",
+          "在某些 DUT 上，仅把 valid 拉高就足以暴露错误；若同时恢复 always-valid 和 flow-through 行为，则最接近源提交中的原始缺陷。"
+        ],
+        "concrete_injection_steps": [
+          "找到随 branch 或 join 控制信息一起传输 reconvergence 或 rejoin PC 元数据的生产端。",
+          "把真实的 producer-valid 信号替换为常高 valid，或替换为另一个过于宽松的条件。",
+          "把该 sideband 路径上的单项缓冲改成 flow-through 形式，或者把它的 ready 改为按下游控制 ready 强行驱动，而不是按真实元数据消费驱动。",
+          "保持主 branch-control 路径其余部分不变，使故障表现为元数据配对陈旧，而不是整个控制链完全失效。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/branch_join.scala",
+          "ventus/src/pipeline/pipe.scala"
+        ],
+        "target_module_or_logic": "从 pipe 到 branch_join 的 reconvergence-PC valid 与队列握手路径",
+        "commit_fix_summary": "该提交让 simt_stack.io.pc_reconv.valid 依赖 issue.io.out_SIMT.valid，把 PC_reconv_buf 从 flow-through 队列改成普通队列，并删除了对该缓冲 ready 的手工强制赋值。",
+        "mutation_strategy": "恢复 always-valid 生产端和 flow-through 队列行为",
+        "source_level_edit_anchor": "把 simt_stack.io.pc_reconv.valid 改回 true.B，让 PC_reconv_buf 再次采用 flow-through，并重新加入与 branch 控制处理绑在一起的显式 PC_reconv_buf.ready 赋值。"
+      },
+      "expected_failure_mode": "某个 warp 会消费到错误的 reconvergence PC，导致 join 目标错误、reconvergence 事件重复或丢失，或者 warp 级控制挂死。",
+      "evidence_for_injection": [
+        "修复前的生产端会在没有 issue 阶段 SIMT 事件时也把 pc_reconv.valid 永久拉高。",
+        "修复前的 branch_join 同时使用了 flow-through 队列和显式 ready 导向，这会削弱 payload 与事件之间的 decoupled 配对关系。",
+        "补丁同时修正了 valid 生成和缓冲纪律，说明原始缺陷就是陈旧元数据在错误上下文中被消费。"
+      ],
+      "notes": [
+        "同时恢复这两处改动最接近原始 bug，但仅把 valid 拉高也可能足以触发失败。",
+        "凡是通过 sideband decoupled 通道传输 branch 元数据的设计，都可复用这一故障模式。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

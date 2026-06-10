@@ -1,0 +1,133 @@
+{
+  "dataset_id": 433,
+  "original_review_id": 563,
+  "meta": {
+    "id": 563,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "70dadca9fe16ed3e6a9f21bc5302f4c9899ce67f",
+    "subject": "fix scheduler rename_table X values - reverted valid bits"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes scheduler rename tracking by making the rename table the only source of dependency truth and clearing it on reset.",
+    "why_it_counts": [
+      "The RTL change is focused on scheduler hazard logic.",
+      "The subject explicitly describes a rename-table correctness bug.",
+      "The patch directly changes reset and writeback handling of dependency state."
+    ],
+    "disqualifiers": [
+      "The commit also updates build and simulator support files."
+    ],
+    "evidence": [
+      "VX_scheduler.v removes valid_table from rename qualification.",
+      "Reset now clears rename_table entries.",
+      "Writeback invalidation only masks rename_table bits instead of maintaining separate valid metadata."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_scheduler.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A rename tracker or scoreboard needs one coherent source of truth for outstanding destination state. If hazard checks depend on a second valid table that is not reset and invalidated in lockstep with the real rename mask, stale or unknown metadata can create false dependencies and unpredictable issue behavior.",
+      "portable_injection_spec": {
+        "affected_mechanism": "rename validity tracking",
+        "trigger_condition": "After reset or partial writeback, duplicated rename-valid metadata drifts out of sync with the real rename mask.",
+        "injection_action": "Reintroduce a separate valid-bit table and keep hazard checks dependent on it while no longer fully clearing rename state on reset.",
+        "implementation_pattern": "duplicate state without coherent reset",
+        "portability_notes": [
+          "Apply this to any scheduler or scoreboard that tracks outstanding destination registers.",
+          "The reusable bug is stale dependency-valid metadata, not the Vortex table names."
+        ],
+        "concrete_injection_steps": [
+          "Find the structure that records pending destination masks.",
+          "Add or restore a second validity table that gates hazard checks.",
+          "Stop fully clearing the rename state on reset or stop updating the secondary table consistently on writeback."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_scheduler.v"
+        ],
+        "target_module_or_logic": "scheduler rename_table hazard tracking and reset logic",
+        "commit_fix_summary": "The fix removes valid_table, resets rename_table, and uses rename_table nonzero checks as the only rename-valid condition.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Reintroduce valid_table qualification for rs1_rename/rs2_rename/rd_rename and stop clearing rename_table on reset."
+      },
+      "expected_failure_mode": "The scheduler can see false dependencies after reset or partial writeback, causing spurious stalls, delayed issue, or nondeterministic scheduling.",
+      "evidence_for_injection": [
+        "The pre-fix design used both rename_table and valid_table in hazard checks.",
+        "The reset path previously did not clear rename_table.",
+        "The fix collapses state into rename_table alone to eliminate X and stale-valid divergence."
+      ],
+      "notes": [
+        "This is a localized RTL mutation.",
+        "The build and simulator edits in the same commit are not part of the injected fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了调度器中的 rename 跟踪问题：让 rename table 成为依赖状态的唯一真值来源，并在 reset 时清零。",
+    "why_it_counts": [
+      "RTL 改动集中在调度器 hazard 逻辑。",
+      "提交标题明确描述了 rename table 的正确性 bug。",
+      "补丁直接修改了依赖状态的 reset 和 writeback 更新方式。"
+    ],
+    "disqualifiers": [
+      "该提交还更新了构建和模拟器配套文件。"
+    ],
+    "evidence": [
+      "VX_scheduler.v 从 rename 判定中删除了 valid_table。",
+      "reset 现在会清零 rename_table。",
+      "writeback 失效路径只再更新 rename_table mask，而不再维护独立的 valid 元数据。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_scheduler.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "rename tracker 或 scoreboard 必须只有一个一致的真值来源来表示未完成目标状态。如果 hazard 检查依赖另一张没有和真实 rename mask 同步 reset 与失效的 valid 表，就可能因为陈旧或未知元数据产生伪相关和不稳定的发射行为。",
+      "portable_injection_spec": {
+        "affected_mechanism": "rename 有效性跟踪",
+        "trigger_condition": "在 reset 之后或部分 writeback 之后，重复的 rename-valid 元数据与真实 rename mask 失配。",
+        "injection_action": "重新引入独立 valid-bit 表，并让 hazard 检查继续依赖它，同时不再在 reset 时彻底清空 rename 状态。",
+        "implementation_pattern": "duplicate state without coherent reset",
+        "portability_notes": [
+          "适用于任何跟踪飞行中目标寄存器的 scheduler 或 scoreboard。",
+          "可复用缺陷的本质是依赖有效性元数据陈旧，而不是 Vortex 的表名。"
+        ],
+        "concrete_injection_steps": [
+          "找到记录待写回目标 mask 的结构。",
+          "增加或恢复一张独立的 valid 表来参与 hazard 判定。",
+          "停止在 reset 时彻底清空 rename 状态，或者在 writeback 时不再一致更新这张辅助表。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_scheduler.v"
+        ],
+        "target_module_or_logic": "scheduler 中 rename_table 的 hazard 跟踪与 reset 逻辑",
+        "commit_fix_summary": "修复删除了 valid_table、在 reset 时清零 rename_table，并且只用 rename_table 是否非零来判断 rename 依赖。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复 rs1_rename/rs2_rename/rd_rename 对 valid_table 的联合判定，并停止在 reset 时清零 rename_table。"
+      },
+      "expected_failure_mode": "调度器会在 reset 或部分 writeback 后看到伪造的寄存器相关性，导致无谓停顿、发射延迟或不稳定调度。",
+      "evidence_for_injection": [
+        "修复前 hazard 检查同时依赖 rename_table 和 valid_table。",
+        "旧的 reset 路径不会清零 rename_table。",
+        "本次修复把状态收敛到 rename_table 单一来源，以避免 X 值和陈旧 valid 失配。"
+      ],
+      "notes": [
+        "这是一个局部 RTL 变异点。",
+        "同一提交中的构建和模拟器改动不属于注入故障的一部分。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

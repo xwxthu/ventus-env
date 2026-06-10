@@ -1,0 +1,133 @@
+{
+  "dataset_id": 259,
+  "original_review_id": 310,
+  "meta": {
+    "id": 310,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "5b2624046e04137393ae15001954bc8f2c1dda28",
+    "subject": "Avoid snoop deadlock whith snoops. Adds mrvq not almost full for snrq pop"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes a cache-bank snoop deadlock by preventing snoop-request dequeue while the miss-reservation queue is stopped or almost full.",
+    "why_it_counts": [
+      "The patch changes central cache-bank arbitration logic in RTL.",
+      "The commit message explicitly describes a snoop deadlock fix.",
+      "The added condition ties snoop progress to miss-reservation backpressure, which is a correctness requirement for forward progress under coherence traffic."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_bank.v changes snrq_pop from a condition that ignored mrvq_stop to one that requires !mrvq_stop.",
+      "In the same file, reqq_pop was already blocked by !mrvq_stop, showing snoop dequeue was the inconsistent queue-arbitration case.",
+      "mrvq_stop is wired from the miss-reservation queue stop signal, which is used to throttle bank-side request issue when the miss machinery is near saturation."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A banked coherent cache often has separate queues for ordinary requests, miss-reservation replay, and snoops. If the miss side is stopped because its reservation or response structures are near full, the bank must not keep draining snoops in a way that requires miss-side resources to make forward progress. Allowing snoop dequeue to ignore miss-side backpressure can create a circular wait: snoops advance into a path that depends on structures that are already blocked, and the bank stops making progress.",
+      "portable_injection_spec": {
+        "affected_mechanism": "snoop dequeue arbitration under miss-side backpressure",
+        "trigger_condition": "Snoop requests are pending while the miss-reservation or miss-response path is in a stop or almost-full condition.",
+        "injection_action": "Allow snoops to dequeue even when miss-side stop/backpressure is asserted.",
+        "implementation_pattern": "drop backpressure term from snoop-pop condition",
+        "portability_notes": [
+          "Map this to any coherent cache bank with separate snoop and miss handling queues.",
+          "The key bug is not specific to an almost-full threshold; any miss-side condition that should stall snoop issue can be removed to recreate the fault.",
+          "If the DUT folds snoops and ordinary requests into one arbiter, remove the dependency that prevents snoops from advancing when miss replay cannot drain."
+        ],
+        "concrete_injection_steps": [
+          "Locate the arbitration condition that chooses when a snoop request can leave its queue and enter the cache pipeline.",
+          "Remove the term that blocks snoop dequeue when the miss-reservation or miss-response side is stopped, almost full, or otherwise backpressured.",
+          "Leave the rest of the queue priorities unchanged so the only change is that snoops ignore miss-side stop.",
+          "Stress the design with simultaneous snoop traffic and miss pressure to expose a forward-progress failure or deadlock."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v"
+        ],
+        "target_module_or_logic": "VX_bank queue-pop arbitration for snrq_pop versus mrvq_stop",
+        "commit_fix_summary": "The fix adds !mrvq_stop to snrq_pop so snoop requests cannot leave the snoop queue while the miss-reservation queue is stopped.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "Remove the !mrvq_stop term from snrq_pop while keeping the rest of the arbitration condition intact."
+      },
+      "expected_failure_mode": "Under combined snoop and miss pressure, the cache bank can enter a forward-progress failure or deadlock because snoops advance into a path that the stalled miss machinery cannot service.",
+      "evidence_for_injection": [
+        "The patch is a one-line arbitration fix that only adds the missing miss-side backpressure term to snoop dequeue.",
+        "Ordinary request dequeue already respected mrvq_stop, so snoop dequeue was the asymmetrical case.",
+        "The commit subject explicitly states the goal is to avoid snoop deadlock."
+      ],
+      "notes": [
+        "The duplicated !reqq_pop term in the expression is pre-existing and not the bug fixed here.",
+        "If another DUT uses a single combined stop signal with a different name, that is still the correct anchor for this injection."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交通过在 miss-reservation 队列停止或接近满时禁止 snoop request 出队，修复了 cache bank 的 snoop 死锁。",
+    "why_it_counts": [
+      "补丁修改了 RTL 中 cache bank 的核心仲裁逻辑。",
+      "提交信息明确说明这是一个 snoop deadlock 修复。",
+      "新增条件把 snoop 推进与 miss-reservation 反压绑定起来，这是在一致性流量下保证前进性的正确性要求。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_bank.v 把 snrq_pop 从忽略 mrvq_stop 的条件改为必须满足 !mrvq_stop。",
+      "同一文件里 reqq_pop 原本就受 !mrvq_stop 限制，说明 snoop 出队是原先仲裁中不一致的一支。",
+      "mrvq_stop 来自 miss-reservation queue 的 stop 信号，用于在 miss 结构接近饱和时对 bank 侧请求发射施加节流。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "一个带一致性的 banked cache 往往会把普通请求、miss-reservation replay 和 snoop 分到不同队列中。如果 miss 侧因为 reservation 或 response 结构接近满而进入 stop 状态，那么 bank 不能继续让那些仍依赖 miss 侧资源前进的 snoop 一路推进。若 snoop 出队忽略 miss 侧反压，就可能形成环形等待：snoop 前进到了一个依赖已阻塞结构的路径里，整个 bank 失去前进性。",
+      "portable_injection_spec": {
+        "affected_mechanism": "miss 侧反压下的 snoop 出队仲裁",
+        "trigger_condition": "存在待处理 snoop 请求，同时 miss-reservation 或 miss-response 路径处于 stop/接近满状态。",
+        "injection_action": "即使 miss 侧 stop/反压已经拉起，也继续允许 snoop 出队。",
+        "implementation_pattern": "从 snoop-pop 条件中删除反压项",
+        "portability_notes": [
+          "将它映射到任何把 snoop 处理和 miss 处理分开的 coherent cache bank。",
+          "关键缺陷并不依赖“almost full”这个具体阈值；只要移除本应阻止 snoop 发射的 miss 侧停顿条件，就能复现此类问题。",
+          "如果 DUT 把 snoop 与普通请求折叠在同一个仲裁器里，就删除“当 miss replay 无法排空时禁止 snoop 前进”的那条依赖。"
+        ],
+        "concrete_injection_steps": [
+          "找到控制 snoop 请求何时能离开队列进入缓存流水线的仲裁条件。",
+          "删除其中在 miss-reservation 或 miss-response 一侧 stop、接近满或被反压时阻止 snoop 出队的项。",
+          "保持其他队列优先级不变，使唯一变化是 snoop 不再尊重 miss 侧 stop。",
+          "在 snoop 流量和 miss 压力并发的情况下施压，以暴露前进性故障或死锁。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v"
+        ],
+        "target_module_or_logic": "VX_bank 中 snrq_pop 与 mrvq_stop 的队列出队仲裁",
+        "commit_fix_summary": "修复在 snrq_pop 中新增 !mrvq_stop，使 snoop 请求在 miss-reservation queue 停止时不能离开 snoop queue。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "从 snrq_pop 中删除 !mrvq_stop，同时保持其余仲裁条件不变。"
+      },
+      "expected_failure_mode": "在 snoop 和 miss 压力并发时，cache bank 可能发生前进性失败或死锁，因为 snoop 被推进到了一个停滞的 miss 处理路径上。",
+      "evidence_for_injection": [
+        "这个补丁是一行仲裁修复，仅为 snoop 出队补上了缺失的 miss 侧反压项。",
+        "普通请求出队原本已经遵守 mrvq_stop，因此 snoop 出队是原先不对称的一支。",
+        "提交标题直接说明目标是避免 snoop deadlock。"
+      ],
+      "notes": [
+        "表达式中重复的 !reqq_pop 是原有写法，不是本次修复的目标。",
+        "如果另一 DUT 使用不同名字的统一 stop 信号，也应把它当作该注入的正确锚点。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

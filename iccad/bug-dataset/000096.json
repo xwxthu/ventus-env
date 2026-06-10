@@ -1,0 +1,133 @@
+{
+  "dataset_id": 96,
+  "original_review_id": 120,
+  "meta": {
+    "id": 120,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "69d8340e24c351bf6bfe11e82922ff7da404e573",
+    "subject": "minor fpu bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "The commit fixes FPU exception-metadata timing by computing the has-fflags bit from the stage-0 pipelined rounding-mode field frm_s0 rather than the raw frm input.",
+    "why_it_counts": [
+      "The patch changes only FPU DUT logic",
+      "The fix aligns control metadata with the same pipeline stage as the result and flag data",
+      "This is a correctness issue in floating-point exception signaling, not a performance or style change"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The old code built tmp_has_fflags from frm while the result datapath and op_type were already stage-0 signals",
+      "The fix renames the signal to has_fflags_s0 and computes it from frm_s0",
+      "The computed bit is packed through the same pipeline register as tmp_result and tmp_fflags, confirming a stage-alignment repair"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fp_cores/VX_fp_ncomp.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a pipelined FPU, sideband metadata such as whether an operation should report exception flags must travel in lockstep with the operation decode and result data. If that metadata is recomputed from an unregistered control input instead of the pipelined control state, stalls or back-to-back operations can pair the wrong metadata with the wrong result, producing incorrect exception behavior.",
+      "portable_injection_spec": {
+        "affected_mechanism": "pipeline alignment of floating-point exception metadata",
+        "trigger_condition": "The FPU accepts back-to-back operations with different control fields, or the output stage experiences backpressure while control inputs continue to change",
+        "injection_action": "Compute the exception-enable or flag-present bit from a live input control field rather than from the registered control field associated with the current pipeline stage",
+        "implementation_pattern": "use unpipelined control for pipelined sideband flag generation",
+        "portability_notes": [
+          "Apply this to any pipelined FPU block that emits result data together with flag-valid or exception-present metadata",
+          "The same bug can target rounding mode, operation subtype, compare opcode, or any control field that determines whether flags are meaningful",
+          "Stalls make this class of bug easier to observe because the data stage holds while raw inputs change"
+        ],
+        "concrete_injection_steps": [
+          "Locate the pipeline stage that determines whether an operation should emit exception flags or valid-flag metadata",
+          "Identify the registered control field that belongs to that stage and the corresponding raw input control field",
+          "Change the metadata computation to reference the raw input control field instead of the pipelined stage-local field",
+          "Keep the main result datapath and flag bits unchanged so the injected bug is purely metadata misalignment"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fp_cores/VX_fp_ncomp.v"
+        ],
+        "target_module_or_logic": "stage-0 has_fflags generation for FPU_MISC MIN/MAX and FPU_CMP operations",
+        "commit_fix_summary": "The fix replaces tmp_has_fflags derived from frm with has_fflags_s0 derived from frm_s0 and sends that through the stage-1 pipe register.",
+        "mutation_strategy": "use_unpipelined_control",
+        "source_level_edit_anchor": "Around lines 241 to 255, compute has_fflags from frm again instead of frm_s0 and feed that unpipelined bit into the output pipe register."
+      },
+      "expected_failure_mode": "MIN, MAX, or compare operations can advertise the wrong exception-flag validity, leading to incorrect floating-point status behavior when control inputs change across cycles or under stall.",
+      "evidence_for_injection": [
+        "tmp_result and tmp_fflags are generated from stage-0 decoded signals, so has_fflags must be stage-aligned as well",
+        "The fix changes only the source of the has_fflags bit, which isolates the bug to sideband timing alignment",
+        "The affected operations are explicitly MIN, MAX, and CMP in the surrounding code"
+      ],
+      "notes": [
+        "This is a classic pipeline sideband-misalignment fault and is broadly reusable across FP units",
+        "If another DUT has a unified exception-valid bit, mutate that bit rather than the full fflags datapath"
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交修复了 FPU 异常元数据的时序对齐问题：判断是否产生 fflags 的位改为使用 stage-0 已流水化的 frm_s0，而不是原始 frm 输入。",
+    "why_it_counts": [
+      "补丁只修改了 FPU DUT 逻辑",
+      "修复把控制元数据与结果数据、异常标志数据对齐到同一个流水级",
+      "这是浮点异常信号正确性问题，而不是性能或风格问题"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "旧代码使用 frm 生成 tmp_has_fflags，而结果数据通路和 op_type 已经处于 stage-0 流水级",
+      "修复把该信号改名为 has_fflags_s0，并改为由 frm_s0 计算",
+      "这个 bit 与 tmp_result、tmp_fflags 一起被打包进同一个流水寄存器，说明修复的是级间对齐问题"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fp_cores/VX_fp_ncomp.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在流水化 FPU 中，像“该操作是否应当报告异常标志”这样的旁路元数据，必须与操作译码和结果数据严格同步前进。如果这类元数据不是从对应流水级的已寄存控制字段计算，而是从仍在变化的原始输入重新计算，那么在 stall 或背靠背不同操作的情况下，错误的元数据就会和错误的结果绑定在一起，造成浮点异常行为错误。",
+      "portable_injection_spec": {
+        "affected_mechanism": "浮点异常元数据的流水级对齐",
+        "trigger_condition": "FPU 连续接收控制字段不同的操作，或者输出级存在背压而输入控制仍在变化",
+        "injection_action": "让异常使能位或 flag-present 位从实时输入控制字段计算，而不是从属于当前流水级的寄存控制字段计算",
+        "implementation_pattern": "用未流水化控制信号生成流水化旁路标志",
+        "portability_notes": [
+          "适用于任何输出结果时同时携带 flag-valid 或 exception-present 元数据的流水化 FPU 模块",
+          "这个错误也可作用在 rounding mode、操作子类型、compare opcode，或任何决定标志是否有效的控制字段上",
+          "存在 stall 时更容易观察到此类错误，因为数据级停住时原始输入仍可能继续变化"
+        ],
+        "concrete_injection_steps": [
+          "找到决定“该操作是否应该输出异常标志或标志有效位”的那个流水级",
+          "识别该级对应的寄存控制字段以及其原始输入版本",
+          "把元数据计算改为引用原始输入控制字段，而不是流水级本地寄存字段",
+          "保持主结果数据通路和具体 fflags 位不变，使注入错误明确表现为元数据错位"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fp_cores/VX_fp_ncomp.v"
+        ],
+        "target_module_or_logic": "FPU_MISC MIN/MAX 与 FPU_CMP 的 stage-0 has_fflags 生成逻辑",
+        "commit_fix_summary": "修复把基于 frm 生成的 tmp_has_fflags 改成了基于 frm_s0 生成的 has_fflags_s0，并让它随 stage-1 流水寄存器一起前进。",
+        "mutation_strategy": "use_unpipelined_control",
+        "source_level_edit_anchor": "在约第 241 到 255 行附近，把 has_fflags 改回由 frm 而不是 frm_s0 计算，并把这个未流水化 bit 送入输出流水寄存器。"
+      },
+      "expected_failure_mode": "MIN、MAX 或 compare 操作可能错误宣称异常标志是否有效，导致在跨周期控制变化或存在 stall 时出现错误的浮点状态行为。",
+      "evidence_for_injection": [
+        "tmp_result 与 tmp_fflags 都来自 stage-0 译码信号，因此 has_fflags 也必须与该级对齐",
+        "修复只改变了 has_fflags 的来源，说明缺陷被明确隔离在旁路元数据的时序对齐上",
+        "周围代码明确指出受影响的操作就是 MIN、MAX 与 CMP"
+      ],
+      "notes": [
+        "这是典型的流水旁路元数据错位错误，可广泛复用于其他 FP 单元",
+        "如果另一个 DUT 只有统一的 exception-valid 位，则可直接对那个 bit 注入同类错误"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

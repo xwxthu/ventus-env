@@ -1,0 +1,131 @@
+{
+  "dataset_id": 303,
+  "original_review_id": 365,
+  "meta": {
+    "id": 365,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "1a3051b981966ffe2c6b53ebb13c54c62b0addef",
+    "subject": "axi write bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes AXI write handshaking by latching address-channel and data-channel completion until both halves of a write request have completed.",
+    "why_it_counts": [
+      "The patch changes active DUT bus-interface RTL.",
+      "The old logic mishandled legal AXI behavior where AW and W handshake in different cycles.",
+      "The fix directly affects whether memory writes retire correctly."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Only hw/rtl/libs/VX_axi_adapter.sv is changed.",
+      "The old awvalid_ack and wvalid_ack registers were overwritten each cycle with the current handshake pulse.",
+      "The fix introduces sticky m_axi_aw_ack and m_axi_w_ack bits that set on m_axi_aw_fire and m_axi_w_fire and clear only on mem_req_fire.",
+      "mem_req_ready for writes is computed from either current ready or the latched completion of each channel."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Split-channel write buses such as AXI allow the address and data handshake to complete in different cycles. A bridge must remember that one half of the transaction already completed until the other half finishes. If completion is tracked only as a one-cycle pulse, one channel can be forgotten and the request can be retried, stalled, or partially dropped.",
+      "portable_injection_spec": {
+        "affected_mechanism": "split write-channel completion tracking",
+        "trigger_condition": "The write address channel and write data channel do not handshake in the same cycle.",
+        "injection_action": "Replace sticky per-channel completion state with one-cycle handshake observation.",
+        "implementation_pattern": "drop sticky handshake state",
+        "portability_notes": [
+          "Apply this to any bus adapter that issues one logical write over independent address and data channels.",
+          "The bug requires a bus or testbench that can accept AW and W in different cycles.",
+          "Do not change the response channel; the failure comes from losing partial completion state."
+        ],
+        "concrete_injection_steps": [
+          "Locate the write-request tracker that decides when one upstream write has fully completed on the downstream bus.",
+          "Make each channel-ack register reflect only the current-cycle valid and ready handshake instead of latching completion until the full write retires.",
+          "Keep the upstream ready condition dependent on both channel acknowledgements so the design now forgets earlier partial completion."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv"
+        ],
+        "target_module_or_logic": "AXI adapter AW and W acknowledgement state",
+        "commit_fix_summary": "The commit replaces pulse-based awvalid_ack and wvalid_ack tracking with latched m_axi_aw_ack and m_axi_w_ack bits that survive until the whole write request completes.",
+        "mutation_strategy": "restore_pulse_ack_tracking",
+        "source_level_edit_anchor": "Change the m_axi_aw_ack and m_axi_w_ack registers back to direct assignments from m_axi_*valid && m_axi_*ready on every cycle."
+      },
+      "expected_failure_mode": "When AW and W complete on different cycles, writes can stall indefinitely, be retried incorrectly, or retire with only one side of the transaction actually accepted.",
+      "evidence_for_injection": [
+        "The fix adds explicit m_axi_aw_fire and m_axi_w_fire wires and latches completion of each independently.",
+        "The old code overwrote the ack state each cycle, which loses history across cycles.",
+        "The ready equation uses those latched acknowledgements to decide when the upstream write may retire."
+      ],
+      "notes": [
+        "The bug is in write-side request completion tracking, not in AXI read handling."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交修复了 AXI 写握手逻辑：地址通道和数据通道的完成状态会被锁存，直到一次写请求的两个部分都真正完成。",
+    "why_it_counts": [
+      "补丁修改的是 DUT 中实际工作的总线接口 RTL。",
+      "旧逻辑无法正确处理 AW 和 W 在不同周期完成握手这一合法 AXI 行为。",
+      "该修复直接影响内存写请求能否正确退休。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "只修改了 hw/rtl/libs/VX_axi_adapter.sv。",
+      "旧版 awvalid_ack 和 wvalid_ack 每个周期都会被当前握手脉冲覆盖。",
+      "修复后新增了可保持的 m_axi_aw_ack 和 m_axi_w_ack，它们在 m_axi_aw_fire 与 m_axi_w_fire 时置位，并只在 mem_req_fire 时清零。",
+      "写请求的 mem_req_ready 由每个通道的当前 ready 或已锁存完成状态共同决定。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_axi_adapter.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "像 AXI 这类分离地址和数据通道的写总线，允许两个握手在不同周期完成。桥接器必须记住某一半事务已经完成，直到另一半也完成。如果完成状态只用单周期脉冲表示，那么已经完成的一半会被遗忘，导致请求被重试、卡住或部分丢失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "分离式写通道的完成状态跟踪",
+        "trigger_condition": "写地址通道和写数据通道不在同一个周期完成握手。",
+        "injection_action": "把每个通道的可保持完成状态替换成单周期握手观察值。",
+        "implementation_pattern": "去掉粘滞式握手状态",
+        "portability_notes": [
+          "把它映射到任何通过独立地址和数据通道发送单个逻辑写请求的总线适配器。",
+          "该故障需要总线或测试环境允许 AW 和 W 分别在不同周期被接受。",
+          "不要改动响应通道；故障根源是设计丢失了部分完成状态。"
+        ],
+        "concrete_injection_steps": [
+          "找到负责判断一个上游写请求何时在下游总线上完整完成的跟踪逻辑。",
+          "让每个通道的确认寄存器只反映当周期 valid 和 ready 的握手，而不是保持到整笔写请求退休为止。",
+          "保留“上游 ready 依赖两个通道都确认”的条件，这样设计就会遗忘更早完成的一半事务。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_axi_adapter.sv"
+        ],
+        "target_module_or_logic": "AXI adapter 中 AW 与 W 的确认状态逻辑",
+        "commit_fix_summary": "该提交把基于脉冲的 awvalid_ack 和 wvalid_ack 改成了可保持的 m_axi_aw_ack 和 m_axi_w_ack，使其在整笔写请求完成前一直保留。",
+        "mutation_strategy": "restore_pulse_ack_tracking",
+        "source_level_edit_anchor": "把 m_axi_aw_ack 和 m_axi_w_ack 改回为每周期直接取 m_axi_*valid && m_axi_*ready。"
+      },
+      "expected_failure_mode": "当 AW 和 W 在不同周期完成时，写请求可能无限停滞、被错误重发，或者出现只有一半事务真正被接受的情况。",
+      "evidence_for_injection": [
+        "修复显式新增了 m_axi_aw_fire 与 m_axi_w_fire，并分别锁存每个通道的完成状态。",
+        "旧代码每周期覆盖 ack 状态，会跨周期丢失历史信息。",
+        "最终的 ready 公式依赖这些锁存确认位来判断上游写请求是否可以退休。"
+      ],
+      "notes": [
+        "故障位于写侧请求完成跟踪，而不是 AXI 读路径。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

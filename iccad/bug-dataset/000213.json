@@ -1,0 +1,147 @@
+{
+  "dataset_id": 213,
+  "original_review_id": 256,
+  "meta": {
+    "id": 256,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "37bb4b9f29383346262720d0987ad5f07759f628",
+    "subject": "fix refill buffer push data bug."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes L2 refill and partial-write merge behavior by selecting the correct buffered put-data entry when SinkD combines returning data with earlier buffered write data.",
+    "why_it_counts": [
+      "The patch changes L2 cache datapath wiring in core DUT modules.",
+      "It repairs how buffered write data is matched back to a later refill or acknowledgement path.",
+      "The resulting error corrupts refill or merged write data, not just bookkeeping."
+    ],
+    "disqualifiers": [
+      "The commit also changes a regression testcase selection."
+    ],
+    "evidence": [
+      "SinkD.scala adds an output index and drives it from io.put.",
+      "Scheduler.scala newly forwards sinkD.io.index into sinkA.io.index.",
+      "SinkA.scala newly drives putbuffer.io.index.get from that forwarded index.",
+      "Nearby SinkD logic merges io.pb_beat.data with d.bits.data for PutPartialData, so selecting the wrong put-buffer entry changes returned cacheline data."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Scheduler.scala",
+      "ventus/src/L2cache/SinkA.scala",
+      "ventus/src/L2cache/SinkD.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This bug is a sideband-index matching error between a buffered store-data structure and the later response path that consumes that data. When a refill or acknowledgement path needs to merge incoming memory data with previously buffered write data, it must read the exact buffer entry associated with the outstanding request. If the response path reads a stale, default, or unrelated buffer index, the cache merges the wrong bytes and silently corrupts the resulting line.",
+      "portable_injection_spec": {
+        "affected_mechanism": "buffered partial-write data selection during refill or merge",
+        "trigger_condition": "A response path needs buffered write payload from an earlier request, especially when multiple put or store-data entries can coexist.",
+        "injection_action": "Break the sideband index path so the refill or merge logic reads the wrong buffered entry when combining data.",
+        "implementation_pattern": "drop response-to-buffer index propagation",
+        "portability_notes": [
+          "Look for a store-data buffer or put buffer whose payload is later revisited by a refill, writeback, or merge path.",
+          "The bug matters most when more than one buffered entry may be live, because a default or stale index can still appear to work in single-entry cases.",
+          "The affected logic is usually a small sideband identifier path, not the main data path itself."
+        ],
+        "concrete_injection_steps": [
+          "Locate the buffered write-data structure and the later stage that merges buffered bytes with returning memory data.",
+          "Find the response-carried identifier or index that should select the matching buffer entry.",
+          "Remove that identifier propagation or replace it with a stale or unrelated index source.",
+          "Keep the merge logic itself unchanged so the injected fault specifically corrupts which buffered data entry is read."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Scheduler.scala",
+          "ventus/src/L2cache/SinkA.scala",
+          "ventus/src/L2cache/SinkD.scala"
+        ],
+        "target_module_or_logic": "SinkD put index export, Scheduler cross-module wiring, and SinkA putbuffer read-index selection",
+        "commit_fix_summary": "The fix exports io.put from SinkD as an index, wires it through Scheduler, and uses that index in SinkA to drive putbuffer.io.index.get so SinkD reads the matching buffered entry during merge.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the SinkD index output, delete the Scheduler connection to sinkA.io.index, or stop driving putbuffer.io.index.get from that value in SinkA."
+      },
+      "expected_failure_mode": "Partial-write merges or refill-buffer pushes use data from the wrong buffered store entry, producing corrupted cacheline contents or incorrect writeback data.",
+      "evidence_for_injection": [
+        "SinkD computes merge_data from io.pb_beat.data and d.bits.data specifically for PutPartialData.",
+        "ListBuffer.scala reads its second data port from io.index.get, so the newly added index wiring directly controls which buffered entry is observed.",
+        "Before the fix, this index path was missing, so the merge stage could not reliably select the correct buffered put-data entry."
+      ],
+      "notes": [
+        "For a minimal mutation, changing only the index propagation is sufficient.",
+        "The bug is easier to expose with multiple outstanding buffered puts or partial writes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L2 refill 与部分写合并时的数据选择错误：SinkD 在把返回数据与先前缓冲的写数据合并时，必须选到正确的 put-buffer 项。",
+    "why_it_counts": [
+      "补丁修改了核心 DUT 模块中的 L2 cache 数据路径连线。",
+      "它修复的是如何把先前缓冲的写数据重新匹配到后续 refill 或应答路径上的问题。",
+      "该错误会直接损坏 refill 或合并后的写数据，而不只是记账信息。"
+    ],
+    "disqualifiers": [
+      "该提交还改动了一个回归测试用例的选择。"
+    ],
+    "evidence": [
+      "SinkD.scala 新增了 index 输出，并将其连接到 io.put。",
+      "Scheduler.scala 新增了 sinkD.io.index 到 sinkA.io.index 的转发。",
+      "SinkA.scala 新增了用该转发值驱动 putbuffer.io.index.get。",
+      "SinkD 周围代码会在 PutPartialData 情况下把 io.pb_beat.data 与 d.bits.data 合并，因此若选错 put-buffer 项，最终 cacheline 数据就会出错。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Scheduler.scala",
+      "ventus/src/L2cache/SinkA.scala",
+      "ventus/src/L2cache/SinkD.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "这是一个缓冲写数据结构与后续响应路径之间的 sideband 索引匹配错误。当 refill 或应答路径需要把返回的内存数据与之前缓冲的写数据合并时，它必须读出与当前未完成请求对应的那个缓冲项。如果响应路径读取了陈旧、默认或无关的缓冲索引，cache 就会把错误的字节掺入最终结果，从而造成静默数据损坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "refill 或合并过程中对缓冲部分写数据的选择",
+        "trigger_condition": "响应路径需要取回先前缓冲的写负载，尤其是在系统中可能同时存在多个 put 或 store-data 项时。",
+        "injection_action": "破坏该 sideband 索引路径，使 refill 或合并逻辑在组合数据时读取错误的缓冲项。",
+        "implementation_pattern": "删除响应到缓冲区的索引传递",
+        "portability_notes": [
+          "寻找一个 store-data buffer 或 put buffer，其负载会在后续 refill、writeback 或 merge 路径中被再次读取。",
+          "当系统可能同时保留多个缓冲项时，这个错误最明显，因为默认或陈旧索引在单项场景下可能偶然看起来正常。",
+          "受影响的通常是一个很小的 sideband 标识路径，而不是主数据通路本身。"
+        ],
+        "concrete_injection_steps": [
+          "定位缓冲写数据结构，以及后续将缓冲字节与返回内存数据合并的阶段。",
+          "找到本应选择正确缓冲项的响应侧标识符或索引。",
+          "删除该标识符的传递，或者用一个陈旧/无关的索引源替换它。",
+          "保持真正的合并逻辑不变，使故障明确表现为读取了错误的缓冲数据项。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Scheduler.scala",
+          "ventus/src/L2cache/SinkA.scala",
+          "ventus/src/L2cache/SinkD.scala"
+        ],
+        "target_module_or_logic": "SinkD 的 put 索引导出、Scheduler 的跨模块连线，以及 SinkA 的 putbuffer 读索引选择",
+        "commit_fix_summary": "该修复把 SinkD 的 io.put 导出为 index，经由 Scheduler 连到 SinkA，并在 SinkA 中驱动 putbuffer.io.index.get，从而让 SinkD 在合并时读到匹配的缓冲项。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除 SinkD 的 index 输出、删掉 Scheduler 中到 sinkA.io.index 的连线，或者在 SinkA 中不再用该值驱动 putbuffer.io.index.get。"
+      },
+      "expected_failure_mode": "部分写合并或 refill buffer push 会从错误的缓冲 store 项取数，导致 cacheline 内容损坏或 writeback 数据错误。",
+      "evidence_for_injection": [
+        "SinkD 在 PutPartialData 情况下会用 io.pb_beat.data 与 d.bits.data 计算 merge_data。",
+        "ListBuffer.scala 的第二个数据端口明确通过 io.index.get 选择读取哪一个缓冲项，因此新增的索引连线直接决定读取结果。",
+        "修复前该索引路径缺失，所以合并阶段无法稳定地选中正确的 put-data 缓冲项。"
+      ],
+      "notes": [
+        "若做最小化注入，只改索引传递路径就够了。",
+        "当存在多个未完成的 buffered put 或 partial write 时，更容易触发该故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

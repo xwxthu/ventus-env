@@ -1,0 +1,137 @@
+{
+  "dataset_id": 223,
+  "original_review_id": 269,
+  "meta": {
+    "id": 269,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "91fe3a319992c199ef18ffc233a16b4c8b637ebb",
+    "subject": "bug fixed"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "The patch fixes cache response metadata preservation across deferred paths: write misses should not use the hit-response path, original active masks must be queued with miss requests, and stalled tag hits must retain the matching waymask.",
+    "why_it_counts": [
+      "The commit changes central DCache and tag-access logic in live DUT modules.",
+      "The edits correct concrete cache-response control and metadata handling rather than test or logging code.",
+      "The bug can be reintroduced by reversing localized metadata-hold logic."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "In `DCache.scala`, the immediate core-response condition drops `writeMiss_st1`, so write misses are no longer treated like same-stage hits.",
+      "The patch adds `coreReqMask_Q` and changes `coreRspFromMemReq.activeMask` to use the queued mask instead of reusing unrelated response state.",
+      "In `L1TagAccess.scala`, the stall-hold queue changes from a single Bool to a bundle carrying both `hit` and `waymask`, and `io.waymaskHit_st1` now uses the held waymask on a stalled probe."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A pipelined cache often needs to complete a request after the original request stage has already moved on. When that happens, the response path must carry the original request metadata forward, including lane mask and selected hit way. If the design instead reuses live pipeline state or collapses a miss completion into the same path as a hit, the eventual response can acknowledge the wrong lanes, choose the wrong way, or claim completion at the wrong time.",
+      "portable_injection_spec": {
+        "affected_mechanism": "deferred cache-response metadata retention",
+        "trigger_condition": "The bug appears when a store miss, miss-generated acknowledgement, or stalled tag-probe response completes after at least one cycle of delay or backpressure.",
+        "injection_action": "Remove the explicit buffering of original response metadata and let downstream logic reuse current-cycle state for deferred completions.",
+        "implementation_pattern": "drop metadata hold queue and reuse live control state",
+        "portability_notes": [
+          "Apply this to any cache pipeline where a miss request or stalled probe can complete later than the request stage that created it.",
+          "The important metadata are lane activity, hit indication, and selected way or waymask.",
+          "A smaller reinjection can target only one subcase, such as store-miss active-mask preservation or stalled tag-hit way preservation."
+        ],
+        "concrete_injection_steps": [
+          "Locate the cache response path that handles delayed completions from miss queues or stalled probe stages.",
+          "Remove or bypass the register or queue that snapshots original request metadata for later completion.",
+          "Allow a write miss to reuse the same immediate-response qualification used for cache hits, or let a delayed response consume the current live active mask instead of the captured one.",
+          "For tag-hit stall logic, retain only a hit bit and stop carrying the selected way or waymask across the stall."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "DCache miss-response bookkeeping and L1TagAccess stall hold state",
+        "commit_fix_summary": "The fix removes write misses from the hit-style immediate response condition, queues the original active mask alongside miss requests, and extends the tag-hit stall queue to preserve both hit and waymask.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "The source-level anchors are the `coreReqMask_Q` queue and `coreRspFromMemReq.activeMask` assignment in `DCache.scala`, plus the `cachehit_hold` queue type and `io.waymaskHit_st1` selection in `L1TagAccess.scala`."
+      },
+      "expected_failure_mode": "Deferred cache responses acknowledge the wrong active lanes, lose the correct hit way during stalls, or incorrectly behave like immediate hits on store misses.",
+      "evidence_for_injection": [
+        "The patch adds explicit storage for active mask because `memReq_Q` does not otherwise carry that metadata.",
+        "The old DCache condition explicitly treated `writeMiss_st1` as part of the immediate core-response path; the fix removes that behavior.",
+        "The tag-access fix widens the hold structure specifically to preserve `waymask` under backpressure, proving a real metadata-loss bug."
+      ],
+      "notes": [
+        "This commit contains multiple closely related cache metadata fixes in one changeset.",
+        "For a cleaner injection benchmark, it is reasonable to reintroduce only one of the two sub-bugs instead of all source-level edits at once."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该补丁修复了延迟 cache 响应中的元数据保持问题：write miss 不应走 hit 响应路径，miss 请求必须携带原始 active mask，阻塞的 tag hit 也必须保留匹配到的 waymask。",
+    "why_it_counts": [
+      "提交修改的是 DUT 中核心的 DCache 和 tag-access 模块逻辑。",
+      "这些改动修正的是具体的 cache 响应控制和元数据处理，而不是测试或日志代码。",
+      "该 bug 可以通过回退局部的元数据保持逻辑来稳定重现。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 `DCache.scala` 中，立即返回 core response 的条件去掉了 `writeMiss_st1`，因此 write miss 不再被当成同阶段 hit 处理。",
+      "补丁新增了 `coreReqMask_Q`，并把 `coreRspFromMemReq.activeMask` 改为使用排队保存的 mask，而不是复用无关的响应状态。",
+      "在 `L1TagAccess.scala` 中，阻塞保持队列从单个 Bool 扩展为同时携带 `hit` 和 `waymask` 的 bundle，且 `io.waymaskHit_st1` 在阻塞后会使用保持下来的 `waymask`。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "流水化 cache 常常需要在原始请求阶段已经前进之后，才完成一次请求。此时响应路径必须把原始请求的元数据继续带到完成点，包括 lane mask 和命中的目标 way。如果设计改为复用当前流水线状态，或者把 miss 完成错误地并入 hit 的即时响应路径，那么最终响应就可能确认错误的 lane、选择错误的 way，或者在错误的时机宣告完成。",
+      "portable_injection_spec": {
+        "affected_mechanism": "延迟 cache 响应的元数据保持",
+        "trigger_condition": "当 store miss、由 miss 队列生成的确认响应，或被阻塞一拍以上的 tag-probe 响应在延迟后完成时，bug 会暴露。",
+        "injection_action": "移除对原始响应元数据的显式缓冲，让下游逻辑在延迟完成时重新使用当前周期的状态。",
+        "implementation_pattern": "删除元数据保持队列并复用实时控制状态",
+        "portability_notes": [
+          "适用于任何 miss 请求或 probe 响应会晚于原始请求阶段完成的 cache 流水线。",
+          "关键元数据包括 lane 活跃掩码、hit 指示以及选中的 way 或 waymask。",
+          "也可以只注入其中一个子问题，例如 store-miss active-mask 保持或阻塞 tag-hit way 保持。"
+        ],
+        "concrete_injection_steps": [
+          "定位 cache 响应路径中处理 miss 队列返回或 probe 阻塞后完成的逻辑。",
+          "移除或旁路那个用于保存原始请求元数据的寄存器或队列。",
+          "让 write miss 重新复用 cache hit 的即时响应判定，或让延迟响应直接消费当前活动掩码而非捕获的原始掩码。",
+          "对于 tag-hit 阻塞逻辑，只保留 hit 位，不再把选中的 way 或 waymask 跨阻塞保存。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "DCache miss 响应记账与 L1TagAccess 阻塞保持状态",
+        "commit_fix_summary": "修复从 hit 式即时响应条件中移除了 write miss，把原始 active mask 与 miss 请求一起排队保存，并把 tag-hit 阻塞队列扩展为同时保留 hit 和 waymask。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "源码层面的锚点包括 `DCache.scala` 中的 `coreReqMask_Q` 队列和 `coreRspFromMemReq.activeMask` 赋值，以及 `L1TagAccess.scala` 中 `cachehit_hold` 的队列类型和 `io.waymaskHit_st1` 的选择逻辑。"
+      },
+      "expected_failure_mode": "延迟 cache 响应会确认错误的 active lane，在阻塞情况下丢失正确 hit way，或者把 store miss 错误地当成立即命中完成。",
+      "evidence_for_injection": [
+        "补丁专门新增 active mask 队列，说明 `memReq_Q` 本身并不携带这份元数据。",
+        "旧的 DCache 条件显式把 `writeMiss_st1` 并入即时 core response 路径；修复将其删除。",
+        "tag-access 修复把保持结构扩展到 `waymask`，直接证明原先存在阻塞后的元数据丢失问题。"
+      ],
+      "notes": [
+        "该提交把多个彼此相关的 cache 元数据修复合并在一个 changeset 中。",
+        "如果想让注入基准更干净，可以只回退其中一个子 bug，而不是一次性回退所有源码改动。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

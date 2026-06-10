@@ -1,0 +1,65 @@
+{
+  "dataset_id": 73,
+  "original_review_id": 94,
+  "meta": {
+    "id": 94,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "16420913f86e7e02c4f09e5a7e3038186f13084b",
+    "subject": "2 mod mshr MSHRmissRspIn bit width"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This commit finishes the MSHR response-ID width cleanup by passing NMshrEntry into the bundle constructor, but the surrounding code still does not show a concrete DUT-behavior fix. It is better treated as interface consistency cleanup than as a verified hardware bug fix for fault injection.",
+    "why_it_counts": [
+      "Touches the core L1 MSHR hardware module.",
+      "Aligns a constructor argument with the intended entry-count semantics."
+    ],
+    "disqualifiers": [
+      "The patch is a one-line constructor-argument cleanup following the previous width-definition change, not a self-contained control or data-path repair.",
+      "The refill producer already emits only log2Up(NMshrEntry) source bits and the MSHR consumer already reduces the value to an entry index, so a user-visible behavior change is not demonstrated.",
+      "No added test or nearby functional logic change shows that miss completion was incorrect before this standalone commit."
+    ],
+    "evidence": [
+      "L1MSHR.scala changes missRspIn from new MSHRmissRspIn(bABits) to new MSHRmissRspIn(NMshrEntry).",
+      "The same file already defines MSHRmissRspIn.instrId as UInt(log2Up(NEntry).W) after the previous commit.",
+      "DCache.scala already slices d_source to SetIdxBits+log2Up(NMshrEntry)-1 downto SetIdxBits before driving missRspIn.bits.instrId.",
+      "The internal selector entryMatchMissRsp remains declared as UInt(log2Up(NMshrEntry).W)."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "该提交通过把 NMshrEntry 传给 bundle 构造参数来收尾 MSHR 响应 ID 位宽整理，但结合周边代码，仍然看不出明确的 DUT 行为级修复。相比真实硬件 bug fix，它更适合被视为接口一致性清理。",
+    "why_it_counts": [
+      "修改发生在核心 L1 MSHR 硬件模块中。",
+      "补丁让构造参数与设计上期望的表项数语义对齐。"
+    ],
+    "disqualifiers": [
+      "这只是继前一个位宽定义修改之后的一行构造参数清理，不是完整的控制或数据路径修复。",
+      "回填响应生产侧本来就只发出 log2Up(NMshrEntry) 位的 source，而 MSHR 消费侧本来也会把该值收敛成表项索引，因此没有证明存在用户可见的行为差异。",
+      "补丁没有新增测试，也没有相邻功能逻辑改动来证明在这个独立提交之前 miss 完成行为是错误的。"
+    ],
+    "evidence": [
+      "L1MSHR.scala 把 missRspIn 从 new MSHRmissRspIn(bABits) 改成了 new MSHRmissRspIn(NMshrEntry)。",
+      "在同一个文件里，前一个提交之后 MSHRmissRspIn.instrId 已经被定义成 UInt(log2Up(NEntry).W)。",
+      "DCache.scala 在驱动 missRspIn.bits.instrId 之前，已经把 d_source 切到了 SetIdxBits+log2Up(NMshrEntry)-1 到 SetIdxBits 这一段。",
+      "内部选择器 entryMatchMissRsp 的声明仍然是 UInt(log2Up(NMshrEntry).W)。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "dataset_id": 301,
+  "original_review_id": 362,
+  "meta": {
+    "id": 362,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "d8920fccecd1c6bd5010f291a1847ca3dc0e331e",
+    "subject": "fixed multiply extension bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes R-type multiply and divide decode being gated by the floating-point extension macro instead of the integer multiply extension macro.",
+    "why_it_counts": [
+      "The patch changes central instruction decode RTL.",
+      "The fix directly controls whether legal M-extension opcodes are decoded at all.",
+      "The bug manifests in real build configurations where M is enabled without F."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Only hw/rtl/VX_decode.sv is changed.",
+      "Inside the INST_R decode path, the multiply and divide case moves from `ifdef EXT_F_ENABLE to `ifdef EXT_M_ENABLE.",
+      "The affected block is the func7[0] R-type path that selects MUL, DIV, and REM operations."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_decode.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a configurable ISA decoder, each optional opcode family must be enabled by the feature bit that actually owns that instruction family. If multiply and divide decode is guarded by an unrelated feature, legal instructions disappear in some configurations even though the execution unit exists.",
+      "portable_injection_spec": {
+        "affected_mechanism": "extension-gated instruction decode",
+        "trigger_condition": "The target extension is enabled while the unrelated guard used by the buggy decoder is disabled, such as an M-enabled and F-disabled build.",
+        "injection_action": "Gate the multiply and divide decode branch with an unrelated capability signal instead of the multiply-extension enable.",
+        "implementation_pattern": "swap feature guard on an opcode subtable",
+        "portability_notes": [
+          "Map this to the decode logic that recognizes optional integer multiply and divide opcodes.",
+          "The injected bug should only affect extension availability, not the opcode bit pattern itself.",
+          "This is easiest to observe in a build where the intended extension is on and the mistaken guard is off."
+        ],
+        "concrete_injection_steps": [
+          "Locate the decoder branch for R-type multiply and divide operations.",
+          "Replace its compile-time or runtime enable condition with an unrelated feature guard.",
+          "Keep the opcode matching logic unchanged so only the availability check becomes wrong."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_decode.sv"
+        ],
+        "target_module_or_logic": "INST_R multiply and divide decode guard",
+        "commit_fix_summary": "The commit changes the preprocessor guard around the func7[0] multiply and divide case from EXT_F_ENABLE to EXT_M_ENABLE.",
+        "mutation_strategy": "swap_feature_guard",
+        "source_level_edit_anchor": "Rewrap the multiply and divide decode block with `ifdef EXT_F_ENABLE instead of `ifdef EXT_M_ENABLE."
+      },
+      "expected_failure_mode": "Multiply and divide instructions decode as the wrong operation or become unavailable in builds where the M extension is enabled without the unrelated extension.",
+      "evidence_for_injection": [
+        "The entire fix is a one-line guard swap on the multiply and divide decode block.",
+        "The changed block is the only place touched by the commit.",
+        "The surrounding case statement shows that this guard controls architectural opcode selection."
+      ],
+      "notes": [
+        "Best reproduced in an M-enabled, F-disabled configuration."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了 R 型乘除法解码被错误地挂在浮点扩展开关下，而不是整数乘法扩展开关下的问题。",
+    "why_it_counts": [
+      "补丁修改的是核心指令解码 RTL。",
+      "该修复直接决定合法的 M 扩展指令是否会被解码。",
+      "当只启用 M 而未启用 F 时，这个缺陷会在真实配置中暴露。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "只修改了 hw/rtl/VX_decode.sv。",
+      "在 INST_R 解码路径中，乘除法分支的条件从 `ifdef EXT_F_ENABLE 改为 `ifdef EXT_M_ENABLE。",
+      "受影响的是 func7[0] 的 R 型路径，它负责选择 MUL、DIV 和 REM 等操作。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_decode.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在可配置 ISA 解码器中，每个可选指令族都必须由真正对应的特性开关控制。如果把乘除法解码错误地绑到无关特性上，那么即使执行单元存在，某些配置下合法指令也会消失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "扩展相关的指令解码门控",
+        "trigger_condition": "目标扩展已启用，而错误使用的无关门控关闭，例如启用 M 但关闭 F 的构建配置。",
+        "injection_action": "把乘除法解码分支错误地挂到无关能力信号上，而不是乘法扩展开关上。",
+        "implementation_pattern": "交换 opcode 子表的特性门控条件",
+        "portability_notes": [
+          "将该缺陷映射到识别整数乘除法可选指令的解码逻辑。",
+          "注入时应只破坏扩展可用性判断，不要改变 opcode 位模式本身。",
+          "最容易在目标扩展开启、错误门控关闭的配置中观察到。"
+        ],
+        "concrete_injection_steps": [
+          "找到 R 型乘除法操作的解码分支。",
+          "把它的编译期或运行时使能条件替换成无关特性门控。",
+          "保持 opcode 匹配逻辑不变，仅让可用性判断出错。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_decode.sv"
+        ],
+        "target_module_or_logic": "INST_R 乘除法解码门控",
+        "commit_fix_summary": "该提交把 func7[0] 乘除法分支外层的预处理条件从 EXT_F_ENABLE 改成了 EXT_M_ENABLE。",
+        "mutation_strategy": "swap_feature_guard",
+        "source_level_edit_anchor": "将乘除法解码块重新包回 `ifdef EXT_F_ENABLE，而不是 `ifdef EXT_M_ENABLE。"
+      },
+      "expected_failure_mode": "在启用 M 但未启用无关扩展的构建中，乘除法指令会被错误解码，或者直接变成不可用。",
+      "evidence_for_injection": [
+        "整个修复只是在乘除法解码块上交换了一行门控条件。",
+        "这是该提交唯一修改的位置。",
+        "周围的 case 结构表明该条件直接控制体系结构级 opcode 选择。"
+      ],
+      "notes": [
+        "最适合在启用 M、禁用 F 的配置中复现。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

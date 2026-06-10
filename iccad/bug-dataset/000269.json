@@ -1,0 +1,145 @@
+{
+  "dataset_id": 269,
+  "original_review_id": 323,
+  "meta": {
+    "id": 323,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "938b66f2326d642f972b12f0daef8adce676410c",
+    "subject": "sampler bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "texture_sampler",
+    "summary": "Fixes sampler datapath bugs so runtime filter selection and per-texel channel formatting produce the correct sampled color.",
+    "why_it_counts": [
+      "All substantive changes are inside texture-sampler RTL modules.",
+      "The patch changes functional sampling behavior, including runtime selection between point and bilinear results and channel masking per texel.",
+      "The commit message explicitly calls these sampler bug fixes."
+    ],
+    "disqualifiers": [
+      "Some edits also repair packed-array declarations and module-local syntax, so the bug bundle is broader than a single one-line fix."
+    ],
+    "evidence": [
+      "VX_tex_sampler.v removes the old top-level point-versus-bilinear branch and instead always computes per-thread bilerp output, then selects req_texels[i][0] or req_data_bilerp[i] with a runtime req_filter mux.",
+      "VX_tex_format.v fixes the formatted_texel_r declaration to [NUM_TEXELS-1:0][63:0] and applies the 64-bit channel mask separately to each texel element.",
+      "VX_tex_bilerp.v changes color_enable to NUM_COLOR_CHANNEL bits and uses explicit per-channel checks when constructing sampled_data."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tex_unit/VX_tex_bilerp.v",
+      "hw/rtl/tex_unit/VX_tex_format.v",
+      "hw/rtl/tex_unit/VX_tex_sampler.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix corrects two closely related sampler mechanisms: selecting the proper filter datapath at runtime, and applying channel formatting or masking at the granularity of each texel and color channel. If a texture unit hardwires the wrong filter path, or applies a mask to a packed multi-texel vector instead of to each texel element, some filter modes and formats will return malformed colors even though the memory fetch itself succeeded.",
+      "portable_injection_spec": {
+        "affected_mechanism": "texture filter-path selection and per-texel channel formatting",
+        "trigger_condition": "Sampling requests use different filter modes at runtime, especially bilinear filtering or packed RGB formats where multiple texels are reformatted and blended.",
+        "injection_action": "Break the runtime mux between point and bilinear datapaths or flatten per-texel channel masking into one packed-vector operation.",
+        "implementation_pattern": "break runtime filter mux and flatten per-texel mask",
+        "portability_notes": [
+          "Map this to any texture or image-sampling datapath that has multiple filter modes and format-conversion logic before blending.",
+          "The important bug is wrong structural granularity: selecting one filter path at elaboration time or masking a whole packed vector instead of each texel independently.",
+          "If only one analogue is desired on another DUT, prefer the runtime filter-selection fault because it directly changes which sampled result is returned."
+        ],
+        "concrete_injection_steps": [
+          "Remove or bypass the runtime mux that selects between point-sample output and filtered output, so one path is effectively forced or selected using the wrong structural condition.",
+          "Apply any channel-enable or format mask to an entire packed texel bundle instead of iterating over each texel element and channel separately.",
+          "Allow the color-enable bus width or interpretation to mismatch the actual number of color channels so the wrong channels are gated.",
+          "Leave the memory fetch path intact so the fault manifests as a wrong sampled color rather than a fetch miss."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tex_unit/VX_tex_bilerp.v",
+          "hw/rtl/tex_unit/VX_tex_format.v",
+          "hw/rtl/tex_unit/VX_tex_sampler.v"
+        ],
+        "target_module_or_logic": "Sampler filter selection, texel format conversion, and bilerp channel gating",
+        "commit_fix_summary": "The commit restructures VX_tex_sampler around a runtime req_filter mux, fixes per-texel formatting in VX_tex_format, and aligns color_enable handling in VX_tex_bilerp with the actual channel count.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In the texture sampler path, remove the final req_filter runtime mux or force it to the wrong side, and in VX_tex_format revert from per-texel masking back to one packed-vector mask on the formatted texel bundle."
+      },
+      "expected_failure_mode": "Point-filtered and bilinear texture requests can return the wrong path's result, or sampled colors can have malformed channel values and alpha behavior for some formats.",
+      "evidence_for_injection": [
+        "The fixed sampler now computes bilerp data for every thread and selects it with a runtime req_filter mux, which directly exposes the previous path-selection problem.",
+        "The fixed formatter applies the mask to each texel element separately, showing that a wide packed operation was previously wrong.",
+        "The fixed bilerp module aligns color_enable width with NUM_COLOR_CHANNEL, tying the bug to channel-level gating rather than to memory access."
+      ],
+      "notes": [
+        "This commit bundles multiple sampler fixes; a practical single-fault reinjection should prefer the runtime filter-select bug or the per-texel mask bug, not necessarily both at once.",
+        "Do not use the whitespace-only changes in VX_tex_memory.v or VX_tex_unit.v as injection anchors."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "texture_sampler",
+    "summary": "该修复解决了 sampler 数据通路中的功能错误，使运行时滤波路径选择与逐 texel 的通道格式化都能产生正确采样颜色。",
+    "why_it_counts": [
+      "所有实质性改动都位于纹理采样 RTL 模块内部。",
+      "补丁改变了功能性采样行为，包括运行时在 point 与 bilinear 结果之间选择，以及对每个 texel 的通道掩码处理。",
+      "提交信息明确说明这是 sampler bug fixes。"
+    ],
+    "disqualifiers": [
+      "部分修改也修正了 packed-array 声明和模块局部语法，因此这是一组 bug，而不是单一一行修复。"
+    ],
+    "evidence": [
+      "VX_tex_sampler.v 删除了旧的顶层 point 与 bilinear 分支，改为始终为每个线程计算 bilerp 输出，再通过运行时 req_filter mux 在 req_texels[i][0] 和 req_data_bilerp[i] 之间选择。",
+      "VX_tex_format.v 把 formatted_texel_r 的声明修正为 [NUM_TEXELS-1:0][63:0]，并把 64 位通道掩码分别作用到每个 texel 元素上。",
+      "VX_tex_bilerp.v 把 color_enable 的位宽改为 NUM_COLOR_CHANNEL，并在生成 sampled_data 时使用显式逐通道判断。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tex_unit/VX_tex_bilerp.v",
+      "hw/rtl/tex_unit/VX_tex_format.v",
+      "hw/rtl/tex_unit/VX_tex_sampler.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复同时纠正了两个紧密相关的 sampler 机制：一是运行时选择正确的滤波数据通路，二是按每个 texel 和每个颜色通道的粒度执行格式化与掩码。如果纹理单元把错误的滤波路径硬连线，或者把通道掩码施加到打包后的多 texel 向量而不是逐 texel 元素施加，那么即便内存读取成功，某些滤波模式和格式仍会返回畸形颜色。",
+      "portable_injection_spec": {
+        "affected_mechanism": "纹理滤波路径选择与逐 texel 通道格式化",
+        "trigger_condition": "采样请求在运行时切换不同滤波模式，尤其是使用 bilinear filtering 或需要对多个 texel 进行格式化与混合的打包 RGB 格式。",
+        "injection_action": "破坏 point 与 bilinear 数据通路之间的运行时 mux，或把逐 texel 的通道掩码错误地扁平化为对整个打包向量的一次操作。",
+        "implementation_pattern": "破坏运行时滤波 mux，并把逐 texel 掩码扁平化",
+        "portability_notes": [
+          "可映射到任何在混合之前需要执行格式转换、且支持多种滤波模式的纹理或图像采样数据通路。",
+          "关键错误是结构粒度不对：在 elaboration 时就固定滤波路径，或者对整个打包向量施加掩码，而不是逐 texel 独立处理。",
+          "如果在另一套 DUT 上只注入一种同类故障，优先选择运行时滤波选择错误，因为它最直接改变最终返回的采样结果。"
+        ],
+        "concrete_injection_steps": [
+          "移除或绕过运行时在 point-sample 输出与 filtered 输出之间进行选择的 mux，使其中一条路径被错误固定或以错误条件被选中。",
+          "把 channel-enable 或 format mask 从逐 texel、逐通道处理，改成对整个打包 texel 束的一次整体操作。",
+          "让 color-enable 总线的位宽或解释方式与实际颜色通道数不匹配，从而错误屏蔽或放行通道。",
+          "保持内存取数路径不变，使故障表现为错误颜色，而不是取数失败。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tex_unit/VX_tex_bilerp.v",
+          "hw/rtl/tex_unit/VX_tex_format.v",
+          "hw/rtl/tex_unit/VX_tex_sampler.v"
+        ],
+        "target_module_or_logic": "Sampler 中的滤波选择、texel 格式转换和 bilerp 通道门控",
+        "commit_fix_summary": "该提交把 VX_tex_sampler 重构为运行时 req_filter mux，修复了 VX_tex_format 中逐 texel 的格式化掩码，并让 VX_tex_bilerp 中的 color_enable 处理与真实通道数保持一致。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在纹理采样路径中，去掉最终的 req_filter 运行时 mux 或强制其选到错误一侧，并在 VX_tex_format 中把逐 texel 掩码回退成对整个 formatted texel bundle 的一次整体掩码。"
+      },
+      "expected_failure_mode": "point-filtered 或 bilinear 的纹理请求可能返回错误路径的结果，或者在某些格式下出现通道值与 alpha 行为异常的采样颜色。",
+      "evidence_for_injection": [
+        "修复后的 sampler 现在会为每个线程始终计算 bilerp 数据，并通过运行时 req_filter mux 选择，这直接暴露了先前的路径选择问题。",
+        "修复后的 formatter 把掩码分别作用到每个 texel 元素，说明原先对宽打包向量的一次操作是错误的。",
+        "修复后的 bilerp 模块把 color_enable 位宽与 NUM_COLOR_CHANNEL 对齐，表明缺陷发生在通道级门控，而不是内存访问。"
+      ],
+      "notes": [
+        "该提交包含多个 sampler 修复；如果只注入一个实际故障，优先选择运行时滤波选择错误或逐 texel 掩码错误之一。",
+        "不要把 VX_tex_memory.v 和 VX_tex_unit.v 中仅有的空白变化作为注入锚点。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

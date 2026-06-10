@@ -1,0 +1,59 @@
+{
+  "dataset_id": 324,
+  "original_review_id": 391,
+  "meta": {
+    "id": 391,
+    "repo": "vortex",
+    "branch": "tensor_unit",
+    "commit": "253a8460367217c4bd11a1e93e69aa7998203a65",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This commit rewrites VX_operands arbitration to use library stream arbiters and adds an unoptimized-flat suppression wrapper, but the patch does not provide clear evidence of a concrete DUT behavior bug suitable for a fault-injection dataset.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "The input-side rewrite preserves the same priority-style collector choice as the old priority encoder, so the behavioral bug being fixed is not explicit from the patch.",
+      "The new output-side ARBITER(\"R\") setting matches the library default, so that hunk is not a substantive functional fix.",
+      "Moving AOS_TO_ITF under IGNORE_UNOPTFLAT points toward tooling or lint cleanup rather than a well-supported DUT correctness bug."
+    ],
+    "evidence": [
+      "The commit touches only hw/rtl/core/VX_operands.sv.",
+      "The old priority-encoder-based opc_sel path is replaced with VX_stream_arb configured as NUM_INPUTS=1 and NUM_OUTPUTS=`NUM_OPCS using priority arbitration.",
+      "The output arbiter gains an explicit ARBITER(\"R\") argument, but VX_stream_arb already defaults to round-robin arbitration.",
+      "The patch also wraps AOS_TO_ITF in IGNORE_UNOPTFLAT markers."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "该提交把 VX_operands 的仲裁逻辑改写为库里的 stream arbiter，并加入了 unoptimized-flat 抑制包装，但补丁本身并没有给出足够明确的 DUT 行为错误证据，因此不适合作为故障注入数据集条目。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "输入侧改写后仍然保持与旧 priority encoder 相同的优先级式 collector 选择，因此从补丁里看不出明确修复了什么行为性 bug。",
+      "输出侧新增的 ARBITER(\"R\") 与库默认值一致，因此该 hunk 不是实质性的功能修复。",
+      "把 AOS_TO_ITF 放到 IGNORE_UNOPTFLAT 下，更像是工具或 lint 清理，而不是有充分证据支持的 DUT 正确性修复。"
+    ],
+    "evidence": [
+      "该提交只修改了 hw/rtl/core/VX_operands.sv。",
+      "旧的基于 priority encoder 的 opc_sel 路径被替换为 NUM_INPUTS=1、NUM_OUTPUTS=`NUM_OPCS 且使用优先级仲裁的 VX_stream_arb。",
+      "输出仲裁器显式加入了 ARBITER(\"R\")，但 VX_stream_arb 本身默认就是 round-robin。",
+      "补丁还把 AOS_TO_ITF 包在了 IGNORE_UNOPTFLAT 标记中。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_operands.sv"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

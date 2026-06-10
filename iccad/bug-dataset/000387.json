@@ -1,0 +1,145 @@
+{
+  "dataset_id": 387,
+  "original_review_id": 479,
+  "meta": {
+    "id": 479,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "d23bca3a3d8de09fa7a7b1f319ae773613081dea",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "This mixed hardware commit fixes LSU multi-packet load tracking by giving each outstanding packet stream a dedicated lifetime-managed slot instead of reusing transient request-queue identity, while also cleaning up writeback and scoreboard protocol handling.",
+    "why_it_counts": [
+      "The largest functional change is in the LSU response-tagging path, which is core DUT behavior.",
+      "The patch replaces transient request-queue-based packet tracking with a dedicated VX_allocator-backed slot mechanism.",
+      "The resulting SOP and EOP tags directly control load-response assembly and fence progression."
+    ],
+    "disqualifiers": [
+      "The commit also adjusts writeback and scoreboard interfaces; the injection plan targets the clearer LSU packet-tracking bug."
+    ],
+    "evidence": [
+      "hw/rtl/core/VX_lsu_slice.sv replaces reqq_waddr and reqq_raddr based packet tracking with dedicated pkt_waddr and pkt_raddr allocated by VX_allocator.",
+      "The LSU now marks packet SOP on request-side start and releases the packet slot only on the final response packet.",
+      "The prior implementation relied on memory-scheduler queue identity to derive packet bookkeeping for partial responses."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv",
+      "hw/rtl/core/VX_scoreboard.sv",
+      "hw/rtl/interfaces/VX_writeback_if.sv",
+      "hw/rtl/core/VX_commit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A load unit that allows a single architectural load to return as multiple partial packets must preserve grouping state until the final packet of that load completes. If the design reuses a transient scheduler or queue identifier as the long-lived packet identity, that identity can be recycled before the final response arrives. Once that happens, SOP and EOP marking, fence completion, or response assembly can be attributed to the wrong load stream.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Lifetime management for multi-packet LSU response grouping",
+        "trigger_condition": "Multiple packetized loads overlap and their responses can return partially or out of order while request queue entries are being recycled.",
+        "injection_action": "Track load-packet grouping with a transient request-queue ID instead of a dedicated slot that remains reserved until the final response packet.",
+        "implementation_pattern": "reuse_transient_queue_id",
+        "portability_notes": [
+          "Map this to any LSU, DMA engine, or memory coalescer that splits one request into multiple response packets.",
+          "The key lifetime mismatch is between request issue and final response retirement.",
+          "The bug is especially portable on designs where response metadata includes sop and eop markers or equivalent packet-boundary state."
+        ],
+        "concrete_injection_steps": [
+          "Tag packetized load streams with a scheduler queue index or request-buffer slot that can be reused before the stream's last response returns.",
+          "Derive SOP and EOP state from that transient ID rather than from a separately allocated per-stream token.",
+          "Keep downstream response formatting and fence logic unchanged so mis-grouped packets become visible as incorrect load completion behavior."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_lsu_slice.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv"
+        ],
+        "target_module_or_logic": "LSU packet-slot allocation and partial-response SOP/EOP tracking",
+        "commit_fix_summary": "The fix introduces a dedicated packet allocator in the LSU, tracks SOP and EOP state per allocated packet slot, and stops using memory-scheduler request-queue identity as the persistent packet token.",
+        "mutation_strategy": "reuse_transient_queue_id",
+        "source_level_edit_anchor": "In VX_lsu_slice.sv, revert from pkt_waddr and pkt_raddr plus VX_allocator back to reqq_waddr and reqq_raddr style tracking tied to the memory-scheduler queue identity."
+      },
+      "expected_failure_mode": "Partial load responses can be assigned to the wrong packet stream, producing bad SOP or EOP markers, incorrect load completion, wrong fence release timing, or misassembled load results.",
+      "evidence_for_injection": [
+        "The patch removes core_req_queue_id and related queue-ID plumbing from VX_mem_scheduler usage, which shows the old lifetime source was transient.",
+        "The new logic allocates and releases packet slots explicitly, and only releases them on the final response packet.",
+        "The bug fix changes both request-side tagging and response-side packet-state updates, which is consistent with a real grouping-lifetime bug."
+      ],
+      "notes": [
+        "This is a mixed fix commit; the LSU packet-lifetime bug is the most portable and best-grounded injection target.",
+        "Use interleaved or partially returned loads to expose the injected fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该混合硬件提交修复了 LSU 的多包 load 跟踪问题：每个未完成的分包读流现在使用独立且有生命周期管理的槽位，而不是复用短生命周期的请求队列标识；同时提交还清理了写回和 scoreboard 协议处理。",
+    "why_it_counts": [
+      "最大的功能性改动发生在 LSU 的响应标记路径中，这是核心 DUT 行为。",
+      "补丁用基于 VX_allocator 的专用槽位机制替换了基于瞬时请求队列标识的 packet 跟踪。",
+      "由此产生的 SOP 和 EOP 标记会直接影响 load 响应组装和 fence 推进。"
+    ],
+    "disqualifiers": [
+      "该提交还调整了写回和 scoreboard 接口；本条目的注入计划聚焦更清晰的 LSU packet 跟踪错误。"
+    ],
+    "evidence": [
+      "hw/rtl/core/VX_lsu_slice.sv 用由 VX_allocator 分配的 pkt_waddr 和 pkt_raddr 替换了原先依赖 reqq_waddr 和 reqq_raddr 的 packet 跟踪。",
+      "LSU 现在会在请求侧起始时标记 packet 的 SOP，并且只在最终响应包到达时释放该 packet 槽位。",
+      "旧实现依赖 memory-scheduler 的队列标识来维护部分响应的 packet 状态。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_lsu_slice.sv",
+      "hw/rtl/libs/VX_mem_scheduler.sv",
+      "hw/rtl/core/VX_scoreboard.sv",
+      "hw/rtl/interfaces/VX_writeback_if.sv",
+      "hw/rtl/core/VX_commit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "如果一个 load 单元允许一条体系结构级 load 被拆成多个部分响应返回，就必须在最后一个包完成之前一直保存该 load 的分组状态。如果设计把瞬时的 scheduler 或 queue 标识直接当作长期 packet 标识使用，那么这个标识在最终响应到来前就可能被回收复用。一旦发生复用，SOP/EOP 标记、fence 完成判定或响应组装就可能被错误地归到另一条 load 流上。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多包 LSU 响应分组的生命周期管理",
+        "trigger_condition": "多个分包 load 同时在飞行中，且它们的响应可能部分返回、乱序返回，而请求队列项又被提前回收复用。",
+        "injection_action": "使用短生命周期的请求队列 ID 来跟踪 load 分包分组，而不是使用直到最终响应到来前都保持保留的专用槽位。",
+        "implementation_pattern": "reuse_transient_queue_id",
+        "portability_notes": [
+          "可映射到任何会把一个请求拆成多个响应包的 LSU、DMA 引擎或内存合并器。",
+          "关键的生命周期错配发生在请求发出时刻与最终响应退休时刻之间。",
+          "如果设计在响应元数据中包含 sop/eop 或等价的包边界状态，该故障尤其容易移植。"
+        ],
+        "concrete_injection_steps": [
+          "把分包 load 流标记为 scheduler 队列索引或请求缓冲槽位，该标识在最后一个响应返回前就可能被重用。",
+          "从这个瞬时 ID 推导 SOP/EOP 状态，而不是使用独立分配的每流 token。",
+          "保持下游响应格式化和 fence 逻辑不变，让错误分组的 packet 直接表现为 load 完成行为错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_lsu_slice.sv",
+          "hw/rtl/libs/VX_mem_scheduler.sv"
+        ],
+        "target_module_or_logic": "LSU packet 槽位分配与部分响应的 SOP/EOP 跟踪",
+        "commit_fix_summary": "该修复在 LSU 中引入独立的 packet allocator，为每个 packet 槽位维护 SOP/EOP 状态，并停止使用 memory-scheduler 的请求队列标识作为长期 packet token。",
+        "mutation_strategy": "reuse_transient_queue_id",
+        "source_level_edit_anchor": "在 VX_lsu_slice.sv 中，把 pkt_waddr/pkt_raddr 与 VX_allocator 的实现改回依赖 reqq_waddr/reqq_raddr 的旧式跟踪，并重新绑定到 memory-scheduler 的队列标识。"
+      },
+      "expected_failure_mode": "部分 load 响应会被归到错误的 packet 流上，造成 SOP/EOP 标记错误、load 完成错误、fence 释放时序错误，或 load 结果拼装错误。",
+      "evidence_for_injection": [
+        "补丁从 VX_mem_scheduler 的使用中移除了 core_req_queue_id 及相关队列 ID 管线，说明旧的生命周期来源是瞬时的。",
+        "新逻辑显式分配并释放 packet 槽位，而且只在最终响应包到达时释放。",
+        "修复同时修改了请求侧标签和响应侧 packet 状态更新，这与真实的分组生命周期错误一致。"
+      ],
+      "notes": [
+        "这是一个混合修复提交；LSU packet 生命周期错误是最可移植、也最有依据的注入目标。",
+        "使用交错返回或部分返回的 load 场景最容易暴露该故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

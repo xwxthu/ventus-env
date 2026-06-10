@@ -1,0 +1,147 @@
+{
+  "dataset_id": 394,
+  "original_review_id": 489,
+  "meta": {
+    "id": 489,
+    "repo": "gemmini",
+    "branch": "ee290",
+    "commit": "29c35df14073dbfc93b488d5a402a9affb85474f",
+    "subject": "Added write mask to AccumulatorMem and increased output bitwidth of 64-by-64 systolic arrays in EE290-2 lab configs"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "partial_write",
+    "summary": "This mixed commit contains a real accumulator-memory correctness fix: masked writes into AccumulatorMem were not propagated to the underlying SRAM, so partial writes could overwrite untouched byte lanes instead of preserving prior accumulator contents.",
+    "why_it_counts": [
+      "The patch changes on-chip memory write semantics in the accelerator datapath, not only configuration files.",
+      "AccumulatorMem, Scratchpad, ExecuteController, and SyncMem are all updated together to carry and honor write masks.",
+      "Ignoring a partial-write mask is a real DUT data-corruption mechanism for accumulator-backed writes."
+    ],
+    "disqualifiers": [
+      "The same commit also changes lab-specific output-width configurations."
+    ],
+    "evidence": [
+      "AccumulatorMem.scala adds a mask field to AccumulatorWriteIO, buffers it, and drives mem.io.mask.",
+      "SyncMem.scala changes TwoPortSyncMem to a masked SyncReadMem write using Vec(mask_len, mask_elem).",
+      "Scratchpad.scala stops discarding accumulator write masks and forwards io.acc.write(i).mask / reader.module.io.resp.bits.mask.",
+      "ExecuteController.scala drives the accumulator write mask high for full writes so the new masked interface is exercised consistently."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorMem.scala",
+      "src/main/scala/gemmini/SyncMem.scala",
+      "src/main/scala/gemmini/Scratchpad.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is a partial-write masking failure in an accumulator or scratchpad memory. A DMA response or compute write may update only a subset of byte lanes or subelements in a row, but if the memory write path ignores the mask, the design overwrites the whole row with new data and destroys previously stored accumulator values in untouched lanes.",
+      "portable_injection_spec": {
+        "affected_mechanism": "masked accumulator or scratchpad row writeback",
+        "trigger_condition": "A write carries a byte-enable or lane mask because the transfer width or alignment does not cover the full memory row",
+        "injection_action": "Drop the write mask between the producer and the physical memory array so every partial write becomes a full-row overwrite.",
+        "implementation_pattern": "ignore byte-enable mask on memory write",
+        "portability_notes": [
+          "Map the bug to any local SRAM or accumulator bank that supports masked or partial updates.",
+          "A mask drop can happen either at the memory primitive boundary or earlier when the producer fails to forward the mask.",
+          "The expected corruption is preserved old data being replaced in supposedly untouched byte lanes."
+        ],
+        "concrete_injection_steps": [
+          "Identify the row-write path that carries data plus a byte-enable or lane mask.",
+          "Force the memory array to treat all mask bits as enabled, or disconnect the propagated mask and substitute all ones.",
+          "Retain the rest of the data path so corruption only appears on partial-width or non-full-row writes."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorMem.scala",
+          "src/main/scala/gemmini/SyncMem.scala",
+          "src/main/scala/gemmini/Scratchpad.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "AccumulatorMem masked write path from producer IO through TwoPortSyncMem",
+        "commit_fix_summary": "The fix adds a write-mask field to accumulator writes, propagates it through the scratchpad/execution path, and changes the backing dual-port memory primitive to perform masked writes.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "Remove the accumulator mask propagation in Scratchpad/AccumulatorMem or force SyncMem's masked write interface to write all lanes regardless of io.mask."
+      },
+      "expected_failure_mode": "Partial accumulator or DMA-backed writes corrupt adjacent byte lanes or previously accumulated values that should have remained unchanged.",
+      "evidence_for_injection": [
+        "Before the fix, accumulator masks were explicitly commented out in Scratchpad.scala.",
+        "The backing memory primitive itself was widened to accept a mask, showing the bug was not only at the interface boundary.",
+        "The fix buffers the mask through the accumulator write pipeline, which is necessary only if partial writes were semantically important."
+      ],
+      "notes": [
+        "A clean reinjection is to keep the new interface but hardwire the mask to all ones at the memory-array boundary."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "partial_write",
+    "summary": "这个混合提交中包含真实的 accumulator memory 正确性修复：写入 AccumulatorMem 时的掩码没有被传递到底层 SRAM，因此部分写会覆盖本应保持不变的 byte lane，而不是保留原有 accumulator 内容。",
+    "why_it_counts": [
+      "补丁修改的是加速器数据通路中的片上存储写语义，而不只是配置文件。",
+      "AccumulatorMem、Scratchpad、ExecuteController 和 SyncMem 被一起修改，用于传递并执行写掩码。",
+      "忽略部分写掩码会造成 accumulator 支撑写入时的真实数据损坏。"
+    ],
+    "disqualifiers": [
+      "同一个提交也修改了实验用配置里的输出位宽。"
+    ],
+    "evidence": [
+      "AccumulatorMem.scala 为 AccumulatorWriteIO 增加了 mask 字段，进行了流水缓存，并驱动 mem.io.mask。",
+      "SyncMem.scala 把 TwoPortSyncMem 改成带 mask 的 SyncReadMem 写，使用 Vec(mask_len, mask_elem)。",
+      "Scratchpad.scala 不再丢弃 accumulator 写掩码，而是转发 io.acc.write(i).mask 和 reader.module.io.resp.bits.mask。",
+      "ExecuteController.scala 在全宽写入时显式驱动 accumulator 写掩码全 1，使新的 masked 接口被一致使用。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/AccumulatorMem.scala",
+      "src/main/scala/gemmini/SyncMem.scala",
+      "src/main/scala/gemmini/Scratchpad.scala",
+      "src/main/scala/gemmini/ExecuteController.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该缺陷属于 accumulator 或 scratchpad memory 的部分写掩码失效。DMA 返回或计算写入可能只更新一行中的部分 byte lane 或子元素；如果存储写路径忽略了这个 mask，设计就会用新数据覆盖整行，从而破坏那些本应保留的旧 accumulator 值。",
+      "portable_injection_spec": {
+        "affected_mechanism": "带掩码的 accumulator 或 scratchpad 行写回",
+        "trigger_condition": "写请求携带 byte-enable 或 lane mask，因为传输宽度或对齐方式没有覆盖整行",
+        "injection_action": "在生产者与物理存储阵列之间丢弃写掩码，使每次部分写都变成整行覆盖。",
+        "implementation_pattern": "在存储写时忽略 byte-enable 掩码",
+        "portability_notes": [
+          "把该缺陷映射到任何支持掩码或部分更新的本地 SRAM/accumulator bank。",
+          "mask 丢失既可能发生在 memory primitive 边界，也可能更早发生在生产者没有转发 mask 的地方。",
+          "预期损坏形式是：本应保持的旧数据被新写入错误覆盖。"
+        ],
+        "concrete_injection_steps": [
+          "定位携带 data 和 byte-enable/lane mask 的行写路径。",
+          "强制存储阵列把所有 mask 位都当成有效，或切断 mask 传递并替换成全 1。",
+          "保持其他数据通路不变，使损坏只在部分宽度或非整行写场景下出现。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/AccumulatorMem.scala",
+          "src/main/scala/gemmini/SyncMem.scala",
+          "src/main/scala/gemmini/Scratchpad.scala",
+          "src/main/scala/gemmini/ExecuteController.scala"
+        ],
+        "target_module_or_logic": "从生产者 IO 到 TwoPortSyncMem 的 AccumulatorMem 带掩码写路径",
+        "commit_fix_summary": "修复为 accumulator 写加入掩码字段，通过 scratchpad/execute 路径传播，并把底层双端口存储原语改为真正执行 masked write。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "删除 Scratchpad/AccumulatorMem 中的 accumulator mask 传递，或让 SyncMem 的 masked write 接口无论 io.mask 如何都写所有 lane。"
+      },
+      "expected_failure_mode": "部分 accumulator 写或 DMA 支撑写会破坏相邻 byte lane，或覆盖本应保持的累加结果。",
+      "evidence_for_injection": [
+        "修复前，Scratchpad.scala 中关于 accumulator mask 的代码是被注释掉的。",
+        "底层 memory primitive 本身也被修改为支持 mask，说明问题不只是接口边界遗漏。",
+        "修复把 mask 通过 accumulator 写流水缓存下来，表明部分写在语义上确实重要。"
+      ],
+      "notes": [
+        "最干净的回注入方式是保留新接口，但在 memory-array 边界把 mask 强制成全 1。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

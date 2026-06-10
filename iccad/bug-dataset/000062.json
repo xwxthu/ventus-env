@@ -1,0 +1,131 @@
+{
+  "dataset_id": 62,
+  "original_review_id": 81,
+  "meta": {
+    "id": 81,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "176fda061731a85d945819359e64dc9978d4da8b",
+    "subject": "fix csc big cube address counting overflow"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "The commit fixes CSC circular-buffer address generation for large image cubes by preserving the carry bit during address accumulation and by handling the exactly-one-entry stride boundary as a jump/shift case.",
+    "why_it_counts": [
+      "It edits central CSC read-address generation in a DUT RTL file.",
+      "The patch changes arithmetic width, wrap comparison, and jump/shift predicates in the same active datapath.",
+      "The subject and hunk content both describe a concrete overflow-related correctness bug."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "dat_req_addr_sum is widened from CBUF_ADDR_WIDTH bits to CBUF_ADDR_WIDTH+1 bits so the wrap carry is preserved.",
+      "Wrap compare and wrap subtraction are changed to use a zero-extended bank boundary instead of a truncated boundary constant.",
+      "Several image-stride and response-shift conditions change from > CSC_ENTRY_HEX to >= CSC_ENTRY_HEX, fixing the exact-boundary case."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A circular-buffer read address generator usually adds a base entry index and several bias terms, then wraps the result back into the buffer range. If the accumulator drops its carry bit or the wrap boundary is compared at the wrong width, large tensors can wrap to the wrong entry. In the same path, treating a stride exactly equal to one buffer entry as a non-jump case miscomputes the extra shift and dual-read behavior at the boundary.",
+      "portable_injection_spec": {
+        "affected_mechanism": "circular buffer read address wrap and stride boundary handling",
+        "trigger_condition": "A read address sum reaches or crosses the circular-buffer capacity, or an image byte stride is exactly one entry wide.",
+        "injection_action": "Remove the carry-preserving wrap arithmetic and revert exact-boundary checks to strict greater-than comparisons.",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "Apply this to any address generator that computes wrapped SRAM or cache entry addresses from base-plus-offset arithmetic.",
+          "Look for separate bugs in the same block: accumulator width, wrap compare width, and exact-boundary jump predicates often fail together.",
+          "Keep the surrounding request issue logic unchanged so the fault stays localized to address and shift generation."
+        ],
+        "concrete_injection_steps": [
+          "Find the adder that forms the circular-buffer read address from a base pointer and per-dimension offsets.",
+          "Shrink that sum to the nominal address width so the carry-out is discarded before wrap detection.",
+          "Compare the truncated sum against the raw buffer-size constant instead of a zero-extended boundary, and subtract the same truncated boundary on wrap.",
+          "For the jump/shift path, change exact-boundary comparisons from greater-than-or-equal back to strict greater-than."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+        ],
+        "target_module_or_logic": "CSC data-read address generator and image-stride shift logic",
+        "commit_fix_summary": "The fix widens dat_req_addr_sum, zero-extends the wrap boundary in is_dat_req_addr_wrap and dat_req_addr_wrap, and changes image jump and shift predicates from > CSC_ENTRY_HEX to >= CSC_ENTRY_HEX.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the old truncated dat_req_addr_sum and old > CSC_ENTRY_HEX predicates around dat_req_addr_w, sc2buf_dat_rd_next1_en_w, and rsp_sft_cnt_l*_inc in NV_NVDLA_CSC_dl.v."
+      },
+      "expected_failure_mode": "Large CSC image reads can fetch the wrong wrapped buffer entry or miss the required jump/shift on exact one-entry strides, leading to duplicated, skipped, or misaligned input data.",
+      "evidence_for_injection": [
+        "The accumulator width change and wrap-boundary change occur in the same address-generation block.",
+        "The fix explicitly changes jump-enable and shift-count predicates for the pixel_x_byte_stride == CSC_ENTRY_HEX case.",
+        "All functional changes are confined to NV_NVDLA_CSC_dl.v, making the bug mechanism localized and injectable."
+      ],
+      "notes": [
+        "This is one logical bug family: address wrap and exact-entry stride handling were both wrong in the same read-generation path."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "该提交修复了大图像 cube 场景下 CSC 环形缓冲读地址生成错误：既保留了地址累加时的进位位，也把“步长恰好等于一个 entry”的边界纳入 jump/shift 处理。",
+    "why_it_counts": [
+      "它修改的是 DUT RTL 文件中核心的 CSC 读地址生成逻辑。",
+      "补丁在同一条活动数据路径里同时修改了算术位宽、回绕比较和 jump/shift 判定。",
+      "提交标题和补丁内容都在描述明确的溢出类正确性 bug。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "dat_req_addr_sum 从 CBUF_ADDR_WIDTH 位扩展到 CBUF_ADDR_WIDTH+1 位，从而保留回绕所需的进位。",
+      "回绕比较和回绕减法改为使用零扩展后的 bank 边界常量，而不是被截断的边界常量。",
+      "多个图像步长和响应移位条件从 > CSC_ENTRY_HEX 改为 >= CSC_ENTRY_HEX，修复了恰好落在边界上的情况。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "环形缓冲读地址生成器通常会把基地址与多个偏移项相加，再把结果回绕到缓冲区范围内。如果累加器丢掉了进位位，或者回绕边界比较时使用了错误位宽，那么大张量读操作就可能回绕到错误 entry。在同一路径中，如果把“步长恰好等于一个缓冲 entry”误判为非 jump 情况，还会在边界处计算错误的额外 shift 和双读行为。",
+      "portable_injection_spec": {
+        "affected_mechanism": "环形缓冲读地址回绕与步长边界处理",
+        "trigger_condition": "读地址和达到或跨过环形缓冲容量，或者图像字节步长恰好等于一个 entry。",
+        "injection_action": "移除保留进位的回绕算术，并把恰好在边界上的判定恢复为严格大于比较。",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "可映射到任何通过“基地址 + 偏移”计算环形 SRAM 或 cache entry 地址的地址生成器。",
+          "在同一个代码块中，累加器位宽、回绕比较位宽和边界 jump 判定经常会一起出错。",
+          "保持周围的请求发射逻辑不变，把故障局限在地址和移位生成部分。"
+        ],
+        "concrete_injection_steps": [
+          "找到用基指针和各维偏移相加形成环形缓冲读地址的加法器。",
+          "把该和缩窄到名义地址位宽，让回绕检测前的进位位被丢弃。",
+          "用截断后的和去和原始缓冲容量常量比较，并在回绕时减去同样被截断的边界。",
+          "在 jump/shift 路径中，把“>= 边界”的判断恢复为严格的“> 边界”。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v"
+        ],
+        "target_module_or_logic": "CSC 数据读取地址生成与图像步长移位逻辑",
+        "commit_fix_summary": "修复扩展了 dat_req_addr_sum，对 is_dat_req_addr_wrap 和 dat_req_addr_wrap 使用了零扩展边界，并把图像 jump/shift 判定从 > CSC_ENTRY_HEX 改为 >= CSC_ENTRY_HEX。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 NV_NVDLA_CSC_dl.v 中恢复旧的截断 dat_req_addr_sum，以及 dat_req_addr_w、sc2buf_dat_rd_next1_en_w、rsp_sft_cnt_l*_inc 周围原来的 > CSC_ENTRY_HEX 判定。"
+      },
+      "expected_failure_mode": "大尺寸 CSC 图像读取可能回绕到错误的缓冲 entry，或者在恰好一个 entry 步长时漏掉应有的 jump/shift，导致输入数据重复、跳过或错位。",
+      "evidence_for_injection": [
+        "累加器位宽修改和回绕边界修改发生在同一个地址生成代码块中。",
+        "修复明确改动了 pixel_x_byte_stride == CSC_ENTRY_HEX 场景下的 jump 使能和 shift 计数条件。",
+        "所有功能改动都局限在 NV_NVDLA_CSC_dl.v，因此 bug 机制局部且易于注入。"
+      ],
+      "notes": [
+        "这是同一类逻辑 bug：地址回绕和整 entry 步长处理都在同一条读地址生成路径里出错。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

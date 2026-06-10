@@ -1,0 +1,143 @@
+{
+  "dataset_id": 231,
+  "original_review_id": 279,
+  "meta": {
+    "id": 279,
+    "repo": "ventus-gpgpu",
+    "branch": "yffcache",
+    "commit": "7d8dec492f04612b4280ae7f6a15d4991f6f13fd",
+    "subject": "L1C flush debug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Despite the debug-style subject, this commit fixes real L1 flush and invalidate behavior; the cleanest isolated bug is the wrong encoding of the selected dirty way before tag/data lookup.",
+    "why_it_counts": [
+      "The patch modifies active DCache, tag-access, and LSU RTL rather than debug-only code.",
+      "It corrects dirty-way selection and related flush sequencing in the L1 cache.",
+      "Using the wrong way encoding during writeback or invalidate directly affects cache correctness."
+    ],
+    "disqualifiers": [
+      "The commit message is vague and the patch bundles several cache-control fixes together."
+    ],
+    "evidence": [
+      "DCache.scala changes the flush/invalidate SRAM index from TagAccess.io.dirtyWayMask_st0.get to OHToUInt(TagAccess.io.dirtyWayMask_st0.get).",
+      "L1TagAccess.scala changes dirty tag selection from tagBodyAccess.io.r.resp.data(choosenDirtyWayMask_st0) to tagBodyAccess.io.r.resp.data(OHToUInt(choosenDirtyWayMask_st0)).",
+      "The same commit also tightens flush request issuance around invalidatenodirty, WSHR emptiness, and registered flush addresses.",
+      "LSU.scala adjusts the flush command handshake and flush parameter encoding."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/warp_schedule.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "During a cache flush or invalidate, the controller finds a dirty way and then reads the corresponding per-way tag/data state. The bug is to treat the selected one-hot way mask as if it were already a binary way index. On a multi-way cache, that can make the maintenance path read or write the wrong way, so the wrong line is written back or invalidated while the actual dirty line remains behind.",
+      "portable_injection_spec": {
+        "affected_mechanism": "dirty-way selection during cache maintenance",
+        "trigger_condition": "A flush or invalidate walks a set that contains at least one dirty way in a multi-way cache.",
+        "injection_action": "Use the raw one-hot way mask directly at the point where the design expects a binary way index.",
+        "implementation_pattern": "skip_onehot_to_index_conversion",
+        "portability_notes": [
+          "This maps to any set-associative cache whose victim or dirty-way chooser produces a one-hot result.",
+          "If another DUT uses mux trees instead of SRAM indexing, the equivalent mutation is to drive the per-way selector with the wrong encoding."
+        ],
+        "concrete_injection_steps": [
+          "Locate the flush or eviction path that selects a dirty or victim way.",
+          "At the tag or data lookup point, remove the onehot-to-binary conversion and feed the raw one-hot selection into the index or equivalent selector.",
+          "Keep the rest of the flush request path unchanged so the injected fault isolates way selection rather than request generation."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "L1 dirty-way lookup for flush and invalidate",
+        "commit_fix_summary": "The commit converts dirty-way one-hot masks to OHToUInt before indexing tag and data structures, fixing wrong-way selection during cache maintenance.",
+        "mutation_strategy": "skip_onehot_to_index_conversion",
+        "source_level_edit_anchor": "In DCache.scala the flush/read SRAM setIdx concatenation changed to use OHToUInt(TagAccess.io.dirtyWayMask_st0.get), and in L1TagAccess.scala dirty tag selection changed to use OHToUInt(choosenDirtyWayMask_st0)."
+      },
+      "expected_failure_mode": "Flush or invalidate may act on the wrong cache way, leaving a real dirty line resident or writing back incorrect data, which can later surface as stale or corrupted memory contents.",
+      "evidence_for_injection": [
+        "Both touched files independently replace one-hot way usage with OHToUInt conversion in the maintenance path.",
+        "The changed logic is specifically under dirty-line discovery and flush handling, not under debug output.",
+        "The rest of the commit shows surrounding flush-control fixes, confirming that the bug sits in active maintenance logic."
+      ],
+      "notes": [
+        "This is the cleanest single reinjection point from an otherwise multi-fix cache-control commit.",
+        "The LSU-side flush-command changes are real but less portable than the way-selection bug."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "虽然提交标题带有 debug 色彩，但该提交修复了真实的 L1 flush/invalidate 行为；其中最适合单独回注的故障是：在查找脏路对应 tag/data 之前，错误地使用了路选择编码。",
+    "why_it_counts": [
+      "补丁修改的是实际生效的 DCache、tag-access 和 LSU RTL，而不是纯调试代码。",
+      "它修正了 L1 cache 中 dirty-way 的选择以及相关 flush 时序。",
+      "在写回或 invalidate 时使用错误的路编码会直接破坏 cache 正确性。"
+    ],
+    "disqualifiers": [
+      "提交信息比较模糊，而且同一补丁中混入了多个 cache 控制修复。"
+    ],
+    "evidence": [
+      "DCache.scala 把 flush/invalidate 的 SRAM 索引从 TagAccess.io.dirtyWayMask_st0.get 改成了 OHToUInt(TagAccess.io.dirtyWayMask_st0.get)。",
+      "L1TagAccess.scala 把脏 tag 选择从 tagBodyAccess.io.r.resp.data(choosenDirtyWayMask_st0) 改成了 tagBodyAccess.io.r.resp.data(OHToUInt(choosenDirtyWayMask_st0))。",
+      "同一提交还收紧了 invalidatenodirty、WSHR empty 和寄存后的 flush 地址等相关控制。",
+      "LSU.scala 还调整了 flush 命令握手和 flush 参数编码。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/warp_schedule.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 cache 执行 flush 或 invalidate 时，控制器会先找出一个脏路，然后读取对应路的 tag/data 状态。这个缺陷的本质是：把 one-hot 路掩码当成二进制路索引直接使用。对于多路组相联 cache，这会让维护路径访问错误的 way，从而写回或失效错误的 cache line，而真正的脏 line 仍然残留。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache 维护路径中的 dirty-way 选择",
+        "trigger_condition": "在多路组相联 cache 中，flush 或 invalidate 遍历到了至少包含一条脏路的 set。",
+        "injection_action": "在设计本来期望二进制 way 索引的位置，直接使用原始 one-hot 路选择结果。",
+        "implementation_pattern": "skip_onehot_to_index_conversion",
+        "portability_notes": [
+          "该模式适用于任何用 one-hot 结果表示 victim/dirty way 的组相联 cache。",
+          "如果另一套 DUT 使用 mux 树而不是 SRAM 索引，对应的等效注入就是让每路选择信号使用错误编码。"
+        ],
+        "concrete_injection_steps": [
+          "定位 flush 或 eviction 路径中选择脏路或 victim 路的逻辑。",
+          "在读取 tag 或 data 的位置，去掉 one-hot 到二进制的转换，直接把原始 one-hot 结果送入索引或等价选择器。",
+          "保持其余 flush 请求路径不变，使注入故障只体现为 way 选择错误，而不是请求生成错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1TagAccess.scala"
+        ],
+        "target_module_or_logic": "L1 flush/invalidate 的 dirty-way 查找路径",
+        "commit_fix_summary": "该提交在 tag/data 结构索引前把 dirty-way 的 one-hot 掩码转换为 OHToUInt，修复了 cache 维护时选错路的问题。",
+        "mutation_strategy": "skip_onehot_to_index_conversion",
+        "source_level_edit_anchor": "DCache.scala 中 flush/read 的 SRAM setIdx 拼接改为使用 OHToUInt(TagAccess.io.dirtyWayMask_st0.get)；L1TagAccess.scala 中脏 tag 选择也改为使用 OHToUInt(choosenDirtyWayMask_st0)。"
+      },
+      "expected_failure_mode": "flush 或 invalidate 可能对错误的 cache 路生效，导致真实脏 line 未被清走，或把错误数据写回内存，后续表现为陈旧数据或数据破坏。",
+      "evidence_for_injection": [
+        "两个被修改文件都在维护路径里把 one-hot 路选择改成了 OHToUInt 转换。",
+        "这些改动明确位于脏行发现和 flush 处理路径，而不是调试输出路径。",
+        "同一提交中的其他修改也都围绕 flush 控制，说明该缺陷属于真实维护逻辑错误。"
+      ],
+      "notes": [
+        "在这个多修复提交里，这是最容易稳定回注的单点故障。",
+        "LSU 侧的 flush 命令修复也是真实问题，但可移植性不如这个 way 选择错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

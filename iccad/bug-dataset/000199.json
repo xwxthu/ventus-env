@@ -1,0 +1,143 @@
+{
+  "dataset_id": 199,
+  "original_review_id": 240,
+  "meta": {
+    "id": 240,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "9e48d3467bda53558e364d88cee9490766c0c19b",
+    "subject": "fix regfile bank x0 bug and add spike_output"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "regfile",
+    "summary": "Fixes banked scalar register-file zero-register handling by applying x0 suppression to the full architectural destination register instead of to each bank's local row-0 address.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a regfile bank x0 bug.",
+      "The functional RTL fix is isolated to scalar write-enable and scalar bank read-write behavior in `operandCollector.scala` and `regfile.scala`.",
+      "Nearby bank-selection code shows that local bank address 0 is not equivalent to architectural x0, so the old guard corrupted real nonzero registers."
+    ],
+    "disqualifiers": [
+      "The same commit also adds unrelated `spike_output` plumbing in `execution.scala`."
+    ],
+    "evidence": [
+      "In `operandCollector.scala`, `scalarBank(wbScaBankId).rdwen` is changed to include `io.writeScalarCtrl.bits.reg_idxw.orR`, moving the x0 suppression check to the full architectural destination index.",
+      "In `regfile.scala`, scalar-bank reads stop forcing local row address 0 to zero, and `RegFileBank` writes stop blocking writes when `io.rdidx` equals zero.",
+      "Nearby writeback-address logic splits the scalar destination into `wbScaBankId` from low register bits and `wbScaBankAddr` from higher bits, proving that local address 0 occurs for nonzero architectural registers.",
+      "The `execution.scala` hunk only forwards `spike_info` and is not part of the DUT bug mechanism."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/operandCollector.scala",
+      "ventus/src/pipeline/regfile.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a banked scalar register file, the architectural zero register must be treated as immutable using the full architectural register number before banking translation. If the design instead suppresses reads or writes based on each bank's local row index being zero, every bank-local row-0 register is mistaken for x0. That causes some real scalar registers to read as zero or silently drop writes.",
+      "portable_injection_spec": {
+        "affected_mechanism": "zero-register suppression in a banked scalar register file",
+        "trigger_condition": "A nonzero scalar destination or source register maps to bank-local row 0 after the architectural register number is split into bank select and bank row address.",
+        "injection_action": "Move the x0 check below bank translation so the local row index, rather than the full architectural register index, controls zero-register suppression.",
+        "implementation_pattern": "restore local-zero guard after banking",
+        "portability_notes": [
+          "This applies to any interleaved or banked scalar register file with a hardwired zero register.",
+          "The key portability check is whether the implementation first splits an architectural register number into bank ID and bank-local address.",
+          "Only the full architectural destination or source index should control x0 suppression; local row 0 is not sufficient."
+        ],
+        "concrete_injection_steps": [
+          "Find the scalar register-file write-enable path and any read-return-zero path for the hardwired zero register.",
+          "Remove the full architectural-index nonzero check from the top-level scalar write control.",
+          "Reintroduce zero suppression inside each bank by checking whether the bank-local row address is zero before allowing reads or writes.",
+          "Keep the bank-mapping function unchanged so the injected bug manifests specifically as false x0 handling on bank-local row 0."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/operandCollector.scala",
+          "ventus/src/pipeline/regfile.scala"
+        ],
+        "target_module_or_logic": "scalarBank write-enable gating and RegFileBank local row-0 handling",
+        "commit_fix_summary": "The fix gates scalar writes with full `reg_idxw.orR` in `operandCollector.scala` and removes local-address-zero suppression from scalar bank read and write logic in `regfile.scala`.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In `ventus/src/pipeline/operandCollector.scala`, revert `scalarBank(wbScaBankId).rdwen` to omit `reg_idxw.orR`; in `ventus/src/pipeline/regfile.scala`, restore the `io.rsidx.orR` read-zero mux and `io.rdidx.orR` write guard in `RegFileBank`."
+      },
+      "expected_failure_mode": "Some nonzero scalar registers mapped to bank-local row 0 will read back as zero or fail to update, causing wrong scalar operands and downstream execution or writeback corruption.",
+      "evidence_for_injection": [
+        "The commit message names the x0 bank bug directly and the fix is concentrated in scalar-bank logic.",
+        "The bank-address generation in `operandCollector.scala` proves that bank-local address 0 can correspond to nonzero architectural registers.",
+        "The unrelated `spike_output` addition is isolated to `execution.scala`, so the regfile bug can be reinjected without that part."
+      ],
+      "notes": [
+        "The same underlying fix is branch-ported in dataset item 200.",
+        "Do not include the `execution.scala` `spike_output` hunk when reinjecting this fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "regfile",
+    "summary": "该提交修复了分 bank 标量寄存器堆的零寄存器处理：x0 屏蔽应基于完整的体系结构目标寄存器编号，而不是基于每个 bank 的本地第 0 行地址。",
+    "why_it_counts": [
+      "提交信息明确指出存在 regfile bank x0 缺陷。",
+      "功能性 RTL 修复集中在 `operandCollector.scala` 和 `regfile.scala` 的标量写使能与标量 bank 读写行为上。",
+      "附近的 bank 选择代码表明，本地 bank 地址 0 并不等价于体系结构 x0，因此旧保护条件会破坏真实的非零寄存器。"
+    ],
+    "disqualifiers": [
+      "同一个提交还在 `execution.scala` 中加入了无关的 `spike_output` 传递逻辑。"
+    ],
+    "evidence": [
+      "在 `operandCollector.scala` 中，`scalarBank(wbScaBankId).rdwen` 被改为额外包含 `io.writeScalarCtrl.bits.reg_idxw.orR`，把 x0 屏蔽判断移动到了完整的体系结构目标寄存器编号上。",
+      "在 `regfile.scala` 中，标量 bank 读取不再把本地第 0 行地址强制返回 0，`RegFileBank` 写入也不再因为 `io.rdidx` 为 0 而被阻止。",
+      "附近的写回地址逻辑把目标标量寄存器拆成低位形成 `wbScaBankId`、高位形成 `wbScaBankAddr`，这证明本地地址 0 会对应到非零体系结构寄存器。",
+      "`execution.scala` 中的改动只是在转发 `spike_info`，不属于 DUT 缺陷机制本身。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/operandCollector.scala",
+      "ventus/src/pipeline/regfile.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在分 bank 的标量寄存器堆中，体系结构零寄存器的不可写属性必须在 bank 映射之前，基于完整的体系结构寄存器编号来实现。如果设计错误地根据每个 bank 的本地行号是否为 0 来抑制读写，那么所有映射到 bank 内第 0 行的真实寄存器都会被误认为是 x0，进而出现读零或丢写。",
+      "portable_injection_spec": {
+        "affected_mechanism": "分 bank 标量寄存器堆中的零寄存器屏蔽",
+        "trigger_condition": "某个非零标量源寄存器或目标寄存器在把体系结构寄存器号拆分为 bank 号和 bank 内地址后，映射到了 bank 本地第 0 行。",
+        "injection_action": "把 x0 检查下移到 bank 映射之后，使本地行号而不是完整体系结构寄存器号决定零寄存器屏蔽。",
+        "implementation_pattern": "restore local-zero guard after banking",
+        "portability_notes": [
+          "该模式适用于任何带有硬连线零寄存器的交织式或分 bank 标量寄存器堆。",
+          "关键可迁移特征是：实现会先把体系结构寄存器号拆分成 bank ID 和 bank 内地址。",
+          "只有完整的体系结构源/目的寄存器编号才能用于判断 x0；bank 内第 0 行并不足够。"
+        ],
+        "concrete_injection_steps": [
+          "定位标量寄存器堆的写使能路径，以及任何“零寄存器读出强制为 0”的路径。",
+          "从顶层标量写控制中删除基于完整体系结构寄存器编号的非零检查。",
+          "在每个 bank 内重新引入基于本地行号是否为 0 的零寄存器屏蔽，用它来限制读或写。",
+          "保持 bank 映射函数不变，使注入后的错误具体表现为 bank 本地第 0 行被误当成 x0。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/operandCollector.scala",
+          "ventus/src/pipeline/regfile.scala"
+        ],
+        "target_module_or_logic": "scalarBank 写使能控制以及 RegFileBank 对本地第 0 行的处理",
+        "commit_fix_summary": "修复在 `operandCollector.scala` 中用完整 `reg_idxw.orR` 保护标量写入，并在 `regfile.scala` 中移除了基于本地地址 0 的标量 bank 读写屏蔽。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 `ventus/src/pipeline/operandCollector.scala` 中，把 `scalarBank(wbScaBankId).rdwen` 改回不检查 `reg_idxw.orR`；在 `ventus/src/pipeline/regfile.scala` 中，恢复 `RegFileBank` 里的 `io.rsidx.orR` 读零 mux 和 `io.rdidx.orR` 写保护。"
+      },
+      "expected_failure_mode": "某些映射到 bank 本地第 0 行的非零标量寄存器会读回 0 或无法被更新，进而导致标量操作数错误，并传播为执行或写回结果错误。",
+      "evidence_for_injection": [
+        "提交信息直接点名 x0 bank 缺陷，修复也集中在标量 bank 逻辑上。",
+        "`operandCollector.scala` 中的 bank 地址生成方式证明 bank 本地地址 0 可以对应到非零体系结构寄存器。",
+        "无关的 `spike_output` 改动被单独限制在 `execution.scala`，因此重新注入 regfile 缺陷时可以完全忽略那部分。"
+      ],
+      "notes": [
+        "同一底层修复在数据项 200 中以分支移植形式重复出现。",
+        "重新注入该缺陷时不要包含 `execution.scala` 中的 `spike_output` 代码块。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

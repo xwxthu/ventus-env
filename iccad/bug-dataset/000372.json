@@ -1,0 +1,139 @@
+{
+  "dataset_id": 372,
+  "original_review_id": 457,
+  "meta": {
+    "id": 457,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "725322807e3b693bc14d7200a0764b776161b9c9",
+    "subject": "fixed DRAM response backpressure inside Cache"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes a real banked-cache fill-response bug. The cache now accepts a shared DRAM response only when all bank-side consumers are ready, instead of consuming the response when any single bank is ready.",
+    "why_it_counts": [
+      "The commit message names a concrete cache backpressure bug.",
+      "The behavioral hunk is in central cache RTL, not in tests or tooling.",
+      "Changing shared response ready from reduction-OR to reduction-AND directly fixes response-consumption semantics."
+    ],
+    "disqualifiers": [
+      "The overall commit also contains unrelated debug, tracing, and cleanup changes.",
+      "Only one small hunk in the patch is the primary reinjectable cache bug."
+    ],
+    "evidence": [
+      "In hw/rtl/cache/VX_cache.v, dram_rsp_ready changed from (| per_bank_dram_rsp_ready) to (& per_bank_dram_rsp_ready).",
+      "The code fans one DRAM response toward multiple banks, so the ready signal is shared across all bank-side consumers.",
+      "The subject explicitly says the fix is DRAM response backpressure inside Cache."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A banked cache often broadcasts or demultiplexes one external fill response into several internal bank consumers. If the shared upstream ready is asserted when any bank is ready, rather than when all banks that need the response are ready, the external memory response can be consumed too early. Some banks then miss the fill, leaving bank-local miss state and the external response stream out of sync.",
+      "portable_injection_spec": {
+        "affected_mechanism": "banked fill-response backpressure",
+        "trigger_condition": "A DRAM fill response reaches a cache instance while at least one destination bank is stalled and another bank is still ready.",
+        "injection_action": "Allow the shared fill response to be accepted when any participating bank is ready instead of waiting for all required banks to be ready.",
+        "implementation_pattern": "replace all-consumers-ready reduction with any-ready reduction",
+        "portability_notes": [
+          "Apply this only to designs where one upstream memory response is shared across multiple internal consumers or banks.",
+          "If the target DUT duplicates the response channel per bank, this exact bug is not applicable.",
+          "The injected bug should be on the shared backpressure point, not inside one specific bank."
+        ],
+        "concrete_injection_steps": [
+          "Find the shared ready signal that controls acceptance of an external cache-fill response.",
+          "Change the aggregation so the upstream response is considered ready when any bank-side ready is asserted, instead of when all required bank-side ready signals are asserted.",
+          "Leave the bank-local response handling untouched so the early-consumption mismatch is preserved.",
+          "Exercise a case where one bank is backpressured while another bank remains ready."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache.v"
+        ],
+        "target_module_or_logic": "top-level cache DRAM response ready aggregation across banks",
+        "commit_fix_summary": "The fix changes the cache-level shared DRAM response ready condition from reduction-OR of per_bank_dram_rsp_ready to reduction-AND.",
+        "mutation_strategy": "invert_predicate",
+        "source_level_edit_anchor": "In VX_cache.v, assign dram_rsp_ready changed from (| per_bank_dram_rsp_ready) to (& per_bank_dram_rsp_ready)."
+      },
+      "expected_failure_mode": "A shared DRAM fill can be consumed before every destination bank is ready, causing dropped or partially applied fills, stuck misses, or cache hang under bank backpressure.",
+      "evidence_for_injection": [
+        "The modified signal is the cache-level dram_rsp_ready, not a bank-local ready signal.",
+        "The per_bank_dram_rsp_ready naming shows the response is coordinated across multiple banks.",
+        "The entire bug fix is localized to a protocol-level ready aggregation change."
+      ],
+      "notes": [
+        "This is a strong portable injection because it changes one shared handshake predicate.",
+        "Ignore the unrelated trace and utility edits in the same commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 banked cache 中真实的 fill-response 错误。修复后，cache 只有在所有 bank 侧消费者都 ready 时才接收共享 DRAM 响应，而不是只要任意一个 bank ready 就提前消费该响应。",
+    "why_it_counts": [
+      "提交信息明确指出是 cache 内部的 backpressure bug。",
+      "行为性 hunk 位于核心 cache RTL，而不是测试或工具。",
+      "把共享响应 ready 从 reduction-OR 改成 reduction-AND，直接修复了响应消费语义。"
+    ],
+    "disqualifiers": [
+      "整个提交还包含无关的 debug、trace 和清理修改。",
+      "真正可回注的 cache bug 主要集中在一个很小的 hunk。"
+    ],
+    "evidence": [
+      "在 hw/rtl/cache/VX_cache.v 中，dram_rsp_ready 从 (| per_bank_dram_rsp_ready) 改为 (& per_bank_dram_rsp_ready)。",
+      "代码把一个 DRAM 响应扇出给多个 bank，因此 ready 是所有 bank 共享的上游握手信号。",
+      "提交标题明确写明问题是 Cache 内部的 DRAM response backpressure。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_cache.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 banked cache 中，一个外部 fill 响应常常会被广播或拆分到多个内部 bank 消费者。如果共享上游 ready 在“任意一个 bank ready”时就被拉高，而不是在“所有需要该响应的 bank 都 ready”时才拉高，那么外部响应会被过早消费。这样有些 bank 会错过 fill，导致 bank 内部 miss 状态与外部响应流失去同步。",
+      "portable_injection_spec": {
+        "affected_mechanism": "banked fill-response 背压聚合",
+        "trigger_condition": "DRAM fill 响应到达 cache 时，至少一个目标 bank 正在阻塞，而另一个 bank 仍然 ready。",
+        "injection_action": "只要任意参与 bank ready 就允许共享 fill 响应被接收，而不是等待所有需要的 bank 都 ready。",
+        "implementation_pattern": "把 all-ready 聚合改成 any-ready 聚合",
+        "portability_notes": [
+          "该故障适用于一个上游内存响应被多个内部消费者或多个 bank 共享的设计。",
+          "如果目标 DUT 为每个 bank 提供独立响应通道，则这个具体故障不适用。",
+          "故障应注入在共享背压点，而不是某个单独 bank 的本地 ready 逻辑中。"
+        ],
+        "concrete_injection_steps": [
+          "找到控制外部 cache-fill 响应是否被接收的共享 ready 信号。",
+          "把 ready 聚合改为“任意 bank-side ready 为真即可接收”，而不是“所有需要的 bank-side ready 都为真才接收”。",
+          "保持 bank 本地响应处理逻辑不变，以保留“过早消费导致部分 bank 漏接收”的失配。",
+          "使用一个 bank 被背压、另一个 bank 仍 ready 的场景来触发故障。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_cache.v"
+        ],
+        "target_module_or_logic": "cache 顶层跨 bank 的 DRAM 响应 ready 聚合逻辑",
+        "commit_fix_summary": "修复把 cache 级共享 DRAM 响应的 ready 条件，从 per_bank_dram_rsp_ready 的 reduction-OR 改成了 reduction-AND。",
+        "mutation_strategy": "invert_predicate",
+        "source_level_edit_anchor": "在 VX_cache.v 中，assign dram_rsp_ready 从 (| per_bank_dram_rsp_ready) 改成了 (& per_bank_dram_rsp_ready)。"
+      },
+      "expected_failure_mode": "共享 DRAM fill 可能在并非所有目标 bank 都 ready 时就被消费，导致 fill 丢失或只被部分 bank 应用，进而出现 miss 卡死或 cache 挂起。",
+      "evidence_for_injection": [
+        "被修改的是 cache 顶层的 dram_rsp_ready，而不是某个 bank 内部的 ready。",
+        "per_bank_dram_rsp_ready 这一命名说明该响应需要跨多个 bank 协调。",
+        "整个 bug 修复被局部化为一个协议层的 ready 聚合变更。"
+      ],
+      "notes": [
+        "这是很强的可移植注入点，因为它只改变一个共享握手谓词。",
+        "可以忽略同一提交中无关的 trace 和工具修改。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

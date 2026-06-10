@@ -1,0 +1,143 @@
+{
+  "dataset_id": 66,
+  "original_review_id": 85,
+  "meta": {
+    "id": 85,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "b12fbc21f3bc144eb446812e686cbb9cbdfbc076",
+    "subject": "fix bit width mismatch in project building"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "The real functional payload is a CDP/PDP metadata-width fix: channel-position information was only carried as 3 bits in an active packet path even though the producer already generated 5-bit pos_c values.",
+    "why_it_counts": [
+      "The patch changes active packed-bus widths, state registers, and end-of-channel predicates in DUT RTL.",
+      "It widens the metadata path from CDP buffer input into PDP and replaces fixed terminal-value checks with the generic last-position predicate.",
+      "Without the fix, channel-position metadata can be truncated, which directly changes control flow in the datapath state machine."
+    ],
+    "disqualifiers": [
+      "The commit subject frames the work as a build-time width mismatch fix, and one touched file, NV_NVDLA_CDMA_IMG_ctrl.v, is only a literal-format cleanup."
+    ],
+    "evidence": [
+      "NV_NVDLA_CDP_DP_bufferin.v widens cdp_rdma2dp_pd and normalz_buf_data by 2 bits, expands dp_pos_c and related registers from 3 bits to 5 bits, and replaces hardcoded is_pos_c==3 with is_last_pos_c logic.",
+      "NV_NVDLA_PDP_CORE_cal1d.v widens sdp2pdp_pd by 2 bits to match the corrected packed payload width.",
+      "NV_NVDLA_PDP_CORE_preproc.v was already packing pos_c[4:0], so the pre-fix consumer side was silently truncating metadata that the producer already emitted."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdp/NV_NVDLA_CDP_DP_bufferin.v",
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_cal1d.v",
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_preproc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A packetized datapath often carries data plus sideband metadata such as channel position, line end, or cube end. If the metadata field is too narrow on one stage of the pipe, high bits are silently lost. The receiving state machine then uses the wrong position value, often treating a hardcoded small value as the terminal channel instead of the true last position.",
+      "portable_injection_spec": {
+        "affected_mechanism": "sideband metadata field width for channel-position tracking",
+        "trigger_condition": "The data path carries channel-position values that require more bits than the intermediate packet format or local state registers preserve.",
+        "injection_action": "Shrink the packed metadata field and local channel-position registers, then base terminal-state checks on the truncated value.",
+        "implementation_pattern": "truncate_metadata_field",
+        "portability_notes": [
+          "Apply this to any streaming datapath that packs both payload and control metadata into a shared bus or FIFO entry.",
+          "The generic symptom is that the producer already has the full field width, but an intermediate consumer or repacker narrows it.",
+          "Preserve the existing producer behavior so the bug manifests as downstream truncation rather than missing upstream generation."
+        ],
+        "concrete_injection_steps": [
+          "Identify the sideband field that tracks channel index or sub-channel position across a packed interface.",
+          "Reduce that field width in the receiving stage and in any local registers that carry it forward.",
+          "Keep the producer at the wider architectural width so upper bits are discarded in flight.",
+          "Replace generic last-position checks with a fixed literal or with comparisons on the truncated field."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdp/NV_NVDLA_CDP_DP_bufferin.v",
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_cal1d.v",
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_preproc.v"
+        ],
+        "target_module_or_logic": "CDP RDMA-to-buffer and PDP metadata packing for pos_c",
+        "commit_fix_summary": "The fix widens the packed interface by 2 bits, extends pos_c-related state from 3 bits to 5 bits, and changes state-machine termination checks from fixed 3-bit literals to is_last_pos_c. PDP cal1d input width is widened to match, while preproc was already emitting pos_c[4:0].",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore the old +15 packet widths and 3-bit pos_c handling in NV_NVDLA_CDP_DP_bufferin.v and NV_NVDLA_PDP_CORE_cal1d.v, while leaving preproc as the wide producer so the metadata is truncated in transit."
+      },
+      "expected_failure_mode": "Channel-position metadata is truncated, so the datapath can detect the wrong last-channel boundary, pack malformed output records, or transition state at the wrong time.",
+      "evidence_for_injection": [
+        "preproc already packed pos_c[4:0] before this commit, which shows the architecture expected 5-bit channel-position metadata.",
+        "bufferin widened both the packed bus and every local pos_c-bearing register from 3 bits to 5 bits.",
+        "The patch removes hardcoded is_pos_c==3 termination assumptions and replaces them with the generic is_last_pos_c predicate."
+      ],
+      "notes": [
+        "Ignore the NV_NVDLA_CDMA_IMG_ctrl.v hunk when injecting this bug; it is formatting only and not part of the functional fix."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "真正的功能修复负载是 CDP/PDP 元数据位宽修复：活动包路径里 channel-position 信息只保留了 3 位，而生产者其实早已生成 5 位的 pos_c。",
+    "why_it_counts": [
+      "补丁修改的是 DUT RTL 中活动的打包总线位宽、状态寄存器和通道结束判定。",
+      "它扩宽了从 CDP buffer input 到 PDP 的元数据路径，并把固定终止值判断替换为通用的 is_last_pos_c 判定。",
+      "如果没有这个修复，channel-position 元数据会被截断，并直接改变数据通路状态机的控制流。"
+    ],
+    "disqualifiers": [
+      "提交标题把这项工作表述成构建阶段的位宽不匹配修复，而且其中一个文件 NV_NVDLA_CDMA_IMG_ctrl.v 只是字面量格式清理。"
+    ],
+    "evidence": [
+      "NV_NVDLA_CDP_DP_bufferin.v 将 cdp_rdma2dp_pd 和 normalz_buf_data 扩宽 2 位，把 dp_pos_c 及相关寄存器从 3 位扩展到 5 位，并把硬编码的 is_pos_c==3 逻辑改为 is_last_pos_c。",
+      "NV_NVDLA_PDP_CORE_cal1d.v 将 sdp2pdp_pd 扩宽 2 位，以匹配修正后的打包负载宽度。",
+      "NV_NVDLA_PDP_CORE_preproc.v 在修复前就已经打包了 pos_c[4:0]，说明修复前真正的问题是消费者一侧把已发出的元数据静默截断了。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdp/NV_NVDLA_CDP_DP_bufferin.v",
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_cal1d.v",
+      "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_preproc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "打包式数据通路通常会同时传输 payload 和 sideband 元数据，例如通道位置、行结束或 cube 结束。如果某一级的元数据字段位宽过窄，高位就会被静默丢弃。接收状态机随后就会基于错误的位置值做决定，经常会把某个较小的固定值当成终止通道，而不是实际的最后位置。",
+      "portable_injection_spec": {
+        "affected_mechanism": "用于跟踪 channel-position 的 sideband 元数据字段位宽",
+        "trigger_condition": "数据路径中的 channel-position 值需要的位宽大于某个中间打包格式或本地寄存器实际保留的位数。",
+        "injection_action": "缩窄打包元数据字段和本地通道位置寄存器，然后基于被截断的值做终止状态判断。",
+        "implementation_pattern": "truncate_metadata_field",
+        "portability_notes": [
+          "可映射到任何把 payload 和控制元数据一起打包进共享总线或 FIFO entry 的流式数据通路。",
+          "通用症状是：生产者已经拥有完整位宽，但中间某个消费者或重新打包阶段把字段缩窄了。",
+          "保持生产者行为不变，让 bug 以“下游截断”而不是“上游不产生”形式暴露。"
+        ],
+        "concrete_injection_steps": [
+          "找到跨打包接口传递 channel index 或 sub-channel position 的 sideband 字段。",
+          "在接收阶段和相关本地寄存器中缩窄这个字段的位宽。",
+          "保持生产者仍然输出更宽的架构位宽，让高位在传输过程中被丢弃。",
+          "把通用的最后位置判定改回固定字面量，或者基于截断后的字段做比较。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdp/NV_NVDLA_CDP_DP_bufferin.v",
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_cal1d.v",
+          "vmod/nvdla/pdp/NV_NVDLA_PDP_CORE_preproc.v"
+        ],
+        "target_module_or_logic": "CDP RDMA 到 buffer 以及 PDP 中 pos_c 的元数据打包路径",
+        "commit_fix_summary": "修复把打包接口扩宽了 2 位，把 pos_c 相关状态从 3 位扩到 5 位，并把状态机的固定 3 位终止值比较改为 is_last_pos_c。PDP cal1d 的输入位宽同步扩宽，而 preproc 本来就已经输出 pos_c[4:0]。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "在 NV_NVDLA_CDP_DP_bufferin.v 和 NV_NVDLA_PDP_CORE_cal1d.v 中恢复旧的 +15 打包宽度和 3 位 pos_c 处理，同时保持 preproc 作为宽位宽生产者不变，让元数据在传输中被截断。"
+      },
+      "expected_failure_mode": "channel-position 元数据会被截断，导致数据通路在错误的通道边界结束、打包出错误的记录，或在错误的时刻切换状态。",
+      "evidence_for_injection": [
+        "preproc 在该提交前就已经打包 pos_c[4:0]，说明体系结构本来就期望 5 位的 channel-position 元数据。",
+        "bufferin 同时扩宽了打包总线和所有携带 pos_c 的本地寄存器，从 3 位改成 5 位。",
+        "补丁删除了硬编码的 is_pos_c==3 终止假设，改成通用的 is_last_pos_c 判定。"
+      ],
+      "notes": [
+        "注入该 bug 时忽略 NV_NVDLA_CDMA_IMG_ctrl.v 的修改块；它只是格式变化，不属于功能修复。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

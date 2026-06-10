@@ -1,0 +1,133 @@
+{
+  "dataset_id": 268,
+  "original_review_id": 322,
+  "meta": {
+    "id": 322,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "0e3872ee94add9ac415968bbff84ae4464d210e7",
+    "subject": "floating-point CSR fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "Fixes per-warp floating-point CSR state so FFLAGS, FRM, and FCSR stay coherent, accumulate sticky flags, and reset cleanly.",
+    "why_it_counts": [
+      "The patch is confined to a central RTL CSR state module.",
+      "It changes the functional read and write behavior of FFLAGS, FRM, and FCSR.",
+      "The new logic clearly fixes incorrect floating-point CSR bookkeeping rather than formatting or test code."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_csr_data.v replaces separate csr_fflags, csr_frm, and csr_fcsr arrays with one per-warp fcsr array.",
+      "FPU exception writes now OR new fflags bits into the existing fcsr sticky-flag field instead of overwriting it.",
+      "Reset now clears fcsr, and all CSR_FFLAGS, CSR_FRM, and CSR_FCSR reads and writes go through that unified state."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_csr_data.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix repairs per-context floating-point CSR bookkeeping. Floating-point exception flags are normally sticky and must accumulate until software clears them, while FFLAGS, FRM, and FCSR are just different views of the same architectural state. If hardware stores them in inconsistent structures or overwrites exception flags with only the newest event, software will observe lost exceptions, stale rounding mode state, or reset-dependent corruption.",
+      "portable_injection_spec": {
+        "affected_mechanism": "per-context floating-point CSR state and sticky exception accumulation",
+        "trigger_condition": "A warp or thread sees multiple floating-point exceptions over time, software reads or writes FFLAGS, FRM, or FCSR through different CSR aliases, or reset occurs before the state is reinitialized by software.",
+        "injection_action": "Split the state into inconsistent storage elements and overwrite sticky exception flags instead of OR-ing them into the existing state.",
+        "implementation_pattern": "overwrite sticky flags and de-unify CSR aliases",
+        "portability_notes": [
+          "Map this to any floating-point status CSR bank where exception flags should be sticky and shared with a combined control register.",
+          "If the target DUT already keeps one combined register, the minimal injection is to make exception updates overwrite instead of accumulate.",
+          "If the target DUT uses separate registers, inject inconsistency by updating only one view or by skipping reset initialization."
+        ],
+        "concrete_injection_steps": [
+          "Identify the state elements that represent floating-point flags and rounding mode for each architectural context.",
+          "Change exception updates so the new exception bits replace the old flag field instead of being OR-ed into it.",
+          "Allow FFLAGS, FRM, and combined FCSR accesses to read or write different storage elements, or omit one of the alias updates.",
+          "If needed for a stronger fault, remove reset initialization for that state so stale values survive reset."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_csr_data.v"
+        ],
+        "target_module_or_logic": "Per-warp FCSR storage and FPU-to-CSR flag update path",
+        "commit_fix_summary": "The commit unifies per-warp FCSR storage, makes FPU exception writes sticky via OR, resets the state, and routes all FFLAGS, FRM, and FCSR accesses through the unified register.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_csr_data, replace the OR-based fcsr flag update with a plain assignment, and if a fuller rollback is desired, restore separate csr_fflags, csr_frm, and csr_fcsr arrays with independent read and write paths."
+      },
+      "expected_failure_mode": "Floating-point exception flags can be lost after later exceptions, FRM and FCSR views can disagree, and reset may leave stale floating-point CSR state visible to software.",
+      "evidence_for_injection": [
+        "The patch touches only VX_csr_data.v and only the floating-point CSR state paths.",
+        "The move from separate arrays to one unified fcsr array demonstrates that alias coherence was part of the bug.",
+        "Changing the exception update from assignment to OR is direct evidence that sticky-flag accumulation was incorrect before the fix."
+      ],
+      "notes": [
+        "The smallest faithful mutation is to overwrite FFLAGS on FPU exception writes instead of OR-ing them.",
+        "This bug is reusable on other DUTs even if they expose different CSR names, as long as the status flags are architecturally sticky."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该修复统一了每个 warp 的浮点 CSR 状态，使 FFLAGS、FRM 和 FCSR 保持一致，异常标志可累积，并且复位后状态正确清零。",
+    "why_it_counts": [
+      "补丁只修改了核心 RTL CSR 状态模块。",
+      "它改变了 FFLAGS、FRM 和 FCSR 的功能性读写行为。",
+      "新增逻辑清楚地修复了浮点 CSR 记账错误，而不是格式化或测试代码。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_csr_data.v 用单一的每个 warp 的 fcsr 数组替换了分离的 csr_fflags、csr_frm 和 csr_fcsr 数组。",
+      "FPU 异常写入现在会把新的 fflags 位与已有 fcsr 中的 sticky-flag 字段做 OR，而不是直接覆盖。",
+      "复位现在会清零 fcsr，并且所有 CSR_FFLAGS、CSR_FRM 和 CSR_FCSR 的读写都统一走这个状态。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_csr_data.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对每个执行上下文的浮点 CSR 记账错误。浮点异常标志通常是 sticky 的，必须一直累积直到软件主动清除；同时 FFLAGS、FRM 和 FCSR 只是同一架构状态的不同视图。如果硬件把它们存放在彼此不一致的结构里，或者每次异常只保留最新事件而覆盖旧标志，软件就会观察到异常丢失、舍入模式状态陈旧，或者复位后的浮点状态损坏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "每上下文的浮点 CSR 状态及 sticky 异常标志累积",
+        "trigger_condition": "某个 warp 或线程在一段时间内经历多次浮点异常，软件通过不同 CSR 别名读写 FFLAGS、FRM 或 FCSR，或者在软件重新初始化之前发生复位。",
+        "injection_action": "把状态拆成彼此不一致的存储元素，并让 sticky 异常标志写入覆盖旧值而不是 OR 累积。",
+        "implementation_pattern": "覆盖 sticky 标志并打破 CSR 别名统一状态",
+        "portability_notes": [
+          "可映射到任何浮点状态 CSR 组，只要异常标志应该是 sticky 的，并且与组合控制寄存器共享同一架构状态。",
+          "如果目标 DUT 已经使用单一组合寄存器，最小注入就是让异常更新从累积改成覆盖。",
+          "如果目标 DUT 使用分离寄存器，则可通过只更新其中一个视图或跳过复位初始化来注入不一致性。"
+        ],
+        "concrete_injection_steps": [
+          "找到每个架构上下文中表示浮点异常标志和舍入模式的状态元素。",
+          "把异常更新改成直接覆盖旧的 flag 字段，而不是与旧值做 OR。",
+          "让 FFLAGS、FRM 和组合的 FCSR 访问读写不同的存储元素，或故意漏掉其中一个别名更新。",
+          "如果需要更强的故障，可以删除该状态的复位初始化，让旧值在复位后残留。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_csr_data.v"
+        ],
+        "target_module_or_logic": "每个 warp 的 FCSR 存储以及 FPU 到 CSR 的异常标志更新路径",
+        "commit_fix_summary": "该提交统一了每个 warp 的 FCSR 存储，把 FPU 异常写入改成通过 OR 保持 sticky 语义，增加复位清零，并让所有 FFLAGS、FRM 和 FCSR 访问都走统一寄存器。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_csr_data 中，把基于 OR 的 fcsr 异常标志更新改回普通赋值；如果需要更完整回退，则恢复独立的 csr_fflags、csr_frm 和 csr_fcsr 数组及其各自的读写路径。"
+      },
+      "expected_failure_mode": "后续异常可能覆盖并丢失先前的浮点异常标志，FRM 与 FCSR 的视图可能不一致，复位后软件还可能看到陈旧的浮点 CSR 状态。",
+      "evidence_for_injection": [
+        "补丁只修改了 VX_csr_data.v，而且只涉及浮点 CSR 状态路径。",
+        "从分离数组改成统一的 fcsr 数组，直接说明别名一致性本身就是缺陷的一部分。",
+        "把异常更新从普通赋值改成 OR，直接证明修复前 sticky-flag 累积是错误的。"
+      ],
+      "notes": [
+        "最小且忠实的变异就是在 FPU 异常写入时用覆盖代替 OR 累积 FFLAGS。",
+        "即便其他 DUT 的 CSR 命名不同，只要状态标志在架构上应当是 sticky 的，这个故障模型就可复用。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

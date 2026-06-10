@@ -1,0 +1,129 @@
+{
+  "dataset_id": 296,
+  "original_review_id": 357,
+  "meta": {
+    "id": 357,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "c20232a97a3830ec8581ca65ee8cb346414bc69f",
+    "subject": "RASTER_UNIT: Fix for non-power of 2 window size issue"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "raster_bounds",
+    "summary": "Fixes raster window clipping by converting the stored quad location back to pixel coordinates before comparing against destination width and height.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a non-power-of-two raster window-size fix.",
+      "The patch changes DUT quad mask generation in VX_raster_qe.sv.",
+      "The changed arithmetic directly corrects the coordinate system used by the in-bounds test."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The bounds check changes from x_loc_r + i / y_loc_r + j to ((x_loc_r >> 1) + i) / ((y_loc_r >> 1) + j).",
+      "The earlier temporary workaround had disabled the check entirely, and this commit reintroduces it with corrected arithmetic.",
+      "The previously added UNUSED markers are removed because the coordinate and dimension signals are needed again."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_qe.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A quad evaluator may store the quad origin in doubled, tile-relative, or otherwise scaled units, while the framebuffer bounds are expressed in pixels. The boundary clip test must convert the stored origin back to pixel coordinates before applying per-sample offsets. If it does not, edge quads are clipped using the wrong coordinate system and valid samples disappear.",
+      "portable_injection_spec": {
+        "affected_mechanism": "coordinate-domain conversion in edge clipping",
+        "trigger_condition": "Quads near the framebuffer boundary when the evaluator stores origin coordinates in a scaled domain rather than directly in pixels.",
+        "injection_action": "Compare the stored scaled coordinates directly against pixel-space width and height, without converting them back to pixel coordinates first.",
+        "implementation_pattern": "remove coordinate down-conversion before bounds check",
+        "portability_notes": [
+          "This maps to any raster/tile pipeline where a 2x2 or block origin is tracked in a domain different from final pixel coordinates.",
+          "The bug is most visible on boundary quads because interior samples still satisfy either comparison.",
+          "If the target DUT uses multiplication or concatenation instead of a shift, reintroduce the equivalent wrong-domain comparison rather than the exact syntax used here."
+        ],
+        "concrete_injection_steps": [
+          "Locate the boundary predicate that gates the per-sample output mask.",
+          "Remove the conversion from stored quad origin to pixel origin before applying the sample offset.",
+          "Leave the sample offset and edge-function tests unchanged so the regression is specifically a bounds-check bug."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_qe.sv"
+        ],
+        "target_module_or_logic": "Quad evaluator bounds check around mask and barycentric updates",
+        "commit_fix_summary": "The fix restores the boundary check and changes it to `((x_loc_r >> 1) + i) < dst_width && ((y_loc_r >> 1) + j) < dst_height`.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change the guard back to `(x_loc_r + i) < dst_width && (y_loc_r + j) < dst_height` so the shift-right conversion is removed."
+      },
+      "expected_failure_mode": "Boundary quads produce incorrect masks and drop valid samples, especially near the right and bottom edges of the render target.",
+      "evidence_for_injection": [
+        "The fix is localized to one arithmetic expression in the mask-generation block.",
+        "The follow-up from the earlier workaround makes the intended coordinate conversion explicit via `>> 1`.",
+        "No surrounding flow control or storage structures are changed, so the bug is directly attributable to the bounds-check arithmetic."
+      ],
+      "notes": [
+        "This is the proper root-cause fix; unlike dataset item 295, it does not simply disable clipping."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "raster_bounds",
+    "summary": "该提交通过先把保存的 quad 位置转换回像素坐标，再与目标宽高比较，修复了 raster 窗口裁剪错误。",
+    "why_it_counts": [
+      "提交信息明确指出这是 non-power-of-two raster window-size 的修复。",
+      "补丁修改的是 VX_raster_qe.sv 中 DUT 的 quad mask 生成逻辑。",
+      "被修改的算术表达式直接修正了 in-bounds 测试所使用的坐标系。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "边界检查从 x_loc_r + i / y_loc_r + j 改为 ((x_loc_r >> 1) + i) / ((y_loc_r >> 1) + j)。",
+      "之前的临时 workaround 是直接关闭该检查，而本提交重新引入了它并修正了算术。",
+      "此前为绕过问题而加入的 UNUSED 标记也被删除，因为这些坐标和尺寸信号重新参与了正确计算。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/raster_unit/VX_raster_qe.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "quad evaluator 可能以双倍坐标、tile 相对坐标或其他缩放后的单位保存 quad 原点，而 framebuffer 边界则处于像素坐标域。边界裁剪测试在施加每个 sample 的偏移前，必须先把保存的原点换算回像素坐标。否则就会在错误的坐标系里裁剪边缘 quad，导致合法 sample 消失。",
+      "portable_injection_spec": {
+        "affected_mechanism": "边缘裁剪中的坐标域转换",
+        "trigger_condition": "quad 靠近 framebuffer 边界，且 evaluator 内部保存的原点坐标不是直接的像素坐标时。",
+        "injection_action": "在与像素空间的宽高比较时，直接使用保存的缩放坐标，而不先转换回像素坐标。",
+        "implementation_pattern": "删除边界检查前的坐标降尺度转换",
+        "portability_notes": [
+          "可映射到任何在最终像素坐标之外，还维护 2x2 或块级原点坐标的 raster/tile 流水线。",
+          "该 bug 在边界 quad 上最明显，因为内部 sample 即使用错坐标也往往仍满足比较。",
+          "如果目标 DUT 不是用右移实现换算，而是用乘法或拼接，则应恢复等价的错误坐标域比较，而不是拘泥于这里的具体语法。"
+        ],
+        "concrete_injection_steps": [
+          "定位控制每个 sample 输出 mask 的边界谓词。",
+          "去掉从保存的 quad 原点到像素原点的转换，然后再加上 sample 偏移参与比较。",
+          "保持 sample 偏移和 edge-function 测试不变，使回归专门体现在 bounds-check 上。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/raster_unit/VX_raster_qe.sv"
+        ],
+        "target_module_or_logic": "围绕 mask 与 barycentric 更新的 quad evaluator 边界检查",
+        "commit_fix_summary": "修复恢复了边界检查，并将其改为 `((x_loc_r >> 1) + i) < dst_width && ((y_loc_r >> 1) + j) < dst_height`。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把守卫条件改回 `(x_loc_r + i) < dst_width && (y_loc_r + j) < dst_height`，去掉右移转换。"
+      },
+      "expected_failure_mode": "边界 quad 会产生错误的 mask，并错误丢弃本应保留的 sample，尤其在渲染目标的右边界和下边界附近。",
+      "evidence_for_injection": [
+        "修复被局部化为 mask 生成块中的一个算术表达式。",
+        "相对于之前的 workaround，这个提交用 `>> 1` 明确表达了期望的坐标转换。",
+        "周围的流控或存储结构都没有变化，因此问题可以直接归因于边界检查算术。"
+      ],
+      "notes": [
+        "这是根因层面的正式修复；与数据项 295 不同，它不是简单地关闭裁剪逻辑。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

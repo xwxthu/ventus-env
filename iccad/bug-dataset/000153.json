@@ -1,0 +1,153 @@
+{
+  "dataset_id": 153,
+  "original_review_id": 191,
+  "meta": {
+    "id": 191,
+    "repo": "gemmini",
+    "branch": "gemmini-mx",
+    "commit": "4a28fa5b88df501b7cd24245f2a1b738983e5ff2",
+    "subject": "FIX: Fixed DMA Assertions"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "Fixes generator-side sizing for the external-memory scratchpad writer path so its packetization width and maximum request size match that DMA path instead of incorrectly reusing the main DMA settings.",
+    "why_it_counts": [
+      "The patch changes Scratchpad and configuration logic that determines the generated hardware parameters for an active DMA write path.",
+      "Using the wrong beat width and max-byte sizing changes how write masks and packet sizes are constructed inside StreamWriter, which is DUT behavior.",
+      "The commit message points to a concrete DMA assertion failure, and the fix changes the hardware generator rather than tests."
+    ],
+    "disqualifiers": [
+      "The patch is configuration-heavy and includes debug print statements.",
+      "The observed failure is described through DMA assertions rather than a user-visible wrong final tensor, so the behavioral consequence is somewhat indirect."
+    ],
+    "evidence": [
+      "GemminiArrayConfig gains dedicated spad_writer_dma_width and max_spad_writer_bytes fields.",
+      "Scratchpad instantiates spad_writer with those dedicated parameters instead of reusing dataBits and maxBytes from the main DMA path.",
+      "ConfigsFP.scala sets the MX FP configuration to a 512-bit spad-writer width and 64-byte limit.",
+      "StreamWriter derives mask and packet sizing from beatBits and maxBytes, so wrong inputs directly affect request construction."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/GemminiConfigs.scala",
+      "src/main/scala/gemmini/Scratchpad.scala",
+      "src/main/scala/gemmini/ConfigsFP.scala",
+      "src/main/scala/gemmini/Controller.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This bug class appears when a design has more than one DMA write path but mistakenly reuses the packetization parameters of one path for another. If a secondary writer uses a different beat width or maximum transfer size than the main DMA engine, reusing the main-path constants causes its packet masks, burst-size selection, and byte accounting to be built for the wrong granularity. That commonly shows up as protocol assertions, malformed requests, or mis-sized transfers on the affected memory-write path.",
+      "portable_injection_spec": {
+        "affected_mechanism": "secondary DMA writer packet sizing and beat-width configuration",
+        "trigger_condition": "A dedicated store path writes through a bus or memory port whose transfer granularity differs from the main DMA reader/writer configuration.",
+        "injection_action": "Configure the secondary write packetizer to reuse the main DMA beat width and max-request-size constants instead of the constants that match the secondary path.",
+        "implementation_pattern": "reuse wrong DMA width and request-size parameters for a distinct write engine",
+        "portability_notes": [
+          "This applies to RTL and generators alike; the bug can be injected either by miswiring parameters or by hardcoding the wrong constants in the write packetizer.",
+          "The affected path is usually a side writer for scratchpad spill, moveout, or storeback rather than the primary load/store DMA engine.",
+          "If your DUT has no explicit secondary DMA engine, inject the bug into any write path whose bus width differs from the global default packetizer settings."
+        ],
+        "concrete_injection_steps": [
+          "Identify the write engine that emits packets for a secondary memory path and determine its actual beat width and maximum legal request size.",
+          "Replace those path-specific constants with the beat width and max-bytes settings used by another DMA path that has different transfer granularity.",
+          "Leave the downstream bus interface unchanged so the mismatch surfaces in mask generation, burst sizing, or protocol assertions when the path is exercised."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/GemminiConfigs.scala",
+          "src/main/scala/gemmini/Scratchpad.scala",
+          "src/main/scala/gemmini/ConfigsFP.scala",
+          "src/main/scala/gemmini/Controller.scala"
+        ],
+        "target_module_or_logic": "Scratchpad spad_writer StreamWriter instantiation and associated MX FP configuration sizing",
+        "commit_fix_summary": "The fix introduces dedicated spad_writer DMA sizing parameters, uses them when constructing the spad_writer StreamWriter, and sets the relevant MX FP config values so the external-memory writer is packetized for its real width.",
+        "mutation_strategy": "reuse_main_dma_parameters",
+        "source_level_edit_anchor": "In Scratchpad, instantiate spad_writer with dataBits and maxBytes again instead of spad_writer_dma_width and max_spad_writer_bytes, and remove or override the path-specific config values that were added for the MX FP configuration."
+      },
+      "expected_failure_mode": "The secondary write path emits requests with the wrong beat grouping or byte count, typically causing DMA assertions, illegal masks, truncated writes, or malformed moveout/storeback transactions.",
+      "evidence_for_injection": [
+        "StreamWriter computes maxBeatsPerReq, mask shape, and packet size directly from beatBits and maxBytes.",
+        "Before the fix, spad_writer inherited the main dataBits/maxBytes pair instead of path-specific sizing.",
+        "The fix adds dedicated config parameters rather than merely changing a test, indicating the generated hardware path itself was misconfigured.",
+        "The commit also forces a 64-byte memory width in Controller for the relevant shared-memory organization, consistent with a real datapath sizing mismatch."
+      ],
+      "notes": [
+        "This is a generator/configuration-heavy DUT bugfix, so confidence is lower than for a direct datapath logic flip.",
+        "For reinjection, the Scratchpad spad_writer constructor arguments are the smallest source-level mutation that recreates the bug mechanism."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "该提交修复了外部内存 scratchpad writer 通路的生成参数尺寸错误，使其 packetization 宽度和最大请求大小与该 DMA 通路本身匹配，而不是错误复用主 DMA 的设置。",
+    "why_it_counts": [
+      "补丁修改了 Scratchpad 和配置逻辑，这些逻辑决定了一个实际 DMA 写路径的生成硬件参数。",
+      "错误的 beat width 和 max-byte 设置会改变 StreamWriter 内部写掩码和 packet 大小的构造方式，属于 DUT 行为。",
+      "提交信息指向具体的 DMA assertion 故障，而且修复修改的是硬件生成器而不是测试。"
+    ],
+    "disqualifiers": [
+      "该补丁配置色彩较重，而且还带有调试打印语句。",
+      "可观察到的故障主要通过 DMA assertion 描述，而不是直接表现为最终张量错误，因此行为后果相对间接。"
+    ],
+    "evidence": [
+      "GemminiArrayConfig 新增了专用的 spad_writer_dma_width 和 max_spad_writer_bytes 字段。",
+      "Scratchpad 在实例化 spad_writer 时使用这些专用参数，而不再复用主 DMA 通路的 dataBits 和 maxBytes。",
+      "ConfigsFP.scala 把 MX FP 配置下的 spad-writer 宽度设置为 512 位、最大长度设置为 64 字节。",
+      "StreamWriter 的 mask 和 packet 尺寸直接由 beatBits 和 maxBytes 推导，因此错误输入会直接影响请求构造。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/GemminiConfigs.scala",
+      "src/main/scala/gemmini/Scratchpad.scala",
+      "src/main/scala/gemmini/ConfigsFP.scala",
+      "src/main/scala/gemmini/Controller.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当一个设计里存在不止一条 DMA 写通路，却把其中一条通路的 packetization 参数错误复用到另一条通路时，就会出现这类错误。如果次级 writer 的 beat 宽度或最大传输大小与主 DMA 引擎不同，继续复用主通路常量会让它的 packet mask、burst 大小选择和字节计数全部按错误粒度生成。典型后果就是协议断言触发、请求格式错误，或者在该写通路上出现长度不对的传输。",
+      "portable_injection_spec": {
+        "affected_mechanism": "次级 DMA writer 的 packet 尺寸与 beat 宽度配置",
+        "trigger_condition": "某条专用 store 通路通过一个与主 DMA reader/writer 配置粒度不同的总线或内存端口写数据。",
+        "injection_action": "让次级写 packetizer 重新复用主 DMA 的 beat width 和最大请求大小常量，而不是使用与该次级通路匹配的专用常量。",
+        "implementation_pattern": "对独立写引擎复用错误的 DMA 宽度和请求大小参数",
+        "portability_notes": [
+          "这既可用于 RTL，也可用于生成器；可以通过错连参数或在写 packetizer 中硬编码错误常量来注入。",
+          "受影响的路径通常是 scratchpad spill、moveout 或 storeback 之类的侧路 writer，而不是主 load/store DMA 引擎。",
+          "如果你的 DUT 没有显式的次级 DMA 引擎，就把该错误注入到任一总线宽度不同于全局默认 packetizer 设置的写路径上。"
+        ],
+        "concrete_injection_steps": [
+          "定位负责次级内存写通路发包的写引擎，并确认它真实的 beat 宽度和最大合法请求大小。",
+          "把这些路径专属常量替换成另一条 DMA 通路的 beat width 和 max-bytes 设置，且两者传输粒度必须不同。",
+          "保持下游总线接口不变，使这种不匹配在路径被触发时以 mask 生成错误、burst 尺寸错误或协议断言的形式暴露出来。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/GemminiConfigs.scala",
+          "src/main/scala/gemmini/Scratchpad.scala",
+          "src/main/scala/gemmini/ConfigsFP.scala",
+          "src/main/scala/gemmini/Controller.scala"
+        ],
+        "target_module_or_logic": "Scratchpad 中 spad_writer 的 StreamWriter 实例化及其相关 MX FP 配置尺寸参数",
+        "commit_fix_summary": "修复新增了专用的 spad_writer DMA 尺寸参数，在构造 spad_writer 的 StreamWriter 时使用这些参数，并设置相关 MX FP 配置值，使外部内存 writer 以其真实宽度进行 packetization。",
+        "mutation_strategy": "reuse_main_dma_parameters",
+        "source_level_edit_anchor": "在 Scratchpad 中，把 spad_writer 的构造参数重新改回 dataBits 和 maxBytes，而不是 spad_writer_dma_width 和 max_spad_writer_bytes；同时删除或覆盖为 MX FP 配置新增的路径专属参数值。"
+      },
+      "expected_failure_mode": "次级写通路会发出 beat 分组或字节计数错误的请求，通常表现为 DMA assertion、非法 mask、写入被截断，或 moveout/storeback 事务格式错误。",
+      "evidence_for_injection": [
+        "StreamWriter 会直接根据 beatBits 和 maxBytes 计算 maxBeatsPerReq、mask 形状和 packet 大小。",
+        "修复前，spad_writer 继承的是主通路的 dataBits/maxBytes，而不是该路径自己的尺寸参数。",
+        "修复通过新增专用配置参数完成，而不是修改测试，这说明是生成硬件路径本身配置错误。",
+        "同一提交还把 Controller 里的相关共享内存宽度固定到 64 字节，进一步表明这是真实的数据通路尺寸不匹配。"
+      ],
+      "notes": [
+        "这是一个偏生成器/配置层面的 DUT bugfix，因此置信度低于直接的数据通路逻辑翻转。",
+        "对于回注入，最小的源码级变异就是回退 Scratchpad 中 spad_writer 的构造参数。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

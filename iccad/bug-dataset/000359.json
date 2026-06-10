@@ -1,0 +1,143 @@
+{
+  "dataset_id": 359,
+  "original_review_id": 440,
+  "meta": {
+    "id": 440,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "0d0ddf79eb73cfc12198572b57dacdfa856eeb5f",
+    "subject": "when write miss the same address as in flight read, stall the pipe in stage 0"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes an L1 D-cache hazard by preventing a write miss from advancing while the same line already has an in-flight read miss, and by releasing related MSHR state more consistently after miss response.",
+    "why_it_counts": [
+      "The subject describes a concrete cache hazard involving a write miss colliding with an in-flight read miss on the same address.",
+      "The patch changes central D-cache and MSHR control logic, not just tests.",
+      "The functional edits all tighten request admission or status handling around miss-tracker conflicts."
+    ],
+    "disqualifiers": [
+      "The commit also adds an unrelated `index.html` file.",
+      "The DCache handshake rewrite is broader and less cleanly localized than the subject line alone suggests, so confidence is medium rather than high."
+    ],
+    "evidence": [
+      "In DCache.scala, `MshrAccess.io.probe.valid` changes from `io.coreReq.fire` to `io.coreReq.valid && coreReq_st0_ready`.",
+      "The write-miss stage-1 ready condition changes from allowing `mshrProbeStatus === 0.U || 2.U` to allowing only `0.U`.",
+      "In L1MSHR.scala, miss-response handling now clears `mshrStatus_st1_r` when the old state is `1.U` or `2.U`, not only `1.U`."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "If a cache line already has an outstanding read miss tracked in the miss table, a later write miss to that same line must not be admitted as if the line were free. Otherwise the write can race the fill path, reuse stale probe status, or enter the pipeline before the miss tracker is in a state that can safely absorb it. A related requirement is that the miss-tracker state machine must return to an admissible state at the right moment after miss response, or future conflict checks become stale.",
+      "portable_injection_spec": {
+        "affected_mechanism": "conflicting write-miss admission against active read-miss tracker entry",
+        "trigger_condition": "A write miss targets the same cache line as an outstanding read miss or a just-returning coalesced miss-tracker state.",
+        "injection_action": "Allow the write miss to pass the early conflict gate while the tracker still reports an occupied secondary/conflict state, or fail to clear that state coherently after response.",
+        "implementation_pattern": "allow conflicting miss admission with stale miss-tracker state",
+        "portability_notes": [
+          "This applies to caches that probe an MSHR or miss table before admitting a request into later pipeline stages.",
+          "The bug can be injected either on the early stall condition, on the probe-valid timing, or on the response-time state release if those pieces jointly define the hazard window.",
+          "Preserve address matching and fill data paths so the injected failure is an ordering/coalescing bug."
+        ],
+        "concrete_injection_steps": [
+          "Locate the stage-0 or stage-1 control that checks miss-tracker status before a write miss is accepted.",
+          "Restore acceptance of write misses when the tracker reports a same-line secondary or occupied state instead of requiring a fully available state.",
+          "If the design pipelines the probe, decouple the probe-valid term from the real admission decision so the conflict check observes an unblocked request again.",
+          "Optionally restore a stale miss-response state transition so the tracker reports availability too late or too early after a response."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1MSHR.scala"
+        ],
+        "target_module_or_logic": "DCache request admission around `mshrProbeStatus` plus MSHR response-state release",
+        "commit_fix_summary": "The fix tightens write-miss acceptance to `mshrProbeStatus === 0.U`, retimes the probe-valid condition with `coreReq_st0_ready`, and clears an extra MSHR occupied state on miss response.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "The source-level anchors are the `io.coreReq.ready`/`MshrAccess.io.probe.valid` logic and the write-miss `coreReq_st1_ready` condition in DCache.scala, plus the `io.missRspIn.valid` state transition in L1MSHR.scala."
+      },
+      "expected_failure_mode": "A write miss can race an in-flight read miss to the same line, leading to dropped coalescing, duplicated/conflicting miss handling, stale status observations, or incorrect cache responses for the colliding requests.",
+      "evidence_for_injection": [
+        "The subject, the tightened write-miss admission check, and the retimed probe-valid condition all point at the same same-line conflict window.",
+        "The companion L1MSHR edit changes when an occupied status returns to available, tying the hazard fix to miss-tracker state release rather than to payload data.",
+        "The unrelated `index.html` addition is clearly accidental and does not overlap the DUT logic."
+      ],
+      "notes": [
+        "This is a real DUT bugfix, but the exact patch is less minimal than the other cache fixes in this batch; that is why confidence remains medium.",
+        "For portable reinjection, the primary target is the conflicting write-miss stall condition; the MSHR state-release edit is the secondary supporting hook."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L1 D-cache 中的一个冒险：当同一 cache line 已经存在在途 read miss 时，后续 write miss 不能继续推进；同时 miss response 之后的相关 MSHR 状态释放也被修正得更一致。",
+    "why_it_counts": [
+      "标题描述了一个明确的缓存冒险：write miss 与同地址在途 read miss 冲突。",
+      "补丁修改的是核心的 D-cache 与 MSHR 控制逻辑，而不是测试。",
+      "这些功能性改动都在收紧 miss-tracker 冲突窗口内的请求接纳或状态处理。"
+    ],
+    "disqualifiers": [
+      "该提交还加入了一个无关的 `index.html` 文件。",
+      "DCache 的握手改写范围比标题本身更宽，局部性不如本批其他修复那样干净，因此置信度设为 medium。"
+    ],
+    "evidence": [
+      "在 DCache.scala 中，`MshrAccess.io.probe.valid` 从 `io.coreReq.fire` 改为 `io.coreReq.valid && coreReq_st0_ready`。",
+      "write miss 的 stage-1 ready 条件从允许 `mshrProbeStatus === 0.U || 2.U` 收紧为只允许 `0.U`。",
+      "在 L1MSHR.scala 中，miss response 处理现在会在旧状态为 `1.U` 或 `2.U` 时都清除 `mshrStatus_st1_r`，而不再只处理 `1.U`。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1MSHR.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "如果某条 cache line 已经在 miss table 中有一个未完成的 read miss，后续命中同一条线的 write miss 就不能被当作“该行空闲”而继续接纳。否则写请求可能与 fill 路径竞争、复用陈旧 probe 状态，或者在 miss tracker 尚不能安全吸收该请求时就提前进入流水。与之配套的是：miss-tracker 状态机必须在 miss response 后的正确时机回到可接纳状态，否则后续冲突检测看到的状态会过时。",
+      "portable_injection_spec": {
+        "affected_mechanism": "面对活动 read-miss tracker entry 时的冲突 write-miss 接纳",
+        "trigger_condition": "某个 write miss 命中了与未完成 read miss 相同的 cache line，或者命中了一个刚完成响应但仍处于合并状态的 miss-tracker entry。",
+        "injection_action": "在 tracker 仍报告 secondary/occupied 冲突状态时允许 write miss 穿过早期冲突门控，或在响应后未能一致地清除该状态。",
+        "implementation_pattern": "允许冲突 miss 接纳并伴随陈旧 miss-tracker 状态",
+        "portability_notes": [
+          "适用于任何在请求进入后续流水级前先查询 MSHR 或 miss table 的 cache。",
+          "如果这些部件共同定义了冲突窗口，则可在早期 stall 条件、probe-valid 时序，或 response 时状态释放三者之一或组合上注入错误。",
+          "保留地址匹配与 fill 数据路径不变，使注入故障体现为次序/合并错误。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 write miss 被接纳前检查 miss-tracker 状态的 stage-0 或 stage-1 控制逻辑。",
+          "恢复在 tracker 仍处于同线 secondary 或 occupied 状态时也允许 write miss 通过，而不是要求 tracker 完全空闲。",
+          "若设计对 probe 做了流水化，则把 probe-valid 与真实接纳条件重新解耦，让冲突检查再次观测到未被阻塞的请求。",
+          "可选地恢复陈旧的 miss-response 状态迁移，使 tracker 在响应后过早或过晚地报告可用。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L1Cache/DCache/DCache.scala",
+          "ventus/src/L1Cache/L1MSHR.scala"
+        ],
+        "target_module_or_logic": "围绕 `mshrProbeStatus` 的 DCache 请求接纳逻辑及 MSHR 响应状态释放",
+        "commit_fix_summary": "修复把 write miss 的接纳条件收紧为 `mshrProbeStatus === 0.U`，用 `coreReq_st0_ready` 重定时 probe-valid，并在 miss response 时清除额外一个 MSHR 占用状态。",
+        "mutation_strategy": "反向恢复补丁",
+        "source_level_edit_anchor": "源级锚点包括 DCache.scala 中的 `io.coreReq.ready`/`MshrAccess.io.probe.valid` 逻辑与 write-miss `coreReq_st1_ready` 条件，以及 L1MSHR.scala 中 `io.missRspIn.valid` 下的状态迁移。"
+      },
+      "expected_failure_mode": "write miss 会与同线在途 read miss 竞争，导致 miss 合并丢失、重复或冲突的 miss 处理、状态观测陈旧，或对冲突请求返回错误的缓存响应。",
+      "evidence_for_injection": [
+        "标题、收紧后的 write-miss 接纳条件，以及重定时后的 probe-valid 条件都共同指向同一个“同线冲突窗口”。",
+        "配套的 L1MSHR 修改改变了 occupied 状态何时回到 available，说明修复与 miss-tracker 状态释放直接相关，而不是数据载荷路径。",
+        "无关的 `index.html` 增加显然是误提交，与 DUT 逻辑没有交集。"
+      ],
+      "notes": [
+        "这是一个真实的 DUT bugfix，但具体补丁不像本批次其他缓存修复那样极简，因此置信度保持为 medium。",
+        "在可移植注入中，主要目标应是“冲突 write-miss stall 条件”，MSHR 状态释放修改则是次级辅助钩子。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

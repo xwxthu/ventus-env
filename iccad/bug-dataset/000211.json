@@ -1,0 +1,147 @@
+{
+  "dataset_id": 211,
+  "original_review_id": 254,
+  "meta": {
+    "id": 254,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "082d9d645a5966526e6c0ffd49e116b164d9cf5a",
+    "subject": "fix: wrong addr calculating of vls12 in LSU, `matadd` passed(?)"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes a vector LSU address-generation bug by giving the vls12 instruction its own direct per-lane address path instead of routing it through the generic masked-vector remapping formula.",
+    "why_it_counts": [
+      "The patch changes core LSU address-generation logic in DUT code.",
+      "Decode and scoreboard changes exist only to carry the new control bit needed by the LSU fix.",
+      "The bug changes effective memory addresses, which is a direct functional hardware error."
+    ],
+    "disqualifiers": [
+      "The commit also adds testcase artifacts and adjusts a test timeout."
+    ],
+    "evidence": [
+      "The commit message explicitly says the LSU computed the wrong address for vls12.",
+      "DecodeUnit.scala derives a new ctrl.is_vls12 flag from FN_VLS12.",
+      "scoreboard.scala adds is_vls12 to CtrlSigs so the opcode distinction reaches execution.",
+      "LSU.scala changes the masked vector address mux so vls12 uses reg_save.in1(x) + reg_save.in2(x) while other masked vector cases keep the old remapping formula."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/scoreboard.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This bug is an address-generation mode-selection error in a vector load/store unit. A special vector memory subtype that should use a simple per-lane base-plus-offset calculation was instead treated like a generic masked vector memory operation that remaps addresses using thread or warp layout state. The result is that the LSU sends requests to the wrong addresses even though the instruction decode and memory request flow otherwise look valid.",
+      "portable_injection_spec": {
+        "affected_mechanism": "vector LSU address-mode selection",
+        "trigger_condition": "A vector memory instruction subtype that requires direct per-lane address addition is issued through the masked or special vector-memory path.",
+        "injection_action": "Force that subtype to reuse the generic remapped address formula instead of its dedicated direct-add address formula.",
+        "implementation_pattern": "drop opcode-specific address-generation predicate",
+        "portability_notes": [
+          "Look for an LSU stage that chooses among multiple vector address formulas based on opcode or micro-op class.",
+          "Target a subtype whose correct behavior is direct lane-local addressing rather than thread-remapped addressing.",
+          "The bug can be injected either by misdecoding the subtype or by keeping decode correct and making the LSU ignore the subtype flag."
+        ],
+        "concrete_injection_steps": [
+          "Identify the address-generation mux for masked or special vector memory operations.",
+          "Find the branch that handles the special direct-address subtype separately from the generic remapped path.",
+          "Remove or force false the subtype predicate so the special subtype falls through to the generic remapped formula.",
+          "Keep all downstream request formatting unchanged so the failure is isolated to effective-address computation."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala",
+          "ventus/src/pipeline/LSU.scala",
+          "ventus/src/pipeline/scoreboard.scala"
+        ],
+        "target_module_or_logic": "InstrDecodeV2 control decode, CtrlSigs propagation, and AddrCalculate masked-vector address mux",
+        "commit_fix_summary": "The fix adds ctrl.is_vls12 in decode and scoreboard, then uses that bit in AddrCalculate so vls12 takes reg_save.in1(x) + reg_save.in2(x) instead of the existing remapped-address expression.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In LSU AddrCalculate, replace the is_vls12 sub-branch with the old generic masked-vector formula or force is_vls12 low by removing its decode and scoreboard propagation."
+      },
+      "expected_failure_mode": "vls12 operations issue loads or stores to incorrect addresses, causing wrong data to be read or overwritten and potentially producing silent corruption in vector kernels.",
+      "evidence_for_injection": [
+        "The fixed LSU branch distinguishes reg_save.ctrl.is_vls12 from other masked vector cases at the exact address computation point.",
+        "The old formula uses csr_tid, csr_pds, csr_numw, and lane-dependent remapping terms that are absent from the new vls12 path.",
+        "The decode and scoreboard edits are minimal and only exist to transport the new LSU control bit."
+      ],
+      "notes": [
+        "For a faithful reverse patch, revert both the control-bit propagation and the LSU branch.",
+        "For a narrower mutation, keep the new signal but ignore it only in the LSU address mux."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交修复了向量 LSU 的地址生成错误：为 vls12 指令提供独立的按 lane 直接求址路径，而不是继续落入通用的带 mask 向量地址重映射公式。",
+    "why_it_counts": [
+      "补丁直接修改了 DUT 中核心 LSU 的地址生成逻辑。",
+      "Decode 和 scoreboard 的改动只是为了把 LSU 修复所需的新控制位传过去。",
+      "该缺陷会改变实际访存地址，属于直接的硬件功能错误。"
+    ],
+    "disqualifiers": [
+      "该提交还加入了测试产物，并调整了测试超时。"
+    ],
+    "evidence": [
+      "提交信息明确说明 vls12 在 LSU 中的地址计算错误。",
+      "DecodeUnit.scala 从 FN_VLS12 派生出新的 ctrl.is_vls12 标志。",
+      "scoreboard.scala 在 CtrlSigs 中加入 is_vls12，使该区分能传到执行级。",
+      "LSU.scala 修改了带 mask 的向量地址选择逻辑，使 vls12 使用 reg_save.in1(x) + reg_save.in2(x)，而其他带 mask 的向量情况仍走原来的重映射公式。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/scoreboard.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "这是一个向量 Load/Store 单元中的求址模式选择错误。某个特殊向量访存子类型本应使用每个 lane 的简单 base+offset 地址计算，却被当成通用的带 mask 向量访存处理，错误套用了依赖线程或 warp 布局状态的地址重映射公式。结果是 LSU 发出的访存请求地址错误，即使指令译码和后续访存流程表面上仍然正常。",
+      "portable_injection_spec": {
+        "affected_mechanism": "向量 LSU 求址模式选择",
+        "trigger_condition": "某个需要按 lane 直接求址的向量访存子类型经由带 mask 或特殊向量访存路径发射。",
+        "injection_action": "强制该子类型复用通用的重映射地址公式，而不是使用其专用的直接相加求址公式。",
+        "implementation_pattern": "删除针对特定 opcode 的求址分支谓词",
+        "portability_notes": [
+          "在 LSU 中寻找一个基于 opcode 或 micro-op 类型在多个向量地址公式之间选择的阶段。",
+          "目标应是那种正确行为属于 lane 本地直接求址，而不是线程重映射求址的子类型。",
+          "可以通过译码错分该子类型来注入，也可以保持译码正确但让 LSU 忽略该子类型标志。"
+        ],
+        "concrete_injection_steps": [
+          "定位带 mask 或特殊向量访存操作的地址生成多路选择逻辑。",
+          "找到专门处理该直接求址子类型、并与通用重映射路径分开的分支。",
+          "删除该子类型判断或将其强制为 false，使该子类型重新落入通用重映射公式。",
+          "保持后续访存请求格式不变，把故障限定在有效地址计算阶段。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala",
+          "ventus/src/pipeline/LSU.scala",
+          "ventus/src/pipeline/scoreboard.scala"
+        ],
+        "target_module_or_logic": "InstrDecodeV2 控制译码、CtrlSigs 传递，以及 AddrCalculate 中带 mask 的向量地址选择逻辑",
+        "commit_fix_summary": "该修复在 decode 和 scoreboard 中加入 ctrl.is_vls12，并在 AddrCalculate 中据此让 vls12 走 reg_save.in1(x) + reg_save.in2(x)，而不是旧的重映射地址表达式。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 LSU 的 AddrCalculate 中去掉 is_vls12 子分支、恢复旧的通用带 mask 向量公式，或者删除其 decode/scoreboard 传递并让 is_vls12 始终无效。"
+      },
+      "expected_failure_mode": "vls12 操作会向错误地址发出 load/store，请求，导致读到错误数据或覆盖错误位置，并可能在向量内核中造成静默数据损坏。",
+      "evidence_for_injection": [
+        "修复后的 LSU 分支正是在地址计算点上把 reg_save.ctrl.is_vls12 与其他带 mask 向量情况区分开。",
+        "旧公式包含 csr_tid、csr_pds、csr_numw 等重映射项，而新的 vls12 路径完全没有这些项。",
+        "decode 和 scoreboard 的改动都很小，且唯一作用就是传递 LSU 所需的新控制位。"
+      ],
+      "notes": [
+        "若想最忠实地逆转原始补丁，应同时恢复控制位传递和 LSU 分支。",
+        "若想做更窄的注入，也可以保留新信号，只在 LSU 地址选择中忽略它。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

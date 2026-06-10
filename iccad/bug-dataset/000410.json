@@ -1,0 +1,137 @@
+{
+  "dataset_id": 410,
+  "original_review_id": 519,
+  "meta": {
+    "id": 519,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "3fe31fc3377cfe30b00680f659c9a060bf3b0a2e",
+    "subject": "fixed afu to cpu mempcy hang"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "io_protocol",
+    "summary": "Fixes a top-level AFU protocol bug that could hang AFU-to-CPU memcpy under CCI backpressure. The request bookkeeping counters are now separated from the almost-full admission condition on the transmit channels.",
+    "why_it_counts": [
+      "The commit message explicitly reports a real memcpy hang.",
+      "The functional RTL change is in the AFU hardware request/response protocol logic.",
+      "The patch cleanly separates 'a request is being presented' from 'a new request may be enabled under backpressure'."
+    ],
+    "disqualifiers": [
+      "Driver and scope-tracing updates are bundled alongside the hardware fix."
+    ],
+    "evidence": [
+      "In vortex_afu.sv, cci_rd_req_fire changes from valid && !c0TxAlmFull to just valid, and cci_wr_req_fire changes analogously on c1.",
+      "The !TxAlmFull terms are moved into cci_rd_req_enable and cci_wr_req_enable instead of request-fire accounting.",
+      "Pending read/write counters are updated from cci_*_req_fire, so the patch directly changes outstanding-request bookkeeping under backpressure."
+    ],
+    "touched_dut_files": [
+      "hw/opae/vortex_afu.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A DMA, AFU, or accelerator front-end often tracks outstanding read/write requests with counters while separately using an almost-full signal to decide whether to launch more traffic. If those two concepts are merged, backpressure can corrupt the bookkeeping: the design may keep a request valid on the interface but fail to count it, or vice versa, eventually hanging because request and completion accounting diverge.",
+      "portable_injection_spec": {
+        "affected_mechanism": "outstanding-request accounting under transmit-channel backpressure",
+        "trigger_condition": "The accelerator is issuing memory traffic while the fabric exposes an almost-full or temporary backpressure condition on the transmit channel.",
+        "injection_action": "Make the request-fire event depend on both valid and almost-full, instead of counting the presented request separately from the logic that enables future issuance.",
+        "implementation_pattern": "mix bookkeeping with admission control",
+        "portability_notes": [
+          "This applies to any top-level DMA or host-memory interface with outstanding-read/write counters.",
+          "The bug is protocol bookkeeping corruption under backpressure, not a cache-data bug.",
+          "If the target interface uses ready/valid rather than almost-full, map the bug to conflating 'request is live' with 'request may advance the issue FSM'."
+        ],
+        "concrete_injection_steps": [
+          "Find the counters that track how many read or write requests are currently outstanding on the host-memory interface.",
+          "Locate the signal that indicates a request is live or being presented on the transmit channel.",
+          "Fold the channel backpressure condition into that request-fire signal instead of using it only to block future enable.",
+          "Leave the completion counters and queue sizing unchanged so the reinjected failure appears as accounting drift under backpressure."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/opae/vortex_afu.sv"
+        ],
+        "target_module_or_logic": "CCI read/write request fire versus enable bookkeeping",
+        "commit_fix_summary": "The fix makes cci_rd_req_fire and cci_wr_req_fire depend only on valid, and moves the c0TxAlmFull/c1TxAlmFull checks into the corresponding request-enable logic.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change cci_rd_req_fire and cci_wr_req_fire back to valid && !TxAlmFull, and remove the !TxAlmFull terms from cci_rd_req_enable and cci_wr_req_enable."
+      },
+      "expected_failure_mode": "Outstanding read/write counts diverge from actual in-flight traffic under backpressure, causing AFU memcpy or DMA progress to stall or hang.",
+      "evidence_for_injection": [
+        "The patch only moves the almost-full term between request-fire and request-enable logic, making the intended bookkeeping fix explicit.",
+        "The pending counter update equations directly consume cci_rd_req_fire and cci_wr_req_fire.",
+        "The reported user-visible symptom in the commit subject is a hang, matching the expected failure mode of corrupted outstanding-request accounting."
+      ],
+      "notes": [
+        "This is a reusable backpressure-accounting bug pattern for host interfaces, not something specific to CCI naming.",
+        "The scope/driver changes are not required to reproduce the injected hardware fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "io_protocol",
+    "summary": "该提交修复了一个顶层 AFU 协议缺陷：在 CCI 背压下，AFU 到 CPU 的 memcpy 可能挂起。修复后，请求计数与 almost-full 准入条件被分离开来。",
+    "why_it_counts": [
+      "提交信息明确指出出现了真实的 memcpy hang。",
+      "功能性 RTL 变更位于 AFU 的硬件请求/响应协议逻辑中。",
+      "补丁清楚地区分了“当前有请求正在被呈现”和“在背压下是否允许继续发起新请求”这两个概念。"
+    ],
+    "disqualifiers": [
+      "该提交还捆绑了 driver 和 scope tracing 更新。"
+    ],
+    "evidence": [
+      "在 vortex_afu.sv 中，cci_rd_req_fire 从 valid && !c0TxAlmFull 改成了仅由 valid 决定，cci_wr_req_fire 在 c1 上也做了同样修改。",
+      "!TxAlmFull 条件被移动到了 cci_rd_req_enable 和 cci_wr_req_enable 中，而不是继续混在 request-fire 计数里。",
+      "pending read/write 计数器正是由 cci_*_req_fire 更新，因此该补丁直接改变了背压下的未完成请求记账行为。"
+    ],
+    "touched_dut_files": [
+      "hw/opae/vortex_afu.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "DMA、AFU 或加速器前端通常会用计数器跟踪未完成的读写请求，同时再用 almost-full 信号决定是否继续发起新流量。如果把这两件事混为一谈，背压就会破坏记账：设计可能在接口上仍保持请求有效，却没有把它计入未完成计数，或者反过来，最终因为请求与完成的记账发散而挂起。",
+      "portable_injection_spec": {
+        "affected_mechanism": "发送通道背压下的未完成请求记账",
+        "trigger_condition": "加速器正在发起内存流量，同时互连在发送通道上出现 almost-full 或临时背压状态。",
+        "injection_action": "让 request-fire 同时依赖 valid 和 almost-full，而不是把“当前请求存在”与“是否允许未来继续发起”分开处理。",
+        "implementation_pattern": "mix bookkeeping with admission control",
+        "portability_notes": [
+          "适用于任何带未完成读写计数器的 DMA 或 host-memory 顶层接口。",
+          "这是背压下协议记账损坏问题，不是 cache 数据错误。",
+          "如果目标接口使用 ready/valid 而不是 almost-full，可把缺陷映射为混淆“请求当前有效”和“发射状态机可以前进一步”。"
+        ],
+        "concrete_injection_steps": [
+          "找到跟踪 host-memory 接口未完成读/写请求数量的计数器。",
+          "定位表示发送通道上“当前请求正在被呈现”的信号。",
+          "把通道背压条件重新折叠进该 request-fire 信号，而不是只把它用于阻止未来 enable。",
+          "保持完成计数与队列大小逻辑不变，使回注故障表现为背压下的计数漂移。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/opae/vortex_afu.sv"
+        ],
+        "target_module_or_logic": "CCI 读写请求 fire 与 enable 的记账关系",
+        "commit_fix_summary": "修复让 cci_rd_req_fire 和 cci_wr_req_fire 只取决于 valid，并把 c0TxAlmFull/c1TxAlmFull 检查移动到相应的 request-enable 逻辑里。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 cci_rd_req_fire 和 cci_wr_req_fire 改回 valid && !TxAlmFull，并从 cci_rd_req_enable 和 cci_wr_req_enable 中删除 !TxAlmFull 条件。"
+      },
+      "expected_failure_mode": "在背压场景下，未完成读写计数会与实际在途流量发生偏离，导致 AFU memcpy 或 DMA 进度停滞甚至挂起。",
+      "evidence_for_injection": [
+        "补丁只是把 almost-full 条件在 request-fire 与 request-enable 之间重新分配，因此 intended bookkeeping fix 非常明确。",
+        "pending counter 的更新方程直接消费 cci_rd_req_fire 和 cci_wr_req_fire。",
+        "提交标题报告的用户可见症状就是 hang，与“未完成请求计数损坏”高度一致。"
+      ],
+      "notes": [
+        "这是适用于 host 接口的可复用背压记账缺陷模式，不依赖于 CCI 的命名细节。",
+        "scope/driver 改动不是复现该硬件缺陷所必需的。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

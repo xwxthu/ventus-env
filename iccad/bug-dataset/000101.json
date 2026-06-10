@@ -1,0 +1,139 @@
+{
+  "dataset_id": 101,
+  "original_review_id": 127,
+  "meta": {
+    "id": 127,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "a645b5909e657fd59d09a7aadf6388f18671e04d",
+    "subject": "rop deadlock fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "This commit fixes a ROP backend deadlock by splitting depth/stencil and color request masks and by retiring canceled zero-mask writes from pending-read accounting.",
+    "why_it_counts": [
+      "The commit message explicitly describes a deadlock fix.",
+      "The patch changes central ROP memory-request generation and retirement logic in DUT files.",
+      "The added degenerate-request handling prevents outstanding-read bookkeeping from getting stuck on requests that collapse to no memory work."
+    ],
+    "disqualifiers": [
+      "The commit also touches trace and helper code outside the core ROP fix."
+    ],
+    "evidence": [
+      "VX_rop_unit replaces the old single mem_req_mask flow with separate mem_req_ds_mask and mem_req_c_mask signals.",
+      "VX_rop_unit adds is_degenerate_req, suppresses mem_req_valid_r for zero-mask requests, and generates write_req_canceled.",
+      "The pending_reads counter now decrements on write_req_canceled as well as mem_write_notify.",
+      "VX_rop_mem now consumes the precomputed DS and color masks directly instead of recomputing one shared gate locally."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_mem.sv",
+      "hw/rtl/rop_unit/VX_rop_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A late-fragment backend can launch a read-modify-write sequence whose depth/stencil side and color side are both conditionally canceled after per-fragment tests, write masks, or blend enables are applied. If that collapsed request is still counted as an outstanding operation but never generates a real memory transaction or a local cancel-retirement event, queue credits do not return and the backend can deadlock.",
+      "portable_injection_spec": {
+        "affected_mechanism": "late-fragment memory request retirement",
+        "trigger_condition": "A ROP-style request reaches the memory stage, but all destination masks become zero after depth/stencil tests, color write-mask checks, or blend gating.",
+        "injection_action": "Let the zero-mask write consume outstanding-request bookkeeping without generating a matching local retirement event.",
+        "implementation_pattern": "drop degenerate-request cancellation or merge per-target masks too early",
+        "portability_notes": [
+          "Apply this to designs that share one outstanding-request counter across depth/stencil and color writeback paths.",
+          "The bug is in control and accounting logic, not in depth compare or blending arithmetic.",
+          "Per-lane or per-target masks are the key portability hook: reproduce the case where every lane is canceled after the request has already reserved resources."
+        ],
+        "concrete_injection_steps": [
+          "Keep the enqueue-side outstanding counter increment for read-modify-write style fragment operations.",
+          "Remove or bypass the logic that detects when all destination masks resolve to zero before memory issue.",
+          "Retire outstanding credits only on real memory write completion, not on locally canceled no-op writes."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_mem.sv",
+          "hw/rtl/rop_unit/VX_rop_unit.sv"
+        ],
+        "target_module_or_logic": "ROP request mask generation and pending_reads retirement",
+        "commit_fix_summary": "The fix splits depth/stencil and color masks, drops degenerate requests before they reach the memory scheduler, and decrements pending_reads when a write request is canceled locally.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the older shared-mask path, remove is_degenerate_req and write_req_canceled handling, and make pending_reads decrement only on mem_write_notify."
+      },
+      "expected_failure_mode": "Fragments that collapse to no-op writes can occupy pending-read capacity forever, eventually stalling the ROP backend or blocking fragment completion.",
+      "evidence_for_injection": [
+        "The real fix introduces explicit zero-mask detection with is_degenerate_req.",
+        "The fix also adds write_req_canceled specifically to drain pending_reads for canceled writes.",
+        "The source patch separates DS and color masks so each side can cancel independently before memory submission."
+      ],
+      "notes": [
+        "A narrower reinjection is to keep the mask split but remove the write_req_canceled path from pending_reads decrement logic."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交通过拆分 depth/stencil 与 color 请求掩码，并在零掩码写请求被本地取消时正确回收 pending-read 计数，修复了 ROP 后端死锁。",
+    "why_it_counts": [
+      "提交信息明确说明是在修复死锁。",
+      "补丁修改了 DUT 文件中的核心 ROP 内存请求生成与退休逻辑。",
+      "新增的退化请求处理避免了“已经占用未决读计数、但最终没有任何内存操作”的请求把记账卡死。"
+    ],
+    "disqualifiers": [
+      "该提交还改动了与核心 ROP 修复无关的 trace 和辅助代码。"
+    ],
+    "evidence": [
+      "VX_rop_unit 把旧的单一 mem_req_mask 流程改成了独立的 mem_req_ds_mask 与 mem_req_c_mask。",
+      "VX_rop_unit 新增 is_degenerate_req，零掩码请求不再驱动 mem_req_valid_r，并生成 write_req_canceled。",
+      "pending_reads 计数现在既会在 mem_write_notify 时递减，也会在 write_req_canceled 时递减。",
+      "VX_rop_mem 现在直接消费预先计算好的 DS 和 color 掩码，而不是在本地重新合成一个共享 gate。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_mem.sv",
+      "hw/rtl/rop_unit/VX_rop_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在延迟片段后端中，一次读-改-写操作的 depth/stencil 侧和 color 侧都可能在深度/模板测试、写掩码或 blend 使能之后被条件性取消。如果这种已经坍缩成 no-op 的请求仍然被记为未完成操作，但既不会真正发出内存事务，也不会触发本地的“取消退休”，那么队列 credit 就不会归还，后端最终可能死锁。",
+      "portable_injection_spec": {
+        "affected_mechanism": "late-fragment memory request retirement",
+        "trigger_condition": "ROP 类请求到达内存阶段后，depth/stencil 测试、color 写掩码检查或 blend gate 使所有目标掩码都变成零。",
+        "injection_action": "让这个零掩码写请求继续占用未决请求记账，但不给它生成对应的本地退休事件。",
+        "implementation_pattern": "drop degenerate-request cancellation or merge per-target masks too early",
+        "portability_notes": [
+          "把该故障映射到那些由同一个未决请求计数器同时管理 depth/stencil 和 color 写回路径的设计中。",
+          "问题出在控制和记账逻辑，而不在深度比较或混色运算本身。",
+          "可移植的关键是“按 lane 或按目标的掩码”：复现所有 lane 在请求已占用资源后又全部被取消的情况。"
+        ],
+        "concrete_injection_steps": [
+          "保留对 read-modify-write 类片段操作的入队侧未决计数递增。",
+          "移除或绕过“在发出内存请求前检测所有目标掩码是否都变成零”的逻辑。",
+          "把未决 credit 的回收限定为只在真实内存写完成时发生，而不是在本地取消的 no-op 写上发生。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_mem.sv",
+          "hw/rtl/rop_unit/VX_rop_unit.sv"
+        ],
+        "target_module_or_logic": "ROP request mask generation and pending_reads retirement",
+        "commit_fix_summary": "修复把 depth/stencil 与 color 掩码拆开，在请求进入内存调度器前丢弃退化请求，并在写请求被本地取消时递减 pending_reads。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复旧的共享掩码路径，去掉 is_degenerate_req 与 write_req_canceled 处理，并让 pending_reads 只在 mem_write_notify 时递减。"
+      },
+      "expected_failure_mode": "已经坍缩为 no-op 写的片段请求会永久占住 pending-read 容量，最终让 ROP 后端停住或阻塞片段完成。",
+      "evidence_for_injection": [
+        "真实修复显式引入了 is_degenerate_req 来检测零掩码请求。",
+        "修复还专门把 write_req_canceled 加入 pending_reads 回收路径，用于处理被取消的写。",
+        "源补丁把 DS 与 color 掩码拆开，使两边都能在送往内存前独立取消。"
+      ],
+      "notes": [
+        "如果希望做更窄的注入，可保留掩码拆分，只移除 pending_reads 递减逻辑中的 write_req_canceled 路径。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

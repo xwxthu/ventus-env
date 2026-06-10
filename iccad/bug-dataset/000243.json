@@ -1,0 +1,143 @@
+{
+  "dataset_id": 243,
+  "original_review_id": 292,
+  "meta": {
+    "id": 292,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "7c7003b612def9ffe2b43a24408bb2b59fa59845",
+    "subject": "fix bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "The patch fixes a top-level bit-width bug so CTA kernel-dimension metadata can represent the maximum configured work-group count correctly.",
+    "why_it_counts": [
+      "WG_SIZE_X/Y/Z_WIDTH are widened from log2Ceil(NUM_WG_*) to log2Ceil(NUM_WG_* + 1).",
+      "Those widths feed host_kernel_size_3d, which is forwarded into CTA scheduling as num_wg_x, num_wg_y, and num_wg_z.",
+      "Wrong widths can truncate maximum configured dimension values and misconfigure CTA launch parameters."
+    ],
+    "disqualifiers": [
+      "The commit also fills a missing host_pds_size_per_wf field in the MemBox bundle literal."
+    ],
+    "evidence": [
+      "parameters.scala changes all three dimension widths to include +1.",
+      "MemBox.scala builds host_kernel_size_3d using those widths when generating metadata.",
+      "The host-side bundle in GPGPU_top.scala already expects NUM_WG_DIM_MAX+1-sized kernel dimension fields."
+    ],
+    "touched_dut_files": [
+      "ventus/src/top/MemBox.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/top/parameters.scala"
+      ],
+      "target_module_or_logic": "host2CTA kernel-dimension width parameters",
+      "mutation_strategy": "truncate_width",
+      "suggested_edit": "Change WG_SIZE_X_WIDTH, WG_SIZE_Y_WIDTH, and WG_SIZE_Z_WIDTH back to log2Ceil(NUM_WG_X), log2Ceil(NUM_WG_Y), and log2Ceil(NUM_WG_Z).",
+      "expected_failure_mode": "Maximum grid dimensions wrap or truncate, so too few work-groups are dispatched.",
+      "notes": [
+        "The host_pds_size_per_wf literal addition is incidental to this bug."
+      ],
+      "portable_bug_context": "Launch metadata carries work-group counts, not zero-based indices. If those count fields are sized for 0..N-1 while the architecture allows N itself, the maximum legal launch count truncates at the host-to-scheduler boundary.",
+      "portable_injection_spec": {
+        "affected_mechanism": "grid-dimension metadata width",
+        "trigger_condition": "A kernel launch uses the maximum supported work-group count in one or more dimensions.",
+        "injection_action": "Size grid-count fields for max index instead of max count.",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "Apply to any dispatch path where software provides counts to hardware scheduling logic."
+        ],
+        "concrete_injection_steps": [
+          "Find the packed launch fields carrying grid counts.",
+          "Reduce their widths from log2Ceil(max+1) to log2Ceil(max).",
+          "Launch at the configured maximum grid size and observe truncation."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/top/parameters.scala",
+          "ventus/src/top/MemBox.scala"
+        ],
+        "target_module_or_logic": "WG_SIZE_*_WIDTH parameters and host_kernel_size_3d packing",
+        "commit_fix_summary": "The fix widens WG_SIZE_X/Y/Z_WIDTH from log2Ceil(NUM_WG_*) to log2Ceil(NUM_WG_* + 1).",
+        "mutation_strategy": "truncate_launch_count_width",
+        "source_level_edit_anchor": "Restore WG_SIZE_X/Y/Z_WIDTH to log2Ceil(NUM_WG_*); MemBox then repacks host_kernel_size_3d with the too-small widths."
+      },
+      "evidence_for_injection": [
+        "The width macros feed host_kernel_size_3d.",
+        "GPGPU_top expects the corrected +1 sizing convention."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该补丁修复了顶层位宽错误，使 CTA kernel 维度元数据能够正确表示配置允许的最大 work-group 数量。",
+    "why_it_counts": [
+      "WG_SIZE_X/Y/Z_WIDTH 从 log2Ceil(NUM_WG_*) 扩展为 log2Ceil(NUM_WG_* + 1)。",
+      "这些位宽用于 host_kernel_size_3d，并进一步作为 num_wg_x、num_wg_y、num_wg_z 送入 CTA 调度逻辑。",
+      "原位宽会截断最大维度值，从而错误配置 CTA 启动参数。"
+    ],
+    "disqualifiers": [
+      "该提交还顺带补上了 MemBox bundle literal 中缺失的 host_pds_size_per_wf 字段。"
+    ],
+    "evidence": [
+      "parameters.scala 将三个维度位宽都修改为包含 +1。",
+      "MemBox.scala 在生成元数据时使用这些位宽构造 host_kernel_size_3d。",
+      "GPGPU_top.scala 中的 host 侧 bundle 本就按 NUM_WG_DIM_MAX+1 的语义定义 kernel 维度字段。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/top/MemBox.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/top/parameters.scala"
+      ],
+      "target_module_or_logic": "host2CTA 的 kernel 维度位宽参数",
+      "mutation_strategy": "truncate_width",
+      "suggested_edit": "把 WG_SIZE_X_WIDTH、WG_SIZE_Y_WIDTH、WG_SIZE_Z_WIDTH 改回 log2Ceil(NUM_WG_X)、log2Ceil(NUM_WG_Y)、log2Ceil(NUM_WG_Z)。",
+      "expected_failure_mode": "最大 grid 维度会回绕或截断，导致派发的 work-group 数量不足。",
+      "notes": [
+        "host_pds_size_per_wf 的 literal 补充与核心 bug 无关。"
+      ],
+      "portable_bug_context": "launch 元数据携带的是 work-group 数量，而不是从零开始的索引。如果这些计数字段只按 0..N-1 定宽，而体系结构允许数量值本身达到 N，那么最大合法 launch 数量就会在 host 到调度器的边界上被截断。",
+      "portable_injection_spec": {
+        "affected_mechanism": "grid 维度元数据位宽",
+        "trigger_condition": "kernel launch 在某个维度上使用了最大支持的 work-group 数量。",
+        "injection_action": "把 grid 计数字段按最大索引而不是最大计数来定宽。",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "可映射到任何由软件把“数量”送给硬件调度逻辑的分发路径。"
+        ],
+        "concrete_injection_steps": [
+          "找到打包 launch grid 数量的字段。",
+          "把其位宽从 log2Ceil(max+1) 缩到 log2Ceil(max)。",
+          "用最大 grid size 启动并观察数量被截断。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/top/parameters.scala",
+          "ventus/src/top/MemBox.scala"
+        ],
+        "target_module_or_logic": "WG_SIZE_*_WIDTH 参数与 host_kernel_size_3d 打包",
+        "commit_fix_summary": "该修复把 WG_SIZE_X/Y/Z_WIDTH 从 log2Ceil(NUM_WG_*) 扩宽到 log2Ceil(NUM_WG_* + 1)。",
+        "mutation_strategy": "truncate_launch_count_width",
+        "source_level_edit_anchor": "把 WG_SIZE_X/Y/Z_WIDTH 改回 log2Ceil(NUM_WG_*)；随后 MemBox 会自动以过小位宽打包 host_kernel_size_3d。"
+      },
+      "evidence_for_injection": [
+        "这些位宽直接喂给 host_kernel_size_3d。",
+        "GPGPU_top 采用的是修正后的 +1 定宽约定。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 158,
+  "original_review_id": 196,
+  "meta": {
+    "id": 196,
+    "repo": "gemmini",
+    "branch": "gemmini-mx",
+    "commit": "9395fe3d41377ddaef603de4da4151177dff27fe",
+    "subject": "fix the 1 cycle quant valid for dma moveout"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "Fixes quantized moveout timing by holding quantized data across pipeline gaps and aligning output valid with downstream pipeline residency instead of a one-cycle quantization pulse.",
+    "why_it_counts": [
+      "The patch changes DUT output-valid and output-data behavior in MxRequantizer.",
+      "It directly fixes a timing and correctness issue on the DMA moveout path for quantized outputs.",
+      "The commit message explicitly describes the one-cycle valid problem."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "final_pipe_out.valid changes from quantize_valid or lut_valid to oldest_pipe_out.valid in the affected format branches.",
+      "quant_data_held is used as the fallback output for FP8, FP6, and FP4 paths when a new quantized word is not produced in the current cycle.",
+      "The patch updates quant_data_held when each format actually completes quantization or LUT projection.",
+      "The old code emitted valid only on the transient quantization event, not for the whole downstream moveout window."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/MxRequantizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A quantization stage may generate a result pulse earlier than the downstream DMA/store path is ready to consume and commit that row. The fixed design treats the quantized result as stateful pipeline data: it holds the produced word and keeps output valid aligned with the later pipeline stage that actually hands the row onward. The bug was to expose the output only on the original one-cycle quantization pulse, so downstream timing gaps caused dropped or misaligned quantized rows.",
+      "portable_injection_spec": {
+        "affected_mechanism": "quantized-output valid/data persistence across pipeline stages",
+        "trigger_condition": "The quantizer produces a row in one cycle, but the downstream moveout pipeline, packer, or DMA interface consumes it one or more cycles later.",
+        "injection_action": "Drive output valid directly from the single-cycle quantization-complete pulse and remove the held-data fallback so the output disappears whenever no fresh quantized word is produced in that exact cycle.",
+        "implementation_pattern": "use one-cycle producer pulse as consumer valid and drop output-hold register",
+        "portability_notes": [
+          "This bug is portable to any pipelined requantizer, compressor, or packer whose consumer latency is not identical to the producer latency.",
+          "It is especially relevant when some output formats complete over multiple subcycles, such as FP4/FP6 half-buffer assembly.",
+          "If your DUT uses ready/valid queues instead of explicit pipeline registers, inject the same bug by failing to latch the produced word across consumer stalls or delayed handoff."
+        ],
+        "concrete_injection_steps": [
+          "Locate the stage where quantized or packed output words are produced before a later moveout/store stage consumes them.",
+          "Change the consumer-side valid signal to depend only on the immediate producer completion pulse rather than the residency of the downstream pipeline entry.",
+          "Remove or bypass the register that retains the last completed quantized word when the producer is idle but the consumer-side pipeline slot is still active."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/MxRequantizer.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer final_pipe_out valid/data alignment for FP8, FP6, and FP4 moveout",
+        "commit_fix_summary": "The fix changes final_pipe_out.valid to oldest_pipe_out.valid, renames the hold register to quant_data_held, and uses that held word as the fallback output across the affected quantized format branches.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In MxRequantizer, change final_pipe_out.valid back to quantize_valid or lut_valid in each format branch and remove the quant_data_held fallback/update logic so output data is visible only on the original producer pulse."
+      },
+      "expected_failure_mode": "Quantized moveout drops rows, emits stale/zero data, or misaligns FP4/FP6/FP8 outputs whenever the consumer pipeline does not sample exactly on the quantization-complete cycle.",
+      "evidence_for_injection": [
+        "The fix makes valid depend on oldest_pipe_out.valid rather than the transient quantization pulse.",
+        "The hold register was generalized from FP8-only to all affected quantized formats.",
+        "The output data path explicitly falls back to the held word when no new quantized result is available that cycle."
+      ],
+      "notes": [
+        "This is a strong cross-DUT injection pattern for any staged quantization or packing pipeline.",
+        "Reverting only one format branch can reproduce a narrower version of the bug, but reverting all affected branches matches the commit."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "该提交修复了量化 moveout 的时序错误：它会在流水线空洞期间保持量化后的数据，并让输出 valid 与下游流水线驻留对齐，而不是只依赖单周期的量化完成脉冲。",
+    "why_it_counts": [
+      "补丁修改了 MxRequantizer 中 DUT 的输出 valid 和输出数据行为。",
+      "它直接修复了量化输出在 DMA moveout 路径上的时序与正确性问题。",
+      "提交信息明确指出了单周期 valid 的问题。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在受影响的格式分支中，final_pipe_out.valid 从 quantize_valid 或 lut_valid 改成了 oldest_pipe_out.valid。",
+      "当当前周期没有产生新的量化字时，FP8、FP6 和 FP4 路径都会用 quant_data_held 作为回退输出。",
+      "补丁会在各格式真正完成量化或 LUT 投影时更新 quant_data_held。",
+      "旧代码只在瞬时量化事件发生的那个周期拉高 valid，而不会覆盖完整的下游 moveout 窗口。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/MxRequantizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "量化阶段可能在下游 DMA/store 路径真正准备好消费并提交该行之前，就先产生了一个结果脉冲。修复后的设计把量化结果当作带状态的流水线数据来处理：它保存已经生成的字，并让输出 valid 与后级实际向前传递该行的流水级驻留对齐。原始错误则只在最初那个单周期量化脉冲上暴露输出，因此只要下游时序存在空洞，就会丢失或错位量化后的行数据。",
+      "portable_injection_spec": {
+        "affected_mechanism": "跨流水级保持量化输出的 valid/data 持久性",
+        "trigger_condition": "量化器在某一周期产出一行结果，而下游 moveout 流水线、packer 或 DMA 接口在一个或多个周期之后才真正消费它。",
+        "injection_action": "让输出 valid 重新直接依赖单周期的量化完成脉冲，并移除保持数据的回退路径，这样只要当前周期没有新量化字，输出就会消失。",
+        "implementation_pattern": "把单周期生产者脉冲当成消费者 valid，并去掉输出保持寄存器",
+        "portability_notes": [
+          "适用于任何流水化 requantizer、压缩器或 packer，只要消费者延迟与生产者延迟并不完全相同。",
+          "当某些输出格式需要多个子周期才能完成，比如 FP4/FP6 的半缓冲拼装时，这个问题尤其典型。",
+          "如果你的 DUT 使用 ready/valid 队列而不是显式流水寄存器，也可以通过“不在消费者停顿或延迟交接期间锁存已产出的字”来注入同类错误。"
+        ],
+        "concrete_injection_steps": [
+          "定位在后续 moveout/store 阶段消费之前，量化或打包输出字被生成的那个流水级。",
+          "把面向消费者的 valid 改成只依赖即时的生产者完成脉冲，而不是依赖下游流水入口的驻留状态。",
+          "移除或旁路那个在生产者空闲但消费者侧流水槽仍然有效时，用来保留最近完成量化字的寄存器。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/MxRequantizer.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer 中 FP8、FP6、FP4 moveout 的 final_pipe_out valid/data 对齐逻辑",
+        "commit_fix_summary": "修复把 final_pipe_out.valid 改为 oldest_pipe_out.valid，把保持寄存器统一命名为 quant_data_held，并在受影响的量化格式分支中把该保持字作为回退输出。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 MxRequantizer 中，把各格式分支里的 final_pipe_out.valid 改回 quantize_valid 或 lut_valid，并删除 quant_data_held 的回退与更新逻辑，使输出数据只在最初的生产者脉冲上可见。"
+      },
+      "expected_failure_mode": "只要消费者流水线没有在量化完成的那个周期精确采样，量化 moveout 就会丢行、输出陈旧/零数据，或让 FP4/FP6/FP8 结果错位。",
+      "evidence_for_injection": [
+        "修复让 valid 依赖 oldest_pipe_out.valid，而不再依赖瞬时量化脉冲。",
+        "保持寄存器从只支持 FP8 扩展成了所有受影响的量化格式。",
+        "当当前周期没有新的量化结果时，输出数据路径会显式回退到保持的旧值。"
+      ],
+      "notes": [
+        "这是一个很强的跨 DUT 可移植注入模式，适用于任何分阶段量化或打包流水线。",
+        "只回退某一种格式分支也能复现缩小版故障，但全部回退才与原始提交一致。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "dataset_id": 285,
+  "original_review_id": 342,
+  "meta": {
+    "id": 342,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "baaa8b8f1cfb7c3eee5489df5e2f27ee32e5c93c",
+    "subject": "memstream bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_coalescing",
+    "summary": "Fixes an inverted compile-time guard so duplicate-address collapsing runs only when the duplicate-address feature is enabled.",
+    "why_it_counts": [
+      "The patch corrects memory-request behavior in a DUT RTL library, not a build or test artifact.",
+      "It flips which hardware path is instantiated for duplicate-address handling.",
+      "A reversed feature guard changes whether identical lane requests are merged or sent independently."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The only functional change is if (DUPLICATE_ADDR == 1) becoming if (DUPLICATE_ADDR == 0).",
+      "The else branch contains the address-match checks and req_dup_mask generation used for duplicate collapsing.",
+      "With the old condition, duplicate-address mode bypassed the special handling instead of enabling it."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_mem_streamer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix corrects a feature-selection bug in a memory requester that can collapse duplicate lane addresses. The design has two compile-time or configuration-time paths: one that simply forwards all active lane requests, and one that detects when all active lanes target the same address and suppresses redundant duplicates. If the configuration guard is inverted, the optimized duplicate-handling path is instantiated in the wrong mode and the normal pass-through path is instantiated when duplicate collapsing was requested.",
+      "portable_injection_spec": {
+        "affected_mechanism": "duplicate-address request collapsing",
+        "trigger_condition": "A build or configuration enables duplicate-address merging for lane-wise memory requests.",
+        "injection_action": "Invert the configuration guard so the duplicate-detection path is bypassed when enabled and selected when disabled.",
+        "implementation_pattern": "invert feature guard",
+        "portability_notes": [
+          "This maps to any vector LSU or streamer with an optional address-coalescing or duplicate-suppression feature.",
+          "The mutation should target the mode-selection predicate, not the compare logic itself, to preserve the original bug shape.",
+          "A useful trigger test is a multi-lane request in which all active lanes access the same address."
+        ],
+        "concrete_injection_steps": [
+          "Locate the configuration-controlled branch that chooses between pass-through request masking and duplicate-aware request masking.",
+          "Flip that branch condition so the duplicate-aware logic is selected in the disabled mode and skipped in the enabled mode.",
+          "Do not modify the duplicate-comparison equations; the bug should come purely from selecting the wrong path."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_mem_streamer.sv"
+        ],
+        "target_module_or_logic": "VX_mem_streamer duplicate-address detection branch around req_dup_mask generation",
+        "commit_fix_summary": "The commit changes the compile-time guard from DUPLICATE_ADDR == 1 to DUPLICATE_ADDR == 0 so the duplicate-detection logic lives in the enabled path.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_mem_streamer, change the branch condition back so the duplicate-detection else-path is skipped when DUPLICATE_ADDR is enabled."
+      },
+      "expected_failure_mode": "Duplicate-address mode no longer collapses identical requests correctly, while the disabled mode can accidentally take the duplicate-handling path.",
+      "evidence_for_injection": [
+        "The parent revision's enabled branch simply assigned req_dup_mask = req_mask, which is a pass-through behavior, not duplicate suppression.",
+        "The duplicate-detection logic itself remained in the else branch and was not rewritten; only the guarding condition flipped.",
+        "The commit is a one-line functional fix in central request-masking logic."
+      ],
+      "notes": [
+        "This is a very clean configuration-guard mutation and is directly reusable on other designs with optional coalescing features.",
+        "When reproducing the fault, use a configuration that actually enables duplicate-address handling; otherwise the bug may be dormant."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_coalescing",
+    "summary": "该提交修复了一个反向的编译期条件，使重复地址折叠逻辑只在启用 duplicate-address 功能时才运行。",
+    "why_it_counts": [
+      "补丁修正的是 DUT RTL 库中的内存请求行为，而不是构建或测试问题。",
+      "它改变了重复地址处理时究竟实例化哪一条硬件路径。",
+      "错误的特性门控会直接改变相同 lane 地址请求是被合并还是被分别发出。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "唯一功能改动是 if (DUPLICATE_ADDR == 1) 改成了 if (DUPLICATE_ADDR == 0)。",
+      "else 分支中包含了地址匹配比较和 req_dup_mask 生成逻辑，这才是真正的重复折叠路径。",
+      "旧条件会导致 duplicate-address 模式旁路特殊处理，而不是启用它。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/libs/VX_mem_streamer.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对的是一种可选重复地址折叠功能的模式选择错误。设计里通常有两条配置路径：一条直接透传所有有效 lane 请求，另一条在所有有效 lane 都访问同一地址时只保留一个实际请求并抑制重复项。如果配置门控被写反，那么启用了重复折叠的构建反而会实例化普通透传路径，而关闭该功能的构建却会错误走到重复检测路径。",
+      "portable_injection_spec": {
+        "affected_mechanism": "重复地址请求折叠",
+        "trigger_condition": "构建或配置启用了针对 lane 级内存请求的重复地址合并功能。",
+        "injection_action": "翻转配置门控，使得启用时旁路重复检测，禁用时反而进入重复检测路径。",
+        "implementation_pattern": "翻转 feature guard",
+        "portability_notes": [
+          "适用于任何带可选地址合并或重复抑制功能的向量 LSU 或 streamer。",
+          "应优先修改模式选择谓词，而不是直接改地址比较逻辑，这样更贴近原始缺陷形态。",
+          "一个有效的触发场景是多个有效 lane 同时访问同一地址。"
+        ],
+        "concrete_injection_steps": [
+          "定位由配置控制、用于在透传请求掩码和重复地址感知掩码之间做选择的分支。",
+          "翻转该分支条件，使重复感知逻辑在功能禁用时被选中、在功能启用时被跳过。",
+          "不要改动重复比较公式本身，让故障完全来自路径选择错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/libs/VX_mem_streamer.sv"
+        ],
+        "target_module_or_logic": "VX_mem_streamer 中围绕 req_dup_mask 生成的重复地址检测分支",
+        "commit_fix_summary": "该提交把编译期门控从 DUPLICATE_ADDR == 1 改为 DUPLICATE_ADDR == 0，使真正的重复检测逻辑位于功能启用路径。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_mem_streamer 中，把分支条件改回旧值，使得在启用 DUPLICATE_ADDR 时跳过重复检测 else-path。"
+      },
+      "expected_failure_mode": "启用 duplicate-address 模式后，相同地址请求不会被正确折叠；而在禁用模式下则可能意外进入重复处理路径。",
+      "evidence_for_injection": [
+        "父版本中，启用分支只执行 req_dup_mask = req_mask，这显然是透传行为而不是重复抑制。",
+        "真正的重复检测逻辑本身并未改写，只是外围门控条件被翻转。",
+        "该提交是在核心请求掩码逻辑中的一行功能修复。"
+      ],
+      "notes": [
+        "这是一个非常干净的配置门控类变异，能直接复用到其他带可选合并功能的设计上。",
+        "复现时应选择真正启用了 duplicate-address 处理的配置，否则该故障可能休眠。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

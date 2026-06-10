@@ -1,0 +1,155 @@
+{
+  "dataset_id": 417,
+  "original_review_id": 532,
+  "meta": {
+    "id": 532,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "caf32a72fad677f6b8e1f9cb4abc91e359104f48",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "This commit fixes real partial-SIMD result bookkeeping. The pipeline now preserves the outer SIMD slice identity through dispatch, gather, commit, and writeback, and it stops assuming commit is always ready. Without that metadata and backpressure, sub-packet results can be merged into the wrong lanes or overwritten under writeback stalls.",
+    "why_it_counts": [
+      "The patch changes execute-to-commit and commit-to-writeback RTL, not just interfaces or tracing.",
+      "New sid handling is threaded through dispatch, gather, and commit to preserve result placement.",
+      "Commit no longer hardwires ready to 1, which fixes real backpressure behavior."
+    ],
+    "disqualifiers": [
+      "The commit bundles several related execution-pipeline fixes rather than one single-line change."
+    ],
+    "evidence": [
+      "VX_dispatch_unit.sv starts composing block_pid from dispatch_sid and local packet position, and gates sop/eop with dispatch_sid.",
+      "VX_gather_unit.sv introduces VX_result_if and reconstructs commit_sid_w from the carried pid before assembling the full SIMD commit packet.",
+      "VX_commit.sv adds writeback_if[i].data.sid and changes commit_arb_if[i].ready from constant 1 to writeback_if[i].ready.",
+      "ALU, LSU, and FPU units switch from direct commit payloads to intermediate result_if payloads so sub-packet metadata is preserved until gather."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_dispatch_unit.sv",
+      "hw/rtl/core/VX_gather_unit.sv",
+      "hw/rtl/core/VX_commit.sv",
+      "hw/rtl/interfaces/VX_result_if.sv",
+      "hw/rtl/core/VX_alu_unit.sv",
+      "hw/rtl/core/VX_lsu_unit.sv",
+      "hw/rtl/core/VX_fpu_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A wide-SIMD core often splits one architectural instruction into multiple sub-packets. The pipeline must preserve both the local packet index and the outer SIMD-slice identity until results are reassembled for commit and writeback. If those metadata are collapsed too early, or if commit ignores downstream backpressure, results from one sub-packet can be written into the wrong architectural lanes or retired out of order under stall conditions.",
+      "portable_injection_spec": {
+        "affected_mechanism": "sub-packet identity preservation through gather and writeback",
+        "trigger_condition": "An instruction executes as multiple partial-SIMD packets and writeback or commit can stall while those packets are being merged.",
+        "injection_action": "Drop the outer sub-packet identity before gather or commit, and optionally make commit permanently ready so merge timing is no longer backpressure-safe.",
+        "implementation_pattern": "drop subpacket identity",
+        "portability_notes": [
+          "Map this to any vector or SIMD pipeline that decomposes one instruction into several internal packets.",
+          "The key bug is losing packet-placement metadata before final lane reconstruction.",
+          "If the target DUT already has a gather or merge stage, change only the packet-ID carry path rather than the arithmetic result path."
+        ],
+        "concrete_injection_steps": [
+          "Find the metadata fields that track which architectural SIMD slice or packet a partial result belongs to.",
+          "Remove or overwrite the outer slice identifier before the gather or commit stage reconstructs the full-width result.",
+          "Optionally reconnect commit ready to constant-true so downstream stalls can no longer hold merged packets in place.",
+          "Keep the execution-unit arithmetic unchanged so the regression manifests as wrong lane placement and retirement timing."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_dispatch_unit.sv",
+          "hw/rtl/core/VX_gather_unit.sv",
+          "hw/rtl/core/VX_commit.sv"
+        ],
+        "target_module_or_logic": "partial-SIMD pid/sid propagation from dispatch through gather into commit/writeback",
+        "commit_fix_summary": "The fix introduced VX_result_if as an intermediate carrier, preserved dispatch_sid through block_pid and gather, added sid to writeback, and made commit honor writeback backpressure.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Revert block_pid construction in VX_dispatch_unit.sv to local packet position only, drop commit_sid_w reconstruction in VX_gather_unit.sv, and remove writeback_if.data.sid or restore commit ready to constant 1 in VX_commit.sv."
+      },
+      "expected_failure_mode": "Partial-SIMD results can land in the wrong lanes, later packets can overwrite earlier ones, and stalls can cause malformed or out-of-order writeback/commit behavior.",
+      "evidence_for_injection": [
+        "The patch explicitly adds sid to writeback and reconstructs it during gather, which means it was previously missing.",
+        "Commit readiness is no longer hardwired, indicating real loss of correctness under backpressure.",
+        "Multiple execution units were converted to emit VX_result_if first, showing the bug spans the whole result-merging path rather than one execution block."
+      ],
+      "notes": [
+        "The cleanest portable fault is metadata loss, not the file-local interface rename itself.",
+        "A partial-SIMD workload with writeback stalls is the best trigger."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "writeback",
+    "summary": "该提交修复了真实的 partial-SIMD 结果簿记错误。现在流水线会把外层 SIMD slice 身份一直保留到 dispatch、gather、commit 和 writeback 阶段，并且不再假设 commit 永远 ready。缺少这些元数据和回压处理时，子包结果可能会被合并到错误的 lane，或者在 writeback 停顿下被覆盖。",
+    "why_it_counts": [
+      "补丁修改的是 execute 到 commit、以及 commit 到 writeback 的 RTL 路径，而不是仅改接口或 trace。",
+      "新的 sid 处理被贯穿到 dispatch、gather 和 commit，用于保持结果落点正确。",
+      "commit 不再把 ready 硬连为 1，这修复了真实的 backpressure 行为。"
+    ],
+    "disqualifiers": [
+      "该提交把几个相互关联的执行流水修复打包在一起，而不是单条语句的改动。"
+    ],
+    "evidence": [
+      "VX_dispatch_unit.sv 开始用 dispatch_sid 和局部 packet 位置共同构造 block_pid，并根据 dispatch_sid 对 sop/eop 进行限定。",
+      "VX_gather_unit.sv 引入 VX_result_if，并在组装完整 SIMD commit 包之前，从携带的 pid 中恢复 commit_sid_w。",
+      "VX_commit.sv 新增了 writeback_if[i].data.sid，并把 commit_arb_if[i].ready 从常量 1 改成 writeback_if[i].ready。",
+      "ALU、LSU 和 FPU 单元都从直接输出 commit payload 改成先输出 result_if，使子包元数据在 gather 前不会丢失。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_dispatch_unit.sv",
+      "hw/rtl/core/VX_gather_unit.sv",
+      "hw/rtl/core/VX_commit.sv",
+      "hw/rtl/interfaces/VX_result_if.sv",
+      "hw/rtl/core/VX_alu_unit.sv",
+      "hw/rtl/core/VX_lsu_unit.sv",
+      "hw/rtl/core/VX_fpu_unit.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "宽 SIMD 内核常常会把一条体系结构指令拆成多个内部子包执行。流水线必须一直保留局部 packet 索引和外层 SIMD slice 身份，直到结果在 commit 和 writeback 前被重新组装。如果这些元数据过早被折叠掉，或者 commit 忽略了下游回压，那么某个子包的结果就可能被写入错误的体系结构 lane，或者在停顿条件下乱序退休。",
+      "portable_injection_spec": {
+        "affected_mechanism": "gather 与 writeback 过程中的子包身份保留",
+        "trigger_condition": "一条指令被拆成多个 partial-SIMD 子包执行，而且这些子包合并时 commit 或 writeback 可能发生停顿。",
+        "injection_action": "在 gather 或 commit 之前丢弃外层子包身份，并可选地让 commit 永远 ready，使合并过程不再受回压保护。",
+        "implementation_pattern": "drop subpacket identity",
+        "portability_notes": [
+          "可映射到任何把一条指令分解成多个内部 packet 的向量或 SIMD 流水线。",
+          "关键缺陷是在最终 lane 重建之前丢失了 packet 的落点元数据。",
+          "如果目标 DUT 已有 gather 或 merge 级，优先只改 packet-ID 传递路径，不要修改算术结果通路。"
+        ],
+        "concrete_injection_steps": [
+          "找到那些用于标记 partial result 属于哪个体系结构 SIMD slice 或 packet 的元数据字段。",
+          "在 gather 或 commit 重建全宽结果之前删除或覆盖外层 slice 标识。",
+          "可选地把 commit ready 重新接成常量 true，使下游停顿不再能稳定地保持已合并包的位置。",
+          "保持执行单元的算术计算不变，使回归集中表现为 lane 落点错误和退休时序错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_dispatch_unit.sv",
+          "hw/rtl/core/VX_gather_unit.sv",
+          "hw/rtl/core/VX_commit.sv"
+        ],
+        "target_module_or_logic": "从 dispatch 经过 gather 到 commit/writeback 的 partial-SIMD pid/sid 传递",
+        "commit_fix_summary": "该修复引入了 VX_result_if 作为中间载体，通过 block_pid 和 gather 保留 dispatch_sid，把 sid 加入 writeback，并让 commit 真正尊重 writeback backpressure。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 VX_dispatch_unit.sv 中的 block_pid 恢复成仅使用局部 packet 位置，在 VX_gather_unit.sv 中删除 commit_sid_w 的恢复，并在 VX_commit.sv 中删除 writeback_if.data.sid 或把 commit ready 恢复为常量 1。"
+      },
+      "expected_failure_mode": "partial-SIMD 结果可能写到错误 lane，后续子包会覆盖先前结果，而且停顿时还可能出现 writeback/commit 包格式错误或乱序。",
+      "evidence_for_injection": [
+        "补丁显式把 sid 加进 writeback，并在 gather 阶段恢复 sid，说明此前它确实缺失。",
+        "commit ready 不再被硬连，表明在 backpressure 条件下之前存在真实正确性问题。",
+        "多个执行单元都改成先输出 VX_result_if，说明问题跨越整个结果合并路径，而不是某个单独执行块。"
+      ],
+      "notes": [
+        "最干净、最可移植的故障模型是元数据丢失，而不是接口改名本身。",
+        "带 writeback 停顿的 partial-SIMD 工作负载是最佳触发条件。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

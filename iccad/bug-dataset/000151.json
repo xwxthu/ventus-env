@@ -1,0 +1,139 @@
+{
+  "dataset_id": 151,
+  "original_review_id": 188,
+  "meta": {
+    "id": 188,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "e39a63d0de9a92c4b26d5421d62bf99c35a21b43",
+    "subject": "bug fixes for unified mem node"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "protocol_control",
+    "summary": "Fixes a unified-memory TileLink bridge bug where split read/write forwarding lost required channel metadata, over-constrained A-channel readiness, and could misroute D-channel responses when reads and writes shared the same source space.",
+    "why_it_counts": [
+      "The patch changes central controller interconnect logic that forwards TileLink traffic for the DUT.",
+      "It corrects request fields, ready/valid behavior, and response-source decoding, which are hardware protocol semantics rather than software or test infrastructure.",
+      "The commit message explicitly describes bug fixes in the unified memory node."
+    ],
+    "disqualifiers": [
+      "The same file also changes base/register address constants, which are not the core protocol bug."
+    ],
+    "evidence": [
+      "The A-channel bridge now forwards address, mask, and param in addition to user, opcode, size, and data.",
+      "in_node.a.ready changed from in_r.ready && in_w.ready to a request-type mux, so a read no longer waits for the write path and vice versa.",
+      "The D-channel match now checks a read/write tag in source MSB before trimming the source ID back to the client range.",
+      "The D-channel return path now forwards param, sink, denied, and corrupt instead of dropping them."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Controller.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This bug lives in a memory interconnect bridge that splits incoming requests into separate read and write paths and then merges responses back to the original client. The broken version behaved as if both subpaths had to be ready at once, failed to preserve all request/response metadata fields, and did not robustly tag which subpath owned a returning response. On any DUT with a shared source-ID space across read and write traffic, that combination can block legal transactions or return malformed or misrouted responses.",
+      "portable_injection_spec": {
+        "affected_mechanism": "split read/write memory-bridge request and response routing",
+        "trigger_condition": "A client issues mixed read and write traffic through one bridge, especially when both directions reuse the same client source-ID range or depend on full protocol metadata.",
+        "injection_action": "Reintroduce a bridge implementation that requires both read and write subpaths to be ready for any request, drops non-payload protocol fields during forwarding, and routes responses back using only a truncated source-range check without an explicit read/write tag.",
+        "implementation_pattern": "drop protocol fields, overconstrain ready, and remove path tag from merged response routing",
+        "portability_notes": [
+          "Apply this to any bus bridge that demultiplexes requests by opcode or access type and later re-arbitrates responses.",
+          "The key reusable fault is not TileLink-specific; the same mechanism applies to AXI, CHI, or custom memory fabrics with per-request metadata and shared IDs.",
+          "If your DUT does not expose all metadata fields, prioritize the ready logic and the read/write response tagging fault."
+        ],
+        "concrete_injection_steps": [
+          "In the request splitter, gate upstream ready with the conjunction of both downstream ready signals instead of the ready signal of the selected subpath.",
+          "When cloning a request into the selected subpath, intentionally omit sideband fields that affect address interpretation, masks, or access attributes.",
+          "In the response merger, remove the explicit read-versus-write tag from the returned source ID and match only on a shared client ID range before forwarding the response upstream."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Controller.scala"
+        ],
+        "target_module_or_logic": "unified mem node TileLink A/D channel bridge in GemminiModule",
+        "commit_fix_summary": "The fix copies missing A-channel fields, makes upstream ready depend only on the selected read or write path, and tags D-channel routing with a read/write source MSB while preserving more D-channel response fields.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Around the unified-memory bridge logic, revert the copied A-channel field list, change in_node.a.ready back to in_r.ready && in_w.ready, and remove the D-channel read/write MSB check and extra returned fields."
+      },
+      "expected_failure_mode": "Reads or writes can stall unnecessarily, requests can lose mask or attribute information, and returning responses can be delivered to the wrong logical subpath or with incomplete status bits.",
+      "evidence_for_injection": [
+        "The pre-fix bridge copied only user/opcode/size/data and omitted address/mask/param.",
+        "The pre-fix bridge required both subpaths to be ready before accepting any request.",
+        "The fix explicitly added a read/write discriminator in the source ID before response matching.",
+        "The fix expanded the returned D-channel field set beyond user/opcode/data."
+      ],
+      "notes": [
+        "The memory-map constant changes in the same commit are not needed to recreate the protocol bug.",
+        "The most reusable injection is the request-ready plus response-tagging fault, even if you do not replicate every dropped sideband field."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "protocol_control",
+    "summary": "该提交修复了 unified memory TileLink 桥接中的协议错误：拆分读写后转发时丢失了必要的通道元数据，A 通道 ready 约束过严，并且在读写共享 source 空间时可能错误路由 D 通道响应。",
+    "why_it_counts": [
+      "补丁修改的是 DUT 中负责转发 TileLink 流量的核心控制器互连逻辑。",
+      "它修正了请求字段、ready/valid 行为以及响应 source 解码，这些都属于硬件协议语义，而不是软件或测试基础设施。",
+      "提交信息明确说明是在修复 unified mem node 的 bug。"
+    ],
+    "disqualifiers": [
+      "同一文件里还改了 base/register 地址常量，但那不是核心协议错误。"
+    ],
+    "evidence": [
+      "A 通道桥接现在除了 user、opcode、size、data 之外，还会转发 address、mask 和 param。",
+      "in_node.a.ready 从 in_r.ready && in_w.ready 改成按请求类型选择，因此读请求不再等待写路径、写请求也不再等待读路径。",
+      "D 通道匹配现在会先检查 source 最高位中的读写标签，再把 source ID 截回客户端范围。",
+      "D 通道返回路径现在会额外转发 param、sink、denied 和 corrupt，而不是把这些状态丢掉。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Controller.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误位于一个把入站请求拆成独立读路径和写路径、然后再把响应合并回原客户端的内存互连桥中。错误版本相当于要求两个子路径必须同时 ready，转发时没有保留全部请求/响应元数据，并且没有可靠地标记返回响应来自哪个子路径。在任何读写流量共享 source-ID 空间的 DUT 上，这都会导致合法事务被阻塞，或者响应格式错误、路由错误。",
+      "portable_injection_spec": {
+        "affected_mechanism": "拆分读写的内存桥请求与响应路由",
+        "trigger_condition": "客户端通过同一个桥发出混合读写流量，尤其是在读写复用同一 client source-ID 范围、且事务依赖完整协议元数据时。",
+        "injection_action": "重新引入一种错误桥接实现：任何请求都要求读写两个子路径同时 ready，转发时丢弃非负载协议字段，并且响应回传时只按截断后的 source 范围匹配，而不使用显式的读写标签。",
+        "implementation_pattern": "丢弃协议字段、过度约束 ready，并移除合并响应路由中的路径标签",
+        "portability_notes": [
+          "可应用于任何按 opcode 或访问类型拆分请求、随后再重仲裁响应的总线桥。",
+          "核心可复用机制并不依赖 TileLink；AXI、CHI 或自定义带元数据且共享 ID 的内存互连也会出现同类问题。",
+          "如果你的 DUT 没有这些完整元数据字段，优先注入 ready 逻辑和读写响应标签这两个错误。"
+        ],
+        "concrete_injection_steps": [
+          "在请求拆分器中，把上游 ready 改成下游读路径和写路径 ready 的与，而不是仅选择当前请求所对应子路径的 ready。",
+          "把请求克隆到被选中的子路径时，故意省略会影响地址解释、字节掩码或访问属性的旁带字段。",
+          "在响应合并器中，移除返回 source ID 中显式区分读/写路径的标签，只根据共享的客户端 ID 范围匹配后再转发。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Controller.scala"
+        ],
+        "target_module_or_logic": "GemminiModule 中 unified mem node 的 TileLink A/D 通道桥接逻辑",
+        "commit_fix_summary": "修复增加了缺失的 A 通道字段复制，使上游 ready 只依赖被选中的读或写路径，并在 D 通道路由中加入读写 source MSB 标签，同时保留更多 D 通道响应字段。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 unified-memory bridge 逻辑附近，回退 A 通道字段复制列表，把 in_node.a.ready 改回 in_r.ready && in_w.ready，并删除 D 通道的读写 MSB 检查及新增返回字段。"
+      },
+      "expected_failure_mode": "读写事务会出现不必要的阻塞，请求可能丢失 mask 或属性信息，返回响应也可能被送到错误的逻辑子路径，或缺失状态位。",
+      "evidence_for_injection": [
+        "修复前的桥接只复制 user/opcode/size/data，没有复制 address/mask/param。",
+        "修复前的桥接要求两个子路径都 ready 才接受任意请求。",
+        "修复显式把读/写区分标签加入 source ID 后再做响应匹配。",
+        "修复后的 D 通道返回字段集合比原先的 user/opcode/data 更完整。"
+      ],
+      "notes": [
+        "同一提交里的 memory-map 常量修改不是复现该协议错误所必需的。",
+        "如果不想完整复现所有字段丢失，最可复用的注入点是请求 ready 逻辑和响应标签路由错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

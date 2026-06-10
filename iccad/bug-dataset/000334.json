@@ -1,0 +1,133 @@
+{
+  "dataset_id": 334,
+  "original_review_id": 403,
+  "meta": {
+    "id": 403,
+    "repo": "vortex",
+    "branch": "KMU",
+    "commit": "732cb66aa6e27fe894513985335abe653a316213",
+    "subject": "TCU bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes TCU width adaptation by preserving XLEN-wide source rows until lane extraction and by sign-extending the 32-bit tensor result on writeback.",
+    "why_it_counts": [
+      "The patch corrects real datapath width behavior in the tensor core execution unit.",
+      "It changes operand slicing and architectural writeback, not tests or formatting.",
+      "The bug directly affects tensor results on designs where the architectural register width is wider than 32 bits."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "a_row and b_col change from 32-bit element arrays to XLEN-wide element arrays.",
+      "The per-element buffer extraction is changed to explicitly slice from a_row[k][31:0] and b_col[k][31:0] only at the lane-extraction point.",
+      "The writeback path changes from assigning d_val directly to assigning XLEN'($signed(d_val[i][j])).",
+      "No non-DUT files are touched."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_core.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A tensor datapath often computes on 32-bit lane values while the architectural source and destination registers are XLEN-wide. If the implementation truncates the register payload too early, or fails to sign-extend the 32-bit accumulated result back to the architectural width, tensor operations can produce wrong values when interfacing with wider register files.",
+      "portable_injection_spec": {
+        "affected_mechanism": "width adaptation between XLEN-wide register storage and 32-bit tensor lanes",
+        "trigger_condition": "Any tensor or matrix operation that sources data from registers wider than the native tensor lane width, or writes a signed 32-bit result back into a wider architectural register.",
+        "injection_action": "Truncate source rows to 32 bits before the final lane-selection point, or write the 32-bit tensor result back without explicit sign extension.",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "This is most relevant on DUTs with 64-bit architectural registers feeding 32-bit tensor sublanes.",
+          "You can inject either the source-side truncation bug, the result-side sign-extension bug, or both together.",
+          "Keep the tensor arithmetic core unchanged so the failure comes only from width adaptation at the interface."
+        ],
+        "concrete_injection_steps": [
+          "Find the stage that reinterprets architectural source registers as per-lane tensor elements.",
+          "Force those source rows into 32-bit containers before the element-selection logic instead of preserving the full architectural width up to the extraction point.",
+          "At writeback, assign the raw 32-bit result into the wider destination register without signed extension."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_core.sv"
+        ],
+        "target_module_or_logic": "VX_tcu_core source-row width handling and result_if writeback",
+        "commit_fix_summary": "The fix keeps a_row and b_col at XLEN width until 32-bit lane extraction and sign-extends d_val on result writeback.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Revert a_row and b_col to 32-bit declarations fed by 32'(rs*_data[..][31:0]) and revert result_if.data.data assignment to the raw d_val value."
+      },
+      "expected_failure_mode": "Tensor operations can read the wrong sublane bits or return improperly extended results, producing incorrect matrix outputs on wider-register configurations.",
+      "evidence_for_injection": [
+        "Before the fix, a_row and b_col were declared as 32-bit elements and fed through 32-bit casts.",
+        "Before the fix, writeback assigned d_val directly without XLEN sign extension.",
+        "The arithmetic result array d_val remains 32-bit in both versions; the bug is in interface width adaptation."
+      ],
+      "notes": [
+        "A source-side truncation-only mutation is usually enough to recreate a functional failure.",
+        "The writeback sign-extension bug is especially visible when negative 32-bit results are observed through a wider architectural register."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了 TCU 的宽度适配问题，使源操作数行在元素提取前保持 XLEN 宽度，并在写回时对 32 位张量结果进行符号扩展。",
+    "why_it_counts": [
+      "补丁修正了张量核心执行单元中的真实数据通路宽度行为。",
+      "它修改的是操作数切片和体系结构写回，而不是测试或格式整理。",
+      "在体系结构寄存器宽度大于 32 位的设计上，这个缺陷会直接影响张量计算结果。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "a_row 和 b_col 从 32 位元素数组改成了 XLEN 位元素数组。",
+      "逐元素缓冲提取逻辑改为只在最终 lane 提取点上显式使用 a_row[k][31:0] 和 b_col[k][31:0] 进行切片。",
+      "写回路径从直接赋值 d_val 改成了 XLEN'($signed(d_val[i][j]))。",
+      "该提交没有修改任何非 DUT 文件。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_core.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "张量数据通路通常在 32 位 lane 上计算，但其体系结构源寄存器和目的寄存器是 XLEN 位宽。如果实现过早把寄存器载荷截断到 32 位，或者没有在写回时把 32 位累加结果符号扩展回体系结构宽度，那么在更宽寄存器文件接口上就会产生错误结果。",
+      "portable_injection_spec": {
+        "affected_mechanism": "XLEN 宽寄存器存储与 32 位张量 lane 之间的宽度适配",
+        "trigger_condition": "任何从宽于原生张量 lane 的寄存器中取数，或把有符号 32 位结果写回到更宽目的寄存器的张量/矩阵操作。",
+        "injection_action": "在最终 lane 选择之前就把源操作数行截成 32 位，或者在写回时不做显式符号扩展而直接写入 32 位张量结果。",
+        "implementation_pattern": "truncate_width",
+        "portability_notes": [
+          "该缺陷尤其适用于使用 64 位体系结构寄存器承载 32 位张量子 lane 的 DUT。",
+          "可以只注入源侧截断缺陷，只注入结果侧符号扩展缺陷，或两者一起注入。",
+          "保持张量算术核心不变，使故障仅来自接口宽度适配。"
+        ],
+        "concrete_injection_steps": [
+          "找到把体系结构源寄存器重新解释为逐 lane 张量元素的阶段。",
+          "在元素选择逻辑之前，就把这些源行强制放入 32 位容器，而不是一直保留完整体系结构宽度直到提取点。",
+          "在写回阶段，把原始 32 位结果直接赋给更宽的目的寄存器，不做有符号扩展。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_core.sv"
+        ],
+        "target_module_or_logic": "VX_tcu_core 中源操作数行的宽度处理和 result_if 写回逻辑",
+        "commit_fix_summary": "该修复让 a_row 和 b_col 在 32 位 lane 提取之前保持 XLEN 宽度，并在结果写回时对 d_val 做符号扩展。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 a_row 和 b_col 改回由 32'(rs*_data[..][31:0]) 驱动的 32 位声明，并把 result_if.data.data 的赋值改回原始 d_val。"
+      },
+      "expected_failure_mode": "张量操作可能读取到错误的子 lane 位，或者把结果以错误扩展方式写回，从而在宽寄存器配置上产生错误矩阵输出。",
+      "evidence_for_injection": [
+        "修复前，a_row 和 b_col 被声明为 32 位元素，并通过 32 位强制转换获得。",
+        "修复前，写回路径直接赋值 d_val，没有进行 XLEN 符号扩展。",
+        "两个版本里的算术结果数组 d_val 都保持 32 位，因此缺陷位于接口宽度适配层。"
+      ],
+      "notes": [
+        "仅注入源侧截断通常就足以复现功能错误。",
+        "当负的 32 位结果通过更宽体系结构寄存器观察时，写回符号扩展缺陷会尤其明显。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

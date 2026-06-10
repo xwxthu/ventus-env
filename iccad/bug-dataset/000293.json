@@ -1,0 +1,129 @@
+{
+  "dataset_id": 293,
+  "original_review_id": 354,
+  "meta": {
+    "id": 354,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "581021b61300ee64da126a313e0ac2643cf1b126",
+    "subject": "fixed rop slice regression"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "Fixes the ROP slice memory-request pipeline register so it advances on non-stall cycles instead of only when stalled.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a regression fix.",
+      "The patch changes a one-bit enable condition in central ROP request-pipeline RTL.",
+      "The polarity change directly controls whether memory requests are latched or frozen."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "In VX_rop_slice.sv, mem_req_pipe_reg enable changes from mem_req_stall to ~mem_req_stall.",
+      "The register captures the full outbound memory request bundle before it leaves the slice.",
+      "No unrelated files are touched."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_slice.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A pipeline stage that buffers an outbound request must capture new data when downstream is not stalling. If the enable condition is tied to the stall signal with the wrong polarity, the stage updates only during stalls and holds stale data during normal flow, which can freeze progress or resend old requests.",
+      "portable_injection_spec": {
+        "affected_mechanism": "request-pipeline stall gating",
+        "trigger_condition": "Any cycle where a buffered request stage should accept a new request while downstream is ready or not backpressured.",
+        "injection_action": "Invert the pipeline register enable so it updates only when stall is asserted.",
+        "implementation_pattern": "invert stall guard on pipe register",
+        "portability_notes": [
+          "Look for skid-buffer or pipeline-register enable logic around ready/valid handshakes.",
+          "This maps to any design where a request bundle is stored in a register when not stalled.",
+          "The bug is independent of ROP specifically; it is a generic ready/valid control inversion."
+        ],
+        "concrete_injection_steps": [
+          "Find the request stage register controlled by a stall or ready signal.",
+          "Change the enable from not-stalled to stalled, or equivalently invert the predicate.",
+          "Leave the data bundle unchanged so only the control polarity is corrupted."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_slice.sv"
+        ],
+        "target_module_or_logic": "mem_req_pipe_reg enable in the ROP slice outbound memory-request path",
+        "commit_fix_summary": "The fix changes the pipeline-register enable from mem_req_stall to ~mem_req_stall.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Change the mem_req_pipe_reg .enable connection back to mem_req_stall."
+      },
+      "expected_failure_mode": "The pipeline can replay stale memory-request contents, stop advancing on normal cycles, or deadlock due to lost forward progress.",
+      "evidence_for_injection": [
+        "The changed signal is the sole enable for the register holding the outbound memory request bundle.",
+        "The bug is a direct polarity inversion with no surrounding logic changes.",
+        "The commit is isolated to one DUT file and one control predicate."
+      ],
+      "notes": [
+        "This is a very clean reverse-patch candidate because the bug is localized to a single handshake predicate."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "handshake",
+    "summary": "该提交修复了 ROP slice 的 memory-request 流水寄存器，使其在无 stall 周期推进，而不是只在 stall 时更新。",
+    "why_it_counts": [
+      "提交信息明确说明这是一个 regression 修复。",
+      "补丁修改了核心 ROP 请求流水 RTL 中的一个单比特使能条件。",
+      "该极性变化直接决定 memory request 是被锁存推进还是被冻结。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 VX_rop_slice.sv 中，mem_req_pipe_reg 的 enable 从 mem_req_stall 改为 ~mem_req_stall。",
+      "这个寄存器在请求离开 slice 前缓存完整的对外 memory request bundle。",
+      "没有修改无关文件。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_slice.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "用于缓存对外请求的流水级必须在下游未阻塞时接收新数据。如果把使能条件错误地直接绑定到 stall 信号，且极性反了，那么该级只会在 stall 时更新，在正常流动时保持旧值，从而导致进度冻结或重复发送旧请求。",
+      "portable_injection_spec": {
+        "affected_mechanism": "请求流水级的 stall 门控",
+        "trigger_condition": "任何需要在下游 ready 或未回压时接收新请求的周期。",
+        "injection_action": "把流水寄存器的使能反相，使其只在 stall 置位时更新。",
+        "implementation_pattern": "反转 pipe register 的 stall 保护条件",
+        "portability_notes": [
+          "重点查找 ready/valid 握手附近的 skid-buffer 或 pipeline-register 使能逻辑。",
+          "任何在非 stall 条件下锁存请求 bundle 的设计都可以映射此类错误。",
+          "该 bug 与 ROP 本身无关，本质上是通用的 ready/valid 控制极性错误。"
+        ],
+        "concrete_injection_steps": [
+          "定位由 stall 或 ready 信号控制的请求级寄存器。",
+          "把 enable 从“非 stall”改成“stall”，或等价地反转该谓词。",
+          "保持寄存器携带的数据 bundle 不变，只破坏控制极性。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_slice.sv"
+        ],
+        "target_module_or_logic": "ROP slice 对外 memory-request 路径中的 mem_req_pipe_reg 使能",
+        "commit_fix_summary": "修复把流水寄存器的 enable 从 mem_req_stall 改为 ~mem_req_stall。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "把 mem_req_pipe_reg 的 .enable 连接改回 mem_req_stall。"
+      },
+      "expected_failure_mode": "流水级可能重复发送陈旧的 memory request，在正常周期不再推进，甚至因丢失前向进度而死锁。",
+      "evidence_for_injection": [
+        "修改的信号正是保存对外 memory request bundle 的寄存器唯一使能。",
+        "该 bug 就是单个控制条件的极性反转，没有其他配套逻辑变化。",
+        "提交只涉及一个 DUT 文件和一个控制谓词。"
+      ],
+      "notes": [
+        "这是非常适合逆向注入的故障，因为问题被局部化为单一握手谓词。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

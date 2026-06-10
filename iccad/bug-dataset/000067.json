@@ -1,0 +1,135 @@
+{
+  "dataset_id": 67,
+  "original_review_id": 86,
+  "meta": {
+    "id": 86,
+    "repo": "ventus-gpgpu",
+    "branch": "ESWIN-dev",
+    "commit": "be1cc82f794ab2828399b813f4ed26a7954de49e",
+    "subject": "fix wrong value of num_thread"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "configuration",
+    "summary": "The commit corrects the compile-time SIMT thread-count parameter from 4 to 8, which otherwise under-sizes lane-dependent structures and thread-coordinate geometry in the generated hardware.",
+    "why_it_counts": [
+      "It changes a central hardware elaboration parameter rather than software or tests.",
+      "The same file immediately derives depth_thread, num_lane, dcache_BlockWords, and tc_dim from num_thread.",
+      "Using the wrong thread count changes the generated DUT structure and execution width, not just a build option label."
+    ],
+    "disqualifiers": [
+      "This is a parameter-level correction rather than a localized datapath edit."
+    ],
+    "evidence": [
+      "ventus/src/pipeline/parameters.scala changes def num_thread from 4 to 8.",
+      "depth_thread, num_lane, dcache_BlockWords, and tc_dim are derived from num_thread in the same object.",
+      "The tc_dim logic has an explicit special case for num_thread == 8, which shows that 8-thread geometry is architecturally intended in this design snapshot."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a SIMT GPU, a compile-time thread-per-warp constant drives lane count, per-thread vector widths, cacheline geometry, and thread-coordinate mapping. If that constant is set too low, the generated RTL only provisions part of the architected wavefront and downstream structures inherit the wrong geometry.",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT lane and thread-count parameterization",
+        "trigger_condition": "Any workload or microarchitectural path assumes the intended full thread count, but elaboration used a smaller constant for warp or lane width.",
+        "injection_action": "Set the hardware thread-count constant below the intended architectural value while leaving all derived constants tied to that faulty parameter.",
+        "implementation_pattern": "parameter_misconfiguration",
+        "portability_notes": [
+          "Apply this to any compile-time parameter that defines lanes per wavefront, threads per warp, or SIMD width for the RTL.",
+          "Inspect downstream constants derived from the same parameter, such as lane count, block words, address slicing, or thread-coordinate decode.",
+          "This is most useful in parameterized generators where one wrong constant fans out into many widths and resource counts."
+        ],
+        "concrete_injection_steps": [
+          "Identify the elaboration-time constant that defines the number of hardware threads or lanes per warp.",
+          "Reduce that constant below the intended value without changing higher-level architectural assumptions or tests.",
+          "Regenerate the DUT so all derived widths and geometry expressions inherit the smaller value.",
+          "Run a workload that expects the full thread width and observe half-width or otherwise malformed execution behavior."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/parameters.scala"
+        ],
+        "target_module_or_logic": "pipeline.parameters.num_thread and derived lane/cache geometry",
+        "commit_fix_summary": "The fix changes num_thread from 4 to 8. The same parameter object derives depth_thread, num_lane, dcache_BlockWords, and tc_dim from that value.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Change def num_thread back from 8 to 4 in ventus/src/pipeline/parameters.scala and let the existing derived constants continue to follow the faulty value."
+      },
+      "expected_failure_mode": "The generated GPU executes with too few active threads or lanes per warp and propagates the wrong geometry into cache-block sizing and thread-coordinate mapping.",
+      "evidence_for_injection": [
+        "num_thread is the only changed line in the commit.",
+        "Multiple downstream structural parameters are derived from num_thread in the same file.",
+        "The tc_dim branch explicitly recognizes 8-thread geometry, which supports the interpretation that 4 was an erroneous hardware parameter."
+      ],
+      "notes": [
+        "This is a broad parameter-level fault, so it can affect multiple modules after elaboration rather than one local RTL block."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "configuration",
+    "summary": "该提交把编译期的 SIMT 线程数参数从 4 改为 8；如果保持 4，不仅会缩小硬件线程宽度，还会让生成后的 lane 相关结构和线程坐标几何都偏小。",
+    "why_it_counts": [
+      "它修改的是核心硬件展开参数，而不是软件或测试。",
+      "同一文件里，depth_thread、num_lane、dcache_BlockWords 和 tc_dim 都直接从 num_thread 推导。",
+      "错误的线程数会改变生成后的 DUT 结构和执行宽度，而不只是一个构建选项标签。"
+    ],
+    "disqualifiers": [
+      "这是一处参数级修正，而不是局部数据通路逻辑修改。"
+    ],
+    "evidence": [
+      "ventus/src/pipeline/parameters.scala 把 def num_thread 从 4 改为 8。",
+      "在同一个参数对象中，depth_thread、num_lane、dcache_BlockWords 和 tc_dim 都由 num_thread 推导。",
+      "tc_dim 逻辑对 num_thread == 8 有显式特判，说明在这个设计快照中 8 线程几何是架构预期。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 SIMT GPU 中，编译期的“每个 warp 的线程数”常量会驱动车道数、逐线程向量宽度、cacheline 几何以及线程坐标映射。如果这个常量被设得过小，生成出来的 RTL 只会为部分架构 wavefront 配置资源，下游结构也会继承错误的几何关系。",
+      "portable_injection_spec": {
+        "affected_mechanism": "SIMT 车道数和线程数参数化",
+        "trigger_condition": "工作负载或微架构路径按预期的完整线程数运行，但 RTL 展开时却用了更小的 warp 或 lane 宽度常量。",
+        "injection_action": "把硬件线程数常量设置得低于架构预期，同时让所有派生常量继续跟随这个错误值。",
+        "implementation_pattern": "parameter_misconfiguration",
+        "portability_notes": [
+          "可映射到任何定义“每个 wavefront 的 lane 数”“每个 warp 的线程数”或 RTL SIMD 宽度的编译期参数。",
+          "需要同时检查从这个参数派生出来的 lane 数、block words、地址切片或线程坐标解码等量。",
+          "这种故障特别适合参数化生成器，因为一个错误常量会扩散到很多位宽和资源数量。"
+        ],
+        "concrete_injection_steps": [
+          "找到定义每个 warp 的硬件线程数或 lane 数的展开期常量。",
+          "在不改变更高层架构假设或测试的情况下，把该常量调小。",
+          "重新生成 DUT，让所有派生位宽和几何表达式都继承这个更小的值。",
+          "运行一个依赖完整线程宽度的工作负载，并观察半宽或其它异常的执行行为。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/parameters.scala"
+        ],
+        "target_module_or_logic": "pipeline.parameters.num_thread 及其派生的 lane/cache 几何",
+        "commit_fix_summary": "修复把 num_thread 从 4 改为 8。同一个参数对象还会基于该值推导 depth_thread、num_lane、dcache_BlockWords 和 tc_dim。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 ventus/src/pipeline/parameters.scala 中把 def num_thread 从 8 改回 4，并让已有的派生常量继续跟随这个错误值。"
+      },
+      "expected_failure_mode": "生成后的 GPU 会以过少的每 warp 活动线程或车道运行，并把错误几何继续传播到 cache block 尺寸和线程坐标映射中。",
+      "evidence_for_injection": [
+        "这个提交只改了一行 num_thread。",
+        "同一文件中有多个下游结构参数都由 num_thread 推导。",
+        "tc_dim 的分支对 8 线程几何有显式处理，这支持“4 是错误硬件参数”的判断。"
+      ],
+      "notes": [
+        "这是一个较宽泛的参数级故障，因此展开后可能同时影响多个模块，而不是某一个局部 RTL 代码块。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

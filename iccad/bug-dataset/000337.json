@@ -1,0 +1,133 @@
+{
+  "dataset_id": 337,
+  "original_review_id": 406,
+  "meta": {
+    "id": 406,
+    "repo": "vortex",
+    "branch": "bug_fixes",
+    "commit": "cce1f202aa127123484289ef677ece539bbb62fb",
+    "subject": "CTA bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Prevents CTA dispatch from selecting the same warp more than once during a dispatch burst by masking already dispatched warps until architectural active_warps catches up.",
+    "why_it_counts": [
+      "The patch directly changes warp allocation control logic in the CTA dispatcher.",
+      "It fixes a real scheduler correctness condition: do not redispatch a warp before its active bitmap updates.",
+      "The change is local, small, and clearly tied to hardware behavior."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "A dispatched_warps register is added in VX_cta_dispatch.sv.",
+      "The priority encoder input changes from ~active_warps to ~(active_warps | dispatched_warps).",
+      "dispatched_warps is cleared when a new CTA slot starts dispatching.",
+      "The selected warp_id_n is marked in dispatched_warps when warp_fire occurs."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A CTA or thread-block dispatcher may allocate multiple warps over several cycles before the architectural active-warp bitmap is updated. If free-warp selection consults only the delayed architectural bitmap, the same physical warp can be chosen repeatedly inside one dispatch burst.",
+      "portable_injection_spec": {
+        "affected_mechanism": "intra-burst warp allocation masking",
+        "trigger_condition": "A dispatcher that emits several warps for one CTA while the active-warp state updates later than the selection cycle.",
+        "injection_action": "Remove the local mask of already dispatched warps and choose free warps only from the architectural active bitmap.",
+        "implementation_pattern": "drop_conflict_mask",
+        "portability_notes": [
+          "Apply this to any allocator that makes repeated selections before global state feedback is visible.",
+          "The bug does not require changing the active-warp update mechanism itself; only the temporary intra-burst mask needs to be removed.",
+          "Any similar per-burst resource allocator can reproduce this pattern, not just warp schedulers."
+        ],
+        "concrete_injection_steps": [
+          "Find the priority encoder or free-list selection logic that chooses an idle warp or thread context.",
+          "Delete the temporary mask that marks contexts already handed out in the current burst.",
+          "Keep the global active/in-use state update latency unchanged so repeated selections can see stale availability."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv"
+        ],
+        "target_module_or_logic": "Free-warp selection in VX_cta_dispatch",
+        "commit_fix_summary": "The fix adds dispatched_warps, includes it in the priority-encoder mask, clears it at CTA start, and marks each selected warp.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove dispatched_warps and revert the priority encoder input to ~active_warps."
+      },
+      "expected_failure_mode": "The same warp can be allocated multiple times within one CTA dispatch burst, corrupting CTA-to-warp mapping and later scheduling behavior.",
+      "evidence_for_injection": [
+        "Before the fix, warp selection considered only active_warps.",
+        "The new state is purely a temporary allocation mask and is reset when a new CTA begins dispatching.",
+        "The selected warp ID is marked immediately on dispatch, which is exactly the missing transient hazard protection."
+      ],
+      "notes": [
+        "This is a very portable scheduler bug pattern: stale availability plus missing temporary allocation mask.",
+        "A one-file reverse mutation is sufficient."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交通过在一次 dispatch burst 内屏蔽已分配的 warp，避免 CTA dispatch 在 active_warps 状态尚未更新前重复选择同一个 warp。",
+    "why_it_counts": [
+      "补丁直接修改了 CTA dispatcher 中的 warp 分配控制逻辑。",
+      "它修复的是一个真实的调度正确性条件：在 active 位图更新前，不能再次分配同一个 warp。",
+      "该修改局部、精炼，并且与硬件行为有明确对应关系。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_cta_dispatch.sv 中新增了 dispatched_warps 寄存器。",
+      "优先编码器输入从 ~active_warps 改为 ~(active_warps | dispatched_warps)。",
+      "开始分发新的 CTA slot 时，dispatched_warps 会被清零。",
+      "发生 warp_fire 时，选中的 warp_id_n 会立即在 dispatched_warps 中置位。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "CTA 或线程块调度器可能会在多个周期内为同一个 CTA 分配多个 warp，而体系结构上的 active-warp 位图更新存在延迟。如果空闲 warp 的选择仅依赖这个延迟可见的体系结构位图，那么在同一个分发 burst 内就可能重复选中同一个物理 warp。",
+      "portable_injection_spec": {
+        "affected_mechanism": "burst 内 warp 分配的临时屏蔽",
+        "trigger_condition": "调度器需要为同一个 CTA 连续发出多个 warp，并且 active-warp 状态的反馈晚于选择周期。",
+        "injection_action": "去掉对本轮已分配 warp 的本地屏蔽，只根据体系结构 active 位图来选择空闲 warp。",
+        "implementation_pattern": "drop_conflict_mask",
+        "portability_notes": [
+          "该缺陷适用于任何在全局状态反馈可见之前会连续做多次选择的分配器。",
+          "不需要改变 active-warp 的更新机制本身；只要去掉 burst 内临时屏蔽即可。",
+          "这不仅适用于 warp 调度器，也适用于类似的按 burst 分配资源的逻辑。"
+        ],
+        "concrete_injection_steps": [
+          "定位选择空闲 warp 或线程上下文的优先编码器或空闲列表逻辑。",
+          "删除在当前 burst 内标记已分配上下文的临时掩码。",
+          "保持全局 active/in-use 状态更新延迟不变，让重复选择能够观察到过期的可用状态。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv"
+        ],
+        "target_module_or_logic": "VX_cta_dispatch 中的空闲 warp 选择逻辑",
+        "commit_fix_summary": "该修复增加了 dispatched_warps，把它纳入优先编码器掩码，在 CTA 开始时清零，并在每次选择 warp 时即时置位。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "移除 dispatched_warps，并把优先编码器输入改回 ~active_warps。"
+      },
+      "expected_failure_mode": "同一个 warp 可能在一次 CTA 分发 burst 内被重复分配，导致 CTA 到 warp 的映射损坏，并进一步破坏后续调度行为。",
+      "evidence_for_injection": [
+        "修复前，warp 选择逻辑只看 active_warps。",
+        "新增状态只是一个临时分配掩码，并且在新 CTA 开始分发时重置。",
+        "选中的 warp ID 会在分发当下立即被标记，这正是原先缺失的瞬态冒险保护。"
+      ],
+      "notes": [
+        "这是非常可移植的调度缺陷模式：可用性状态陈旧，加上缺少临时分配掩码。",
+        "单文件反向变异即可复现。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

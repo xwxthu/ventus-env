@@ -1,0 +1,139 @@
+{
+  "dataset_id": 386,
+  "original_review_id": 478,
+  "meta": {
+    "id": 478,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "8ef120ecca39c95aaf0f6800d68ddac62b3d35a6",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "This mixed hardware commit fixes scoreboard release timing so destination registers are cleared only on accepted writeback, and it also removes a few operand-collection edge cases such as fetching x0 as a real operand.",
+    "why_it_counts": [
+      "The scoreboard fix is in central pipeline control logic and directly affects dependency enforcement.",
+      "The writeback-fire condition is strengthened from valid-only to valid-and-ready, which changes real hazard behavior under backpressure.",
+      "The same commit also tightens operand collection in VX_opc_unit.sv, supporting the interpretation that the issue was incorrect issue-side bookkeeping."
+    ],
+    "disqualifiers": [
+      "The commit also includes minor trace and FPU package cleanup; the injection plan focuses on the scoreboard hazard-release bug."
+    ],
+    "evidence": [
+      "hw/rtl/core/VX_scoreboard.sv changes writeback_fire from writeback_if.valid to writeback_if.valid && writeback_if.ready.",
+      "The scoreboard still clears in-use registers on writeback_fire, so the ready term is semantically critical.",
+      "hw/rtl/core/VX_opc_unit.sv adds opds_to_fetch and filters out src_regs equal to zero, which matches cleanup of operand bookkeeping around the same path."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_scoreboard.sv",
+      "hw/rtl/core/VX_opc_unit.sv",
+      "hw/rtl/libs/VX_nz_iterator.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A scoreboard must not release a destination register hazard until the producer result has actually been accepted by the next stage. If the hazard is cleared on producer valid alone, a backpressured writeback path can make dependent instructions issue before the new value is committed to the architectural result path. That creates stale reads and ordering violations that may appear only under congestion.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Scoreboard hazard release on writeback",
+        "trigger_condition": "A producing instruction presents a writeback result while the downstream writeback or commit path is stalled or not ready.",
+        "injection_action": "Clear the scoreboard entry when writeback valid is asserted, ignoring whether the result was actually accepted.",
+        "implementation_pattern": "drop_ready_term",
+        "portability_notes": [
+          "Map this to any in-order or out-of-order scoreboard that tracks pending architectural destination registers.",
+          "The key mutation point is the dependency-clear event, not the register-file write itself.",
+          "This bug is most observable in designs that can backpressure writeback or commit independently of execute completion."
+        ],
+        "concrete_injection_steps": [
+          "In the scoreboard release condition, remove the ready or accept term and trigger release from producer valid alone.",
+          "Keep the actual writeback data path unchanged so a timing gap opens between hazard release and real register update.",
+          "Optionally leave x0 or constant-register operand filtering unchanged; it is a secondary fix, not the primary injected bug."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_scoreboard.sv"
+        ],
+        "target_module_or_logic": "Writeback-driven scoreboard release logic",
+        "commit_fix_summary": "The fix adds writeback_if.ready to the writeback_fire condition before clearing in-use destination registers.",
+        "mutation_strategy": "drop_ready_term",
+        "source_level_edit_anchor": "In VX_scoreboard.sv, revert writeback_fire to depend only on writeback_if.valid and eop when clearing inuse_regs."
+      },
+      "expected_failure_mode": "Dependent instructions can issue before the producing result is actually accepted, causing stale operand reads, false dependency clearance, or intermittent wrong results under pipeline backpressure.",
+      "evidence_for_injection": [
+        "Only one line changes the semantic condition for releasing a scoreboard entry, which makes reinjection precise.",
+        "The scoreboard release is directly tied to inuse_regs bookkeeping, so dropping ready has an immediate architectural effect.",
+        "The companion operand-collector cleanup in the same commit is consistent with prior issue-side bookkeeping bugs."
+      ],
+      "notes": [
+        "This commit contains multiple fixes; the scoreboard bug is the most reusable fault-injection target because it maps cleanly to many pipelines.",
+        "To expose the injected bug, use a workload or testbench that can stall writeback or commit after execute completion."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scoreboard",
+    "summary": "该混合硬件提交修复了 scoreboard 的释放时机，使目的寄存器只会在写回真正被下游接受后才解除占用，同时也修正了若干操作数收集边界情况，例如不再把 x0 当成真实源操作数去读取。",
+    "why_it_counts": [
+      "scoreboard 修复发生在核心流水线控制逻辑中，会直接影响依赖约束。",
+      "writeback_fire 从只看 valid 改成了 valid 且 ready，这会在存在回压时改变真实 hazard 行为。",
+      "同一提交还在 VX_opc_unit.sv 中收紧了操作数抓取逻辑，这进一步说明问题属于发射侧的状态维护错误。"
+    ],
+    "disqualifiers": [
+      "该提交也包含少量 trace 与 FPU package 清理；注入计划聚焦 scoreboard 提前释放 hazard 的核心错误。"
+    ],
+    "evidence": [
+      "hw/rtl/core/VX_scoreboard.sv 把 writeback_fire 从 writeback_if.valid 改成了 writeback_if.valid && writeback_if.ready。",
+      "scoreboard 仍然在 writeback_fire 时清除 in-use 寄存器，因此 ready 条件在语义上是关键项。",
+      "hw/rtl/core/VX_opc_unit.sv 新增了 opds_to_fetch，并过滤掉等于零的 src_regs，这与同一路径上的操作数维护修复相吻合。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_scoreboard.sv",
+      "hw/rtl/core/VX_opc_unit.sv",
+      "hw/rtl/libs/VX_nz_iterator.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Scoreboard 不能在生产者结果仅仅到达而尚未被下一阶段真正接受时就提前释放目的寄存器的 hazard。如果仅凭 producer valid 就清除占用，而写回路径此时又被回压，依赖该结果的后续指令就可能在新值真正写入体系结构结果路径之前发射，从而读到旧值并破坏执行次序。这个错误通常只会在拥塞条件下暴露。",
+      "portable_injection_spec": {
+        "affected_mechanism": "写回阶段驱动的 scoreboard hazard 释放",
+        "trigger_condition": "某条会写回的指令已经给出结果，但下游写回或 commit 路径阻塞，尚未 ready。",
+        "injection_action": "在 writeback valid 拉高时就清除 scoreboard 项，而忽略该结果是否真的被接受。",
+        "implementation_pattern": "drop_ready_term",
+        "portability_notes": [
+          "可映射到任何跟踪体系结构目的寄存器未完成状态的 in-order 或 out-of-order scoreboard。",
+          "关键注入点是依赖释放事件，而不是寄存器文件本身的写入逻辑。",
+          "如果设计允许写回或 commit 独立于执行完成而产生回压，该故障会更明显。"
+        ],
+        "concrete_injection_steps": [
+          "在 scoreboard 的释放条件中删除 ready 或 accept 项，只根据 producer valid 来释放。",
+          "保持实际写回数据路径不变，使 hazard 释放与真实寄存器更新之间出现时间缝隙。",
+          "可保持 x0 或常量寄存器过滤逻辑不变，因为它只是次要修复，不是本条目的主要注入目标。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_scoreboard.sv"
+        ],
+        "target_module_or_logic": "由写回事件驱动的 scoreboard 释放逻辑",
+        "commit_fix_summary": "该修复在清除 in-use 目的寄存器前，给 writeback_fire 条件补上了 writeback_if.ready。",
+        "mutation_strategy": "drop_ready_term",
+        "source_level_edit_anchor": "在 VX_scoreboard.sv 中，把用于清除 inuse_regs 的 writeback_fire 改回只依赖 writeback_if.valid 和 eop。"
+      },
+      "expected_failure_mode": "依赖指令会在生产者结果尚未真正被接受时过早发射，导致读取旧值、错误释放依赖，或在流水线回压下出现间歇性错误结果。",
+      "evidence_for_injection": [
+        "只有一行修改就改变了 scoreboard 项释放的语义条件，因此回注位置非常精确。",
+        "scoreboard 的释放直接连接到 inuse_regs 记账，去掉 ready 会立刻产生体系结构层面的影响。",
+        "同一提交中的操作数收集修复也说明该路径此前存在真实的发射侧记账错误。"
+      ],
+      "notes": [
+        "该提交包含多个修复；scoreboard 错误是最适合作为故障注入目标的一项，因为它能清晰映射到许多流水线设计中。",
+        "为了暴露该故障，应使用能在执行完成后继续阻塞写回或 commit 的工作负载或测试平台。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

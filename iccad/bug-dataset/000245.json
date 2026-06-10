@@ -1,0 +1,135 @@
+{
+  "dataset_id": 245,
+  "original_review_id": 294,
+  "meta": {
+    "id": 294,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "0afe2610f3a4322a6ddb856e12a444f87ae343af",
+    "subject": "fix bug: operator priority issue"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit fixes an L2 SourceD control predicate so final flush hints are not misrouted into the dirty-data path by an over-broad miss condition.",
+    "why_it_counts": [
+      "SourceD.scala rewrites the key condition that decides whether a dirty line must enter the bank-store read path.",
+      "The commit message explicitly calls out an operator-priority issue.",
+      "The changed predicate controls L2 cache state progression, not test infrastructure."
+    ],
+    "disqualifiers": [
+      "scoreboard.scala only adds dontTouch debug markers."
+    ],
+    "evidence": [
+      "SourceD.scala changes the condition that sends the request into stage_3 for dirty handling.",
+      "The io.d.valid hunk only adds parentheses and does not materially change behavior.",
+      "scoreboard.scala adds debug visibility only."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/SourceD.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/L2cache/SourceD.scala"
+      ],
+      "target_module_or_logic": "SourceD dirty miss and hint stage_3 entry predicate",
+      "mutation_strategy": "reverse_patch",
+      "suggested_edit": "Restore the old dirty-handling predicate in the stage_1 branch of SourceD.scala.",
+      "expected_failure_mode": "Final flush or hint operations on dirty lines take the wrong dirty-data path, causing extra bank-store access or wrong response sequencing.",
+      "notes": [],
+      "portable_bug_context": "A cache controller often needs different behavior for dirty misses versus flush or hint traffic. If the dirty-data-path predicate is grouped too broadly, a final flush or hint transaction can be mistaken for a normal dirty miss and forced through an unnecessary data-read or writeback sequence.",
+      "portable_injection_spec": {
+        "affected_mechanism": "dirty miss versus flush-hint path selection",
+        "trigger_condition": "A dirty cache-control request is a terminal flush/hint transaction.",
+        "injection_action": "Fold hint traffic back into the generic !hit dirty-miss branch by removing the explicit Hint exclusion.",
+        "implementation_pattern": "broaden control predicate due to wrong grouping",
+        "portability_notes": [
+          "Use this on any cache controller with separate dirty-data and flush/hint subpaths."
+        ],
+        "concrete_injection_steps": [
+          "Find the state transition that sends a dirty request into a readback or victim-writeback path.",
+          "Remove the opcode exclusion that keeps terminal flush/hint traffic out of that path.",
+          "Trigger with a dirty line and a final flush/hint request."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/SourceD.scala"
+        ],
+        "target_module_or_logic": "stage_1 predicate selecting stage_3 dirty-data handling",
+        "commit_fix_summary": "The fix changes the stage_3-entry predicate so Hint requests only use the dirty-data path for non-final flush hints.",
+        "mutation_strategy": "remove_hint_exclusion_from_dirty_miss_predicate",
+        "source_level_edit_anchor": "At the when-condition under read-hit-or-miss-dirty handling, change ((!hit && opcode=/=Hint) || (Hint && !last_flush)) back to the broader older form."
+      },
+      "evidence_for_injection": [
+        "SourceD has a separate path for Hint && last_flush, proving final flush should bypass the general dirty-miss path.",
+        "The scoreboard changes in the same commit are debug-only dontTouch additions."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L2 SourceD 的控制谓词，使最终 flush hint 不会再因为过宽的 miss 条件而被错误送入 dirty-data 路径。",
+    "why_it_counts": [
+      "SourceD.scala 重写了决定脏块是否进入 bank-store 读取路径的关键条件。",
+      "提交信息明确指出是运算符优先级问题。",
+      "该谓词控制的是 L2 cache 状态推进，而不是测试基础设施。"
+    ],
+    "disqualifiers": [
+      "scoreboard.scala 只增加了 dontTouch 调试标记。"
+    ],
+    "evidence": [
+      "SourceD.scala 修改了把请求送入 stage_3 进行脏块处理的条件。",
+      "io.d.valid 那一处改动只是补括号，没有实质行为变化。",
+      "scoreboard.scala 的修改仅用于调试可观察性。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/SourceD.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/L2cache/SourceD.scala"
+      ],
+      "target_module_or_logic": "SourceD 中脏块 miss 和 hint 进入 stage_3 的判定条件",
+      "mutation_strategy": "reverse_patch",
+      "suggested_edit": "把 SourceD.scala 中 stage_1 分支里的脏块处理谓词恢复为旧版本。",
+      "expected_failure_mode": "dirty line 上的最终 flush 或 hint 会走错 dirty-data 路径，导致额外 bank-store 访问或响应次序错误。",
+      "notes": [],
+      "portable_bug_context": "cache 控制器通常需要对 dirty miss 和 flush/hint 流量采用不同路径。如果 dirty-data 路径的谓词分组过宽，那么最终 flush 或 hint 事务就可能被误判成普通 dirty miss，被送入不必要的数据读取或回写序列。",
+      "portable_injection_spec": {
+        "affected_mechanism": "dirty miss 与 flush-hint 路径选择",
+        "trigger_condition": "某个 dirty cache 控制请求是终止型 flush/hint 事务。",
+        "injection_action": "删除对 Hint 的显式排除，使 hint 流量重新落入通用 !hit dirty-miss 分支。",
+        "implementation_pattern": "因错误分组而放宽控制谓词",
+        "portability_notes": [
+          "可映射到任何把 dirty-data 路径与 flush/hint 路径分开的 cache 控制器。"
+        ],
+        "concrete_injection_steps": [
+          "找到决定 dirty 请求是否进入 readback 或 victim-writeback 路径的状态转移。",
+          "移除把终止型 flush/hint 挡在该路径之外的 opcode 排除条件。",
+          "用 dirty line 上的最终 flush/hint 事务触发。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/SourceD.scala"
+        ],
+        "target_module_or_logic": "stage_1 中选择 stage_3 dirty-data 处理的谓词",
+        "commit_fix_summary": "该修复修改了进入 stage_3 的谓词，使 Hint 请求只有在非最终 flush hint 时才走 dirty-data 路径。",
+        "mutation_strategy": "remove_hint_exclusion_from_dirty_miss_predicate",
+        "source_level_edit_anchor": "在 read-hit-or-miss-dirty 相关的 when 条件里，把 ((!hit && opcode=/=Hint) || (Hint && !last_flush)) 改回旧的更宽形式。"
+      },
+      "evidence_for_injection": [
+        "SourceD 对 Hint && last_flush 有单独路径，说明最终 flush 本应绕开通用 dirty-miss 路径。",
+        "同提交里的 scoreboard 改动只是调试用 dontTouch。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

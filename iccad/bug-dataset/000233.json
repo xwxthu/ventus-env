@@ -1,0 +1,75 @@
+{
+  "dataset_id": 233,
+  "original_review_id": 281,
+  "meta": {
+    "id": 281,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "19478d1f558f31ac847ce962a3601ec7da224f86",
+    "subject": "WIP: flush on kernel finish (by yff)"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This WIP commit primarily adds a new end-of-kernel or end-of-workgroup D-cache flush path and changes cache geometry, so it is better treated as feature bring-up than as a clean standalone DUT bug-fix record.",
+    "why_it_counts": [
+      "The patch does touch real cache, LSU, and warp-scheduler RTL, so it needed direct inspection rather than dismissal from the subject line alone."
+    ],
+    "disqualifiers": [
+      "The commit is explicitly marked WIP.",
+      "Its primary substance is adding a new flushDCache control path across warp_scheduler, pipe, and LSU.",
+      "The same patch also changes cache parameters such as dcache_NSets, dcache_BlockWords, and l2cache_NSets, which is bring-up or configuration work rather than a focused bug fix.",
+      "The concrete cache-control fixes embedded in the patch overlap with cleaner bug-fix commits already represented elsewhere in this series."
+    ],
+    "evidence": [
+      "warp_schedule.scala adds new per-workgroup completion tracking and a new flushDCache Decoupled interface.",
+      "pipe.scala wires the new flushDCache path into LSU, and LSU.scala adds new flush_dcache handling and flush-only state transitions.",
+      "parameters.scala changes D-cache and L2 geometry in the same commit.",
+      "tests.scala is also modified to change test timing."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/pipe.scala",
+      "ventus/src/pipeline/warp_schedule.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "medium",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "这个带有 WIP 标记的提交主要是在新增 kernel/workgroup 结束时的 D-cache flush 路径，并同时调整 cache 几何参数，因此更适合视为功能 bring-up，而不是一个干净独立的 DUT bug-fix 记录。",
+    "why_it_counts": [
+      "该补丁确实修改了真实的 cache、LSU 和 warp-scheduler RTL，因此不能只根据标题就直接排除，必须检查实际代码。"
+    ],
+    "disqualifiers": [
+      "提交本身明确标记为 WIP。",
+      "其主要内容是在 warp_scheduler、pipe 和 LSU 之间新增 flushDCache 控制路径。",
+      "同一补丁还修改了 dcache_NSets、dcache_BlockWords、l2cache_NSets 等缓存参数，这更像 bring-up 或配置变更，而不是单一 bug 修复。",
+      "补丁中夹带的具体 cache 控制修复点，与同一系列里更干净的独立 bug-fix 提交存在重叠。"
+    ],
+    "evidence": [
+      "warp_schedule.scala 新增了按 workgroup 完成跟踪的状态，以及新的 flushDCache Decoupled 接口。",
+      "pipe.scala 把新的 flushDCache 路径接入 LSU，LSU.scala 也新增了 flush_dcache 处理和专用状态转换。",
+      "parameters.scala 在同一提交里修改了 D-cache 和 L2 的几何参数。",
+      "tests.scala 也被修改，用于调整测试等待时序。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L1Cache/DCache/DCache.scala",
+      "ventus/src/L1Cache/L1TagAccess.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/pipe.scala",
+      "ventus/src/pipeline/warp_schedule.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

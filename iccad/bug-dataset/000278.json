@@ -1,0 +1,133 @@
+{
+  "dataset_id": 278,
+  "original_review_id": 334,
+  "meta": {
+    "id": 334,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "bd70afa6883e1e5427ea3755681ee78357003eef",
+    "subject": "cache multi-porting fix - ensure per-bank uniform rw"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes cache bank coalescing so requests sharing a bank must agree on read/write direction before they are treated as a uniform bank transaction.",
+    "why_it_counts": [
+      "The patch changes bank-selection and merge eligibility in cache RTL.",
+      "It prevents incompatible read and write operations from being coalesced together.",
+      "The commit message explicitly describes a per-bank uniform-rw bug."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_core_req_bank_sel adds per_bank_rw_r alongside per-bank line tracking.",
+      "core_req_line_match now requires both same line address and same core_req_rw value.",
+      "The cache-define macros used for bank and line extraction are updated in the same fix."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_core_req_bank_sel.sv",
+      "hw/rtl/cache/VX_cache_define.vh"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A multi-ported cache bank selector may coalesce multiple same-bank requests into one bank transaction, but that is only safe when the requests are semantically compatible. If the merge rule checks only bank and line address while ignoring read-versus-write direction, a read and a write can be treated as one uniform operation and the bank sees an invalid combined access pattern.",
+      "portable_injection_spec": {
+        "affected_mechanism": "same-bank request coalescing eligibility",
+        "trigger_condition": "Multiple same-cycle requests target the same bank and line, but at least one is a read and another is a write.",
+        "injection_action": "Allow same-bank requests to coalesce based only on address match, ignoring whether the operations are reads or writes.",
+        "implementation_pattern": "drop operation-kind term from merge predicate",
+        "portability_notes": [
+          "This maps to bank selectors, LSU coalescers, and cache request grouping logic.",
+          "The important compatibility test is semantic access type, not just physical address.",
+          "If your DUT uses opcodes instead of a single rw bit, mutate the equivalent read/write-class check."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that decides whether multiple requests can share one bank access or one port slot.",
+          "Identify the predicate that checks same-bank and same-line compatibility.",
+          "Remove the read/write-direction equality requirement so address match alone is sufficient."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_core_req_bank_sel.sv",
+          "hw/rtl/cache/VX_cache_define.vh"
+        ],
+        "target_module_or_logic": "Per-bank request matching in VX_core_req_bank_sel",
+        "commit_fix_summary": "The fix records per-bank rw state and adds core_req_rw equality to core_req_line_match so only uniform access types coalesce.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_core_req_bank_sel, core_req_line_match changed from an address-only comparison to an address-and-rw comparison using per_bank_rw_r."
+      },
+      "expected_failure_mode": "A read and a write aimed at the same bank can be merged incorrectly, causing lost operations, wrong bank behavior, or misclassified accesses.",
+      "evidence_for_injection": [
+        "The only added state in the selector is per_bank_rw_r, which exists solely to constrain merge eligibility.",
+        "The commit subject explicitly states the intended invariant: per-bank uniform rw.",
+        "The updated address-selection macros support the same bank-selection path."
+      ],
+      "notes": [
+        "The most direct reinjection is to remove only the rw equality test and leave the rest of the selector intact."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 cache bank 合并条件：共享同一 bank 的请求在被视为统一 bank 事务之前，必须先保证读写方向一致。",
+    "why_it_counts": [
+      "补丁修改了 cache RTL 中的 bank 选择与合并资格判定。",
+      "它阻止了语义不兼容的读写操作被错误地合并在一起。",
+      "提交标题明确描述了 per-bank uniform rw 缺陷。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "VX_core_req_bank_sel 在每个 bank 的 line 跟踪之外新增了 per_bank_rw_r。",
+      "core_req_line_match 现在同时要求 line 地址一致且 core_req_rw 一致。",
+      "同一修复还更新了用于提取 bank/line 的 cache-define 宏。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_core_req_bank_sel.sv",
+      "hw/rtl/cache/VX_cache_define.vh"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "多端口 cache 的 bank selector 可能会把同一个 bank 上的多个请求合并为一次 bank 事务，但只有当这些请求在语义上兼容时才安全。如果合并规则只检查 bank 和 line 地址，而忽略读写方向，那么一次读和一次写就可能被当成统一操作处理，导致 bank 看到无效的混合访问模式。",
+      "portable_injection_spec": {
+        "affected_mechanism": "同 bank 请求的合并资格判定",
+        "trigger_condition": "同一周期内多个请求命中同一 bank 和同一 line，但其中既有读也有写。",
+        "injection_action": "允许同一 bank 的请求只按地址匹配进行合并，而忽略读写类型是否一致。",
+        "implementation_pattern": "从合并谓词中删除访问类型判断项",
+        "portability_notes": [
+          "可映射到 bank selector、LSU coalescer 或 cache 请求分组逻辑。",
+          "关键兼容性约束是访问语义类型，而不仅仅是物理地址。",
+          "如果 DUT 用 opcode 而不是单个 rw 位，应修改等价的读写类别检查。"
+        ],
+        "concrete_injection_steps": [
+          "找到决定多个请求是否可共享一次 bank 访问或一个端口槽位的逻辑。",
+          "识别同时检查 same-bank 和 same-line 的兼容性谓词。",
+          "删除读写方向一致性的要求，使地址匹配本身就足以触发合并。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_core_req_bank_sel.sv",
+          "hw/rtl/cache/VX_cache_define.vh"
+        ],
+        "target_module_or_logic": "VX_core_req_bank_sel 中的 per-bank 请求匹配",
+        "commit_fix_summary": "修复为每个 bank 记录 rw 状态，并把 core_req_rw 相等条件加入 core_req_line_match，确保只有统一访问类型才会合并。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_core_req_bank_sel 中，core_req_line_match 从“只比较地址”变成了“地址和 rw 都比较”，其中新增状态是 per_bank_rw_r。"
+      },
+      "expected_failure_mode": "指向同一 bank 的读和写会被错误合并，造成操作丢失、bank 行为错误或访问类型误判。",
+      "evidence_for_injection": [
+        "selector 中唯一新增的状态就是 per_bank_rw_r，它只服务于合并资格约束。",
+        "提交标题直接给出了目标不变量：per-bank uniform rw。",
+        "更新后的地址提取宏服务于同一条 bank 选择路径。"
+      ],
+      "notes": [
+        "最直接的回注方式是只删除 rw 相等判断，而保留 selector 的其他逻辑不变。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

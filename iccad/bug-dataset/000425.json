@@ -1,0 +1,145 @@
+{
+  "dataset_id": 425,
+  "original_review_id": 549,
+  "meta": {
+    "id": 549,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "36611403b8f34a31e1ba866959d571a978548133",
+    "subject": "hardware: add interrupt test and fix a bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "interrupt",
+    "summary": "This commit fixes a real hardware control bug: interrupts are masked while an I/O request is pending so the same I/O operation is not replayed across an interrupt and executed twice.",
+    "why_it_counts": [
+      "The commit message describes a concrete duplicate-I/O hardware bug",
+      "RTL adds a pending-I/O mask into interrupt dispatch and exposes that state from the I/O request queue"
+    ],
+    "disqualifiers": [
+      "The commit also adds a new interrupt regression test and adjusts testbench timing"
+    ],
+    "evidence": [
+      "instruction_decode_stage.sv computes masked_interrupt_flags = ic_interrupt_pending & cr_interrupt_en & ~ior_pending",
+      "io_request_queue.sv adds ior_pending output based on pending_request valid and request_sent state",
+      "timer_interrupt.c documents the duplicate-write scenario and the new test exercises it"
+    ],
+    "touched_dut_files": [
+      "hardware/core/core.sv",
+      "hardware/core/instruction_decode_stage.sv",
+      "hardware/core/io_request_queue.sv",
+      "hardware/core/dcache_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Some cores handle uncached or memory-mapped I/O by issuing the operation, rolling the thread back, and replaying it after the I/O subsystem returns. Interrupt delivery must not cut in between the request and replay or the same I/O operation can be observed twice. This commit fixes exactly that control hazard by suppressing interrupts while a thread has a pending I/O transaction.",
+      "portable_injection_spec": {
+        "affected_mechanism": "interrupt eligibility during replayed MMIO",
+        "trigger_condition": "An interrupt becomes pending after an MMIO request is issued but before that thread's replay or completion path finishes.",
+        "injection_action": "Allow interrupts to be taken even when the thread has an outstanding replay-based I/O transaction.",
+        "implementation_pattern": "drop pending-I/O mask from interrupt-raise logic",
+        "portability_notes": [
+          "Apply this only to designs where MMIO loads or stores are replayed or split across request and completion phases.",
+          "If the core tracks outstanding MMIO per thread, use that pending bit; otherwise derive any equivalent transaction-in-flight indicator.",
+          "The bug is most visible with non-idempotent writes or with an ISR that performs MMIO itself."
+        ],
+        "concrete_injection_steps": [
+          "Identify the decode or control logic that decides whether a pending interrupt should divert the current thread.",
+          "Remove the term that suppresses interrupts while an MMIO or uncached I/O transaction is pending.",
+          "Keep the I/O queue and replay machinery intact.",
+          "Test with an interrupt arriving between the initial MMIO issue and the replay or return path."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/instruction_decode_stage.sv",
+          "hardware/core/io_request_queue.sv",
+          "hardware/core/core.sv"
+        ],
+        "target_module_or_logic": "interrupt raise path gated by pending I/O state",
+        "commit_fix_summary": "The fix adds ior_pending output from io_request_queue, wires it through core.sv, and masks interrupts in instruction_decode_stage.sv while a request is pending.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove `~ior_pending` from masked_interrupt_flags in instruction_decode_stage.sv and stop driving ior_pending into the decode stage."
+      },
+      "expected_failure_mode": "An interrupt can interleave with a replayed MMIO operation, causing duplicate writes or stale and incorrect I/O reads after the handler returns.",
+      "evidence_for_injection": [
+        "The commit message explicitly names duplicate I/O writes as the observed failure.",
+        "The queue now exports an outstanding-request indicator specifically for interrupt masking.",
+        "The new timer-interrupt test was written to catch this exact interleaving bug."
+      ],
+      "notes": [
+        "The dcache_data_stage edits are secondary cleanup; the injectable bug is the missing interrupt mask.",
+        "Leaving the new regression test in place is useful for validating the reinjected fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "interrupt",
+    "summary": "该提交修复了一个真实的硬件控制错误：当 I/O 请求仍在 pending 时屏蔽中断，从而避免同一个 I/O 操作跨越中断被再次回放并执行两次。",
+    "why_it_counts": [
+      "提交说明明确描述了 I/O 重复执行的硬件错误",
+      "RTL 在中断分发中加入了 pending-I/O 屏蔽，并从 io_request_queue 暴露了该状态"
+    ],
+    "disqualifiers": [
+      "该提交还新增了中断回归测试，并调整了 testbench 时序"
+    ],
+    "evidence": [
+      "instruction_decode_stage.sv 计算了 masked_interrupt_flags = ic_interrupt_pending & cr_interrupt_en & ~ior_pending",
+      "io_request_queue.sv 基于 pending_request 的 valid 和 request_sent 状态新增了 ior_pending 输出",
+      "timer_interrupt.c 直接记录了重复写场景，新测试也在验证该问题"
+    ],
+    "touched_dut_files": [
+      "hardware/core/core.sv",
+      "hardware/core/instruction_decode_stage.sv",
+      "hardware/core/io_request_queue.sv",
+      "hardware/core/dcache_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "有些处理器会用“先发出、回滚线程、等 I/O 返回后再重放”的方式处理 uncached 或 memory-mapped I/O。中断不能插入在“请求已发出”和“重放完成”之间，否则同一个 I/O 操作可能被观察到两次。该提交正是通过在每线程存在 pending I/O 事务时屏蔽中断，修复了这一控制冒险。",
+      "portable_injection_spec": {
+        "affected_mechanism": "回放式 MMIO 期间的中断可达性",
+        "trigger_condition": "在 MMIO 请求已发出但该线程尚未完成重放或返回路径时，有一个中断变为 pending。",
+        "injection_action": "即使线程仍有未完成的回放式 I/O 事务，也允许中断被接收。",
+        "implementation_pattern": "从中断触发逻辑中删除 pending-I/O 屏蔽项",
+        "portability_notes": [
+          "只适用于 MMIO load/store 采用回放或请求/完成分离机制的设计。",
+          "如果核心按线程跟踪未完成 MMIO，可直接使用该 pending 位；否则应找到等价的“事务在途”指示。",
+          "该错误在非幂等写入或 ISR 本身也执行 MMIO 时最容易被观察到。"
+        ],
+        "concrete_injection_steps": [
+          "找到 decode 或控制逻辑中决定 pending interrupt 是否应打断当前线程的部分。",
+          "去掉在 MMIO 或 uncached I/O 事务 pending 时禁止中断的那一项条件。",
+          "保留 I/O 队列与回放机制不变。",
+          "安排一个中断恰好落在第一次 MMIO 发起与回放/返回之间来验证故障。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/instruction_decode_stage.sv",
+          "hardware/core/io_request_queue.sv",
+          "hardware/core/core.sv"
+        ],
+        "target_module_or_logic": "由 pending I/O 状态门控的中断触发路径",
+        "commit_fix_summary": "补丁让 io_request_queue 输出 ior_pending，经 core.sv 接入 instruction_decode_stage.sv，并在请求 pending 时屏蔽中断。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 instruction_decode_stage.sv 中去掉 masked_interrupt_flags 里的 `~ior_pending`，并停止把 ior_pending 传入 decode 阶段。"
+      },
+      "expected_failure_mode": "中断可能插入到回放式 MMIO 操作中间，导致 ISR 返回后出现重复写入，或者出现陈旧/错误的 I/O 读取值。",
+      "evidence_for_injection": [
+        "提交信息直接指出观测到的故障是 I/O write 重复执行。",
+        "队列现在专门为中断屏蔽导出了 outstanding-request 指示信号。",
+        "新增的 timer interrupt 测试就是为捕获这类交错问题而写的。"
+      ],
+      "notes": [
+        "dcache_data_stage 的改动主要是辅助清理；最适合注入的核心故障是缺少中断屏蔽。",
+        "保留新的回归测试有助于验证重新注入后的故障。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

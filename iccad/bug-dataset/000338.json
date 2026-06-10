@@ -1,0 +1,133 @@
+{
+  "dataset_id": 338,
+  "original_review_id": 407,
+  "meta": {
+    "id": 407,
+    "repo": "vortex",
+    "branch": "bug_fixes",
+    "commit": "e4509fe77af1d05f23e6d9ab5f51330205f27f72",
+    "subject": "CTA dispatch fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "retire",
+    "summary": "Fixes CTA retirement bookkeeping by forwarding recent remaining-warp updates and stabilizing slot lookup so back-to-back warp completions do not use stale per-CTA state.",
+    "why_it_counts": [
+      "The patch repairs CTA completion and slot-reclamation logic in a central scheduler module.",
+      "The changed conditions directly affect whether a CTA is considered done and when its resources are freed.",
+      "The diff contains explicit stale-read handling, not a stylistic refactor."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit adds rem_warps_write_rr, rem_warps_waddr_rr, and rem_warps_wdata_rr to forward recent remaining-warp writes across a two-cycle gap.",
+      "cta_done is changed to compare rem_warps_rdata_fwd rather than raw rem_warps_rdata.",
+      "done_slot_dly is updated only when warp_done_r is high, avoiding stale slot capture.",
+      "wid_to_cta_ram changes to OUT_REG(0) and kmu_bus_if.ready is additionally gated by !rem_warps_write_r."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A CTA retirement path often stores the remaining active-warp count in RAM. If two warp completions for the same CTA arrive close together, the retirement logic may read stale RAM data before the prior decrement is visible. Without a short forwarding path from recent writes, the design can under-decrement or over-decrement the counter, causing premature completion, missed completion, or slot leaks.",
+      "portable_injection_spec": {
+        "affected_mechanism": "remaining-warp counter forwarding on CTA retirement",
+        "trigger_condition": "Two or more warp completions for the same CTA occur within the RAM read/write latency window.",
+        "injection_action": "Remove recent-write forwarding and compute CTA completion from the raw RAM read value only.",
+        "implementation_pattern": "remove_forwarding_path",
+        "portability_notes": [
+          "Any scheduler that keeps per-task remaining-work counters in RAM can reproduce this bug.",
+          "The key is a completion path that reads the counter and decrements it in close temporal proximity.",
+          "If the DUT has lookup latency for task-to-slot mapping, stale slot capture is a useful secondary mutation."
+        ],
+        "concrete_injection_steps": [
+          "Find the logic that reads a per-CTA or per-task remaining-work counter from a state RAM during retirement.",
+          "Delete or disable the bypass path that forwards the most recent decremented value when the same slot is accessed again shortly afterward.",
+          "Base the done decision and the next writeback value only on the raw RAM output."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv"
+        ],
+        "target_module_or_logic": "CTA retirement path around rem_warps RAM, done_slot_dly, and cta_done",
+        "commit_fix_summary": "The fix adds one-cycle and two-cycle forwarding for rem_warps writes, uses the forwarded value in cta_done and decrement logic, and stabilizes slot capture timing.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove rem_warps_rdata_fwd and revert cta_done/rem_warps_wdata_r to use raw rem_warps_rdata; also revert the guarded done_slot_dly update if reproducing the stale-slot variant."
+      },
+      "expected_failure_mode": "Back-to-back warp retirements can leave a CTA slot active too long, free it too early, or corrupt remaining-warp accounting, leading to hangs, resource leaks, or premature slot reuse.",
+      "evidence_for_injection": [
+        "The source patch explicitly describes a one-cycle and two-cycle read/write race around rem_warps state.",
+        "The completion predicate cta_done changes from raw RAM data to the forwarded value.",
+        "The writeback decrement is also switched from rem_warps_rdata - 1 to rem_warps_rdata_fwd - 1."
+      ],
+      "notes": [
+        "A forwarding-path removal alone is enough for a clean portable injection.",
+        "The stale-slot timing fix is related but can be kept as a separate optional variant."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "retire",
+    "summary": "该提交通过转发最近的 remaining-warp 更新并稳定 slot 查找时序，修复了 CTA 退休记账问题，避免连续 warp 完成时使用过期的每-CTA 状态。",
+    "why_it_counts": [
+      "补丁修复的是中心调度模块中的 CTA 完成与 slot 回收逻辑。",
+      "修改后的条件会直接影响 CTA 何时被认为完成以及何时释放资源。",
+      "diff 中包含明确的过期读取处理逻辑，而不是样式性重构。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "该提交新增了 rem_warps_write_rr、rem_warps_waddr_rr 和 rem_warps_wdata_rr，用于在两拍间隙内转发最近的 remaining-warp 写入。",
+      "cta_done 从比较原始 rem_warps_rdata 改为比较 rem_warps_rdata_fwd。",
+      "done_slot_dly 改成只在 warp_done_r 为高时更新，从而避免捕获陈旧 slot。",
+      "wid_to_cta_ram 改成 OUT_REG(0)，并且 kmu_bus_if.ready 额外受 !rem_warps_write_r 约束。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_cta_dispatch.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "CTA 退休路径通常会把剩余活动 warp 数保存在 RAM 中。如果同一个 CTA 的两个 warp 完成事件靠得很近，退休逻辑可能在前一次减计尚未对读端可见时就读到了过期 RAM 数据。如果没有从最近写入到读路径的短路转发，设计就可能少减、重复减或错误判断归零，从而导致过早完成、漏完成或 slot 泄漏。",
+      "portable_injection_spec": {
+        "affected_mechanism": "CTA 退休时 remaining-warp 计数器的转发",
+        "trigger_condition": "同一个 CTA 的两个或更多 warp 完成事件落在 RAM 读写延迟窗口内。",
+        "injection_action": "移除最近写入的转发路径，只根据原始 RAM 读值来计算 CTA 完成条件。",
+        "implementation_pattern": "remove_forwarding_path",
+        "portability_notes": [
+          "任何把每个任务剩余工作量计数存放在 RAM 中的调度器都可以复现该缺陷。",
+          "关键点在于：完成路径需要在很近的时间内读这个计数并对它减一。",
+          "如果 DUT 在任务到 slot 映射上也有查找延迟，那么保留过期 slot 捕获也是一个有用的次级变体。"
+        ],
+        "concrete_injection_steps": [
+          "定位退休阶段中从状态 RAM 读取每个 CTA 或每个任务剩余工作量计数的逻辑。",
+          "删除或禁用短时间再次访问同一 slot 时对最近减计值的旁路转发。",
+          "让 done 判定和下一次写回值都只基于原始 RAM 输出。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_cta_dispatch.sv"
+        ],
+        "target_module_or_logic": "rem_warps RAM、done_slot_dly 和 cta_done 附近的 CTA 退休路径",
+        "commit_fix_summary": "该修复为 rem_warps 写入增加了一拍和两拍转发，在 cta_done 与减计逻辑中使用转发值，并稳定了 slot 捕获时序。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "移除 rem_warps_rdata_fwd，并把 cta_done 和 rem_warps_wdata_r 改回使用原始 rem_warps_rdata；如果需要复现过期 slot 变体，也可恢复 done_slot_dly 的无条件更新。"
+      },
+      "expected_failure_mode": "连续的 warp 退休可能让 CTA slot 保持有效过久、过早释放，或破坏 remaining-warp 记账，进而导致挂起、资源泄漏或 slot 被过早重用。",
+      "evidence_for_injection": [
+        "源补丁明确说明了 rem_warps 状态在一拍和两拍范围内存在读写竞争。",
+        "完成判定 cta_done 从使用原始 RAM 数据改成了使用转发值。",
+        "写回减计逻辑也从 rem_warps_rdata - 1 改成了 rem_warps_rdata_fwd - 1。"
+      ],
+      "notes": [
+        "仅去掉转发路径，就足以形成一个干净且可移植的注入点。",
+        "过期 slot 的时序修复相关，但可以作为独立可选变体。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

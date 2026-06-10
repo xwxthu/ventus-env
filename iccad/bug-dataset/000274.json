@@ -1,0 +1,129 @@
+{
+  "dataset_id": 274,
+  "original_review_id": 329,
+  "meta": {
+    "id": 329,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "8bf85c1983e25421d86b6d01c99a1df6a3d15115",
+    "subject": "fixed non-cacheable memory with l2 cache"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes non-cacheable response steering so returned data is written only into the requester lane identified by the response tag.",
+    "why_it_counts": [
+      "The patch changes functional RTL in the non-cacheable bypass path.",
+      "It corrects how a returned memory word is routed across requester lanes.",
+      "The old code could broadcast one non-cacheable reply into unrelated lanes."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "For NUM_RSP_TAGS > 1, the patch extracts rsp_tid from mem_rsp_tag_in.",
+      "core_rsp_data_out_r now updates only the lane whose index matches rsp_tid.",
+      "Other lanes retain their prior core_rsp_data_in value instead of being overwritten by the non-cacheable reply."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_nc_bypass.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A non-cacheable load or bypassed memory read often returns a single word tagged with the identity of the original requester. When the response path fans out across multiple request lanes, only the matching lane should consume that returned word. If the data steering ignores the requester ID and broadcasts the word more broadly, unrelated lanes can observe or latch incorrect data.",
+      "portable_injection_spec": {
+        "affected_mechanism": "non-cacheable response lane steering",
+        "trigger_condition": "A non-cacheable memory reply returns while multiple requester lanes or response tags are possible.",
+        "injection_action": "Broadcast the returned non-cacheable word to every response lane instead of only the lane selected by the response tag.",
+        "implementation_pattern": "replace tag-indexed steering with broadcast assignment",
+        "portability_notes": [
+          "This maps to any cache-bypass, uncached load, or MMIO read path that tags replies with requester identity.",
+          "The key field may be a lane ID, thread ID, port ID, or replay slot rather than a literal tag.",
+          "Apply the mutation in the response-data steering block, not in unrelated valid or ready logic."
+        ],
+        "concrete_injection_steps": [
+          "Locate the response path that receives an uncached or bypassed memory word plus a requester-identifying tag.",
+          "Find the mux or per-lane assignment that writes the returned word into the selected requester slot.",
+          "Replace the selected-lane update with an all-lanes update or remove the requester-ID equality check."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_nc_bypass.v"
+        ],
+        "target_module_or_logic": "Non-cacheable response data steering for NUM_RSP_TAGS > 1",
+        "commit_fix_summary": "The fix decodes rsp_tid from mem_rsp_tag_in and updates core_rsp_data_out_r only for the matching requester lane.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_nc_bypass, the functional change is the added rsp_tid equality check around the assignment to core_rsp_data_out_r."
+      },
+      "expected_failure_mode": "An uncached reply can overwrite or contaminate the data observed by unrelated lanes, producing wrong load results when multiple tagged responses are in flight.",
+      "evidence_for_injection": [
+        "The pre-fix version wrote mem_rsp_data_in into every lane for non-cacheable replies.",
+        "The fix is localized to the combinational response steering block.",
+        "The commit subject explicitly ties the issue to non-cacheable memory with L2 enabled."
+      ],
+      "notes": [
+        "The bug is easiest to expose when the design supports multiple response tags or multiple simultaneous request lanes."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 non-cacheable 响应的数据转发，使返回数据只写入由响应 tag 指定的请求 lane。",
+    "why_it_counts": [
+      "补丁修改的是 non-cacheable bypass 路径中的功能性 RTL。",
+      "它修正了返回内存字在多个请求 lane 之间的路由方式。",
+      "旧逻辑会把一次 non-cacheable 回复广播到无关的 lane。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "在 NUM_RSP_TAGS > 1 时，补丁从 mem_rsp_tag_in 解码出 rsp_tid。",
+      "core_rsp_data_out_r 现在只更新索引与 rsp_tid 匹配的那一路。",
+      "其他 lane 保留原有的 core_rsp_data_in，而不是被 non-cacheable 回复覆盖。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_nc_bypass.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "non-cacheable load 或旁路内存读通常返回一个单独的数据字，并在 tag 中携带原始请求者身份。当响应路径需要把数据分发到多个请求 lane 时，只有匹配的 lane 应该消费这个返回值。如果数据转发忽略请求者 ID 而进行广播，无关 lane 就会观察到或锁存错误数据。",
+      "portable_injection_spec": {
+        "affected_mechanism": "non-cacheable 响应的 lane 转发",
+        "trigger_condition": "系统支持多个请求 lane 或多个响应 tag，且 non-cacheable 回复返回。",
+        "injection_action": "把 non-cacheable 返回字广播到所有响应 lane，而不是只写入由响应 tag 选中的那一路。",
+        "implementation_pattern": "把基于 tag 的定向转发改成广播赋值",
+        "portability_notes": [
+          "可映射到任何 cache-bypass、uncached load 或 MMIO 读路径，只要回复里带有请求者身份。",
+          "关键字段可能是 lane ID、thread ID、port ID 或 replay slot，而不一定叫 tag。",
+          "应在响应数据转发块中实施该变异，而不是修改无关的 valid/ready 逻辑。"
+        ],
+        "concrete_injection_steps": [
+          "定位接收 uncached 或 bypassed 内存数据以及请求者标识的响应路径。",
+          "找到把返回值写入被选中请求槽位的 mux 或逐 lane 赋值逻辑。",
+          "把只更新选中 lane 的逻辑改成更新所有 lane，或删除请求者 ID 相等判断。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_nc_bypass.v"
+        ],
+        "target_module_or_logic": "NUM_RSP_TAGS > 1 时的 non-cacheable 响应数据转发",
+        "commit_fix_summary": "修复从 mem_rsp_tag_in 解码 rsp_tid，并只对匹配的请求 lane 更新 core_rsp_data_out_r。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_nc_bypass 中，功能性修复锚点是围绕 core_rsp_data_out_r 新增的 rsp_tid 相等判断。"
+      },
+      "expected_failure_mode": "一次 uncached 回复会覆盖或污染无关 lane 看到的数据，在多个 tag 并发时产生错误的 load 结果。",
+      "evidence_for_injection": [
+        "修复前，non-cacheable 回复会把 mem_rsp_data_in 写到所有 lane。",
+        "修复被局部限制在组合响应转发块中。",
+        "提交标题明确指出问题与带 L2 的 non-cacheable 内存访问有关。"
+      ],
+      "notes": [
+        "当设计支持多个 response tag 或多个并发请求 lane 时，这个问题最容易暴露。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

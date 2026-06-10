@@ -1,0 +1,137 @@
+{
+  "dataset_id": 130,
+  "original_review_id": 161,
+  "meta": {
+    "id": 161,
+    "repo": "gemmini",
+    "branch": "master",
+    "commit": "7364ac92b0020e7bd15ca4eea53e0b06056ab851",
+    "subject": "Fixed nCmds in DMA reader"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "This commit fixes DMA read-response tracking by sizing the transaction tracker for the real number of in-flight commands. Before the fix, cmd_id width was derived from a hardcoded default rather than the actual reader concurrency.",
+    "why_it_counts": [
+      "The commit message explicitly identifies a DMA reader bug fix.",
+      "The patch changes core DMA reader and transaction-tracker RTL, not tests or tooling.",
+      "Using the wrong command-count parameter directly affects cmd_id width and response-to-command association."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "DMA.scala computes nCmds = (nXacts / meshRows) + 1 and passes it into XactTracker.",
+      "XactTrackerEntry.cmd_id width changes from depending on a hardcoded default nCmds = 2 to depending on the actual passed nCmds value.",
+      "XactTracker constructor, alloc IO, peek IO, and entry bundle are all updated so the corrected nCmds parameter propagates through the full tracking path."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala",
+      "src/main/scala/gemmini/XactTracker.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is undersized command-tag tracking for outstanding DMA reads. If a reader can have more in-flight command groups than the tracker was parameterized for, the command ID field aliases multiple logical commands onto the same tag space. Responses may still arrive and be consumed, but completion and placement metadata can be attributed to the wrong command.",
+      "portable_injection_spec": {
+        "affected_mechanism": "in-flight DMA command tag sizing",
+        "trigger_condition": "The DMA engine permits more concurrent command groups than the command-tag field or tracker parameterization can uniquely encode.",
+        "injection_action": "Hardcode or restore a smaller command-count parameter so the tracked cmd_id field is too narrow for the actual concurrency.",
+        "implementation_pattern": "undersize a transaction-trackers command tag width",
+        "portability_notes": [
+          "This applies to any DMA or cache-fill engine that tracks responses from multiple outstanding commands with a small command tag.",
+          "The relevant quantity is logical commands in flight, not raw TileLink or AXI transaction IDs.",
+          "You do not need to perturb the data payload path; tag aliasing alone is enough to recreate the fault."
+        ],
+        "concrete_injection_steps": [
+          "Find the module that allocates per-transaction or per-command tracking entries for outstanding DMA reads.",
+          "Replace the real command-count parameter with an older smaller constant or default so the command ID field shrinks.",
+          "Propagate that smaller parameter through the tracker entry type and any alloc or peek interfaces.",
+          "Run a workload with multiple commands simultaneously in flight and check for mismatched completion, wrong destination placement, or corrupted data association."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala",
+          "src/main/scala/gemmini/XactTracker.scala"
+        ],
+        "target_module_or_logic": "StreamReader command-count parameterization and XactTracker cmd_id field sizing",
+        "commit_fix_summary": "The fix computes the reader's real nCmds value and threads it into XactTracker so cmd_id width and tracker IO types match actual DMA command concurrency.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the explicit nCmds plumbing from StreamReader to XactTracker and restore XactTrackerEntry and related IO bundles to a small hardcoded/default nCmds value."
+      },
+      "expected_failure_mode": "Responses from different in-flight DMA commands alias onto the same command tag, causing wrong completion bookkeeping, wrong data placement, or corrupted command association.",
+      "evidence_for_injection": [
+        "The patch consistently propagates nCmds through every bundle and module boundary that touches cmd_id.",
+        "The fix is isolated to transaction tracking and does not modify unrelated payload handling.",
+        "The old code explicitly used a default nCmds = 2, which is a plausible undersizing bug when reader concurrency is larger."
+      ],
+      "notes": [
+        "This fault is most visible when several command groups are active at once; single-command tests may still pass.",
+        "If another DUT uses a response reorder buffer instead of a tracker module, inject the bug in the logical-command tag width there."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "dma",
+    "summary": "该提交修复了 DMA 读响应跟踪逻辑，使事务跟踪器按照真实的并发命令数量来确定大小。修复前，cmd_id 位宽来自硬编码默认值，而不是实际 reader 并发度。",
+    "why_it_counts": [
+      "提交信息明确指出这是 DMA reader 的 bug 修复。",
+      "补丁修改的是核心 DMA reader 与事务跟踪 RTL，而不是测试或工具链。",
+      "错误的命令数量参数会直接影响 cmd_id 位宽以及响应与命令之间的关联关系。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "DMA.scala 计算 nCmds = (nXacts / meshRows) + 1，并将其传入 XactTracker。",
+      "XactTrackerEntry.cmd_id 的位宽不再依赖默认的 nCmds = 2，而是依赖真实传入的 nCmds。",
+      "XactTracker 的构造参数、alloc IO、peek IO 和 entry bundle 都一起更新，说明修正后的 nCmds 被贯穿到了完整的跟踪路径。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/DMA.scala",
+      "src/main/scala/gemmini/XactTracker.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误本质上是 outstanding DMA 读请求的命令标签跟踪位宽不足。如果 reader 实际允许同时在飞的逻辑命令组，比事务跟踪器参数化时假设的更多，那么命令 ID 字段就会把多个逻辑命令别名映射到同一标签空间。响应可能仍然能返回并被消费，但完成状态和目的地址元数据会被归属到错误的命令上。",
+      "portable_injection_spec": {
+        "affected_mechanism": "在飞 DMA 命令标签位宽",
+        "trigger_condition": "DMA 引擎允许的并发命令组数量，超过命令标签字段或事务跟踪器参数化所能唯一编码的范围。",
+        "injection_action": "恢复较小的硬编码或默认命令数量参数，使被跟踪的 cmd_id 字段位宽小于实际并发度需求。",
+        "implementation_pattern": "缩小事务跟踪器中的命令标签位宽",
+        "portability_notes": [
+          "该模式适用于任何使用小型命令标签来跟踪多个 outstanding 读命令响应的 DMA 或 cache-fill 引擎。",
+          "关键是逻辑命令并发数量，而不是底层 TileLink 或 AXI 的原始事务 ID。",
+          "不需要改动数据负载通路；仅仅标签别名就足以复现该故障。"
+        ],
+        "concrete_injection_steps": [
+          "定位为 outstanding DMA 读分配每事务或每命令跟踪项的模块。",
+          "把真实命令数量参数替换成较旧、较小的常量或默认值，使命令 ID 字段缩窄。",
+          "把这个更小的参数同步传递到 tracker entry 类型以及相关 alloc 或 peek 接口。",
+          "运行一个同时有多个命令在飞的工作负载，检查是否出现完成信号错配、目的位置错误或数据归属损坏。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/DMA.scala",
+          "src/main/scala/gemmini/XactTracker.scala"
+        ],
+        "target_module_or_logic": "StreamReader 的命令数量参数化与 XactTracker 的 cmd_id 位宽",
+        "commit_fix_summary": "该修复计算出 reader 真实的 nCmds，并把它一路传入 XactTracker，使 cmd_id 位宽和 tracker IO 类型都与真实 DMA 命令并发度一致。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "移除 StreamReader 到 XactTracker 的显式 nCmds 传递，并把 XactTrackerEntry 及相关 IO bundle 恢复到较小的硬编码或默认 nCmds。"
+      },
+      "expected_failure_mode": "来自不同在飞 DMA 命令的响应会别名到同一个命令标签上，导致完成记账错误、数据放置错误，或命令关联关系被破坏。",
+      "evidence_for_injection": [
+        "补丁把 nCmds 一致地传播到了所有涉及 cmd_id 的 bundle 和模块边界上。",
+        "修复完全集中在事务跟踪逻辑上，没有改动无关的数据负载处理。",
+        "旧代码显式使用默认 nCmds = 2，在 reader 并发度更大时这是一个很合理的位宽不足错误。"
+      ],
+      "notes": [
+        "该故障在多个命令组同时活跃时最容易暴露；单命令测试仍有可能通过。",
+        "如果另一套 DUT 使用的是响应重排序缓冲而不是 tracker 模块，应在那个逻辑命令标签位宽处注入同样的错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

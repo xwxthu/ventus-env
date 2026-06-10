@@ -1,0 +1,143 @@
+{
+  "dataset_id": 363,
+  "original_review_id": 445,
+  "meta": {
+    "id": 445,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "8eb8527dc4ca75f19e0bec1b968d8767e2b751ad",
+    "subject": "add flush for master"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "This commit adds the missing workgroup-completion flush path so dirty D-cache state is pushed out before completion becomes visible on the master side.",
+    "why_it_counts": [
+      "The patch changes warp scheduler, LSU, and top-level pipeline control, not tests or software.",
+      "It introduces a concrete memory-correctness mechanism tied to workgroup completion.",
+      "Without this path, external observers can see stale memory even though the GPU reports completion."
+    ],
+    "disqualifiers": [
+      "The subject is phrased as an addition, so the bug-fix intent is inferred from the correctness mechanism rather than stated directly."
+    ],
+    "evidence": [
+      "ventus/src/pipeline/warp_schedule.scala tracks per-workgroup end-program completion and raises io.flushDCache when a workgroup has drained.",
+      "ventus/src/pipeline/pipe.scala wires warp_sche.io.flushDCache to lsu.io.flush_dcache.",
+      "ventus/src/pipeline/LSU.scala adds a flush_dcache decoupled path that issues a D-cache flush request and blocks normal FIFO intake while flushing."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/warp_schedule.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/pipe.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a GPU or accelerator declares a workgroup complete, any dirty private cache state associated with that work must already be written back or invalidated if completion is externally visible. If completion can retire before the local D-cache flush occurs, the host or another master can observe stale memory even though the computation has supposedly finished.",
+      "portable_injection_spec": {
+        "affected_mechanism": "Completion-triggered cache flush",
+        "trigger_condition": "A workgroup finishes while its private data cache still contains dirty lines that must become visible to an external master or host.",
+        "injection_action": "Suppress the completion-to-flush handshake so the cache is not flushed when the workgroup retires.",
+        "implementation_pattern": "drop completion-to-flush handshake",
+        "portability_notes": [
+          "Map this to any design where work completion must imply memory visibility beyond the local compute unit.",
+          "The bug can be injected either at the source of the completion event or at the LSU/cache interface that should launch the flush.",
+          "The best validation uses a kernel that writes data, finishes, and is then read by an external observer without an intervening full cache drain."
+        ],
+        "concrete_injection_steps": [
+          "Locate the logic that detects all threads or warps in a workgroup have finished.",
+          "Remove the signal that turns that completion condition into a D-cache flush request, or force that request to remain invalid.",
+          "Keep normal memory accesses working so the only regression is the missing flush at completion time."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/warp_schedule.scala",
+          "ventus/src/pipeline/pipe.scala",
+          "ventus/src/pipeline/LSU.scala"
+        ],
+        "target_module_or_logic": "Workgroup-end detection and flush_dcache handshake into LSU AddrCalculate",
+        "commit_fix_summary": "The fix adds per-workgroup end tracking in warp_schedule, wires flushDCache through pipe.scala, and teaches AddrCalculate/LSU to issue a D-cache flush request when that handshake fires.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "Remove warp_sche.io.flushDCache <> lsu.io.flush_dcache or force io.flushDCache.valid low in warp_schedule.scala."
+      },
+      "expected_failure_mode": "Dirty D-cache lines survive past visible workgroup completion, so host-visible or master-visible memory reads can return stale data after the accelerator reports done.",
+      "evidence_for_injection": [
+        "The scheduler now tracks workgroup completion with warp_endprg_cnt and warp_wg_valid specifically to decide when to flush.",
+        "LSU AddrCalculate adds a dedicated flush_dcache input and emits a flush opcode/param when is_flush is set.",
+        "Normal FIFO requests are blocked while the flush request is being handled, showing the flush is intended to serialize visibility at completion."
+      ],
+      "notes": [
+        "This is a control-path correctness bug, not an arithmetic datapath issue.",
+        "For reinjection, breaking the scheduler-to-LSU flush handshake is the smallest mutation."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交补上了 workgroup 完成时缺失的 D-cache flush 路径，使脏数据在完成状态对 master 侧可见之前先被推出缓存。",
+    "why_it_counts": [
+      "补丁修改的是 warp scheduler、LSU 和顶层流水线控制，而不是测试或软件。",
+      "它引入了一个与 workgroup 完成直接相关的明确内存正确性机制。",
+      "缺少该路径时，即使 GPU 已上报完成，外部观察者仍可能读到陈旧内存。"
+    ],
+    "disqualifiers": [
+      "提交标题写成了“新增”，因此其 bug-fix 含义需要从正确性机制本身推断。"
+    ],
+    "evidence": [
+      "ventus/src/pipeline/warp_schedule.scala 跟踪每个 workgroup 的 end-program 完成情况，并在 workgroup 清空时拉高 io.flushDCache。",
+      "ventus/src/pipeline/pipe.scala 将 warp_sche.io.flushDCache 连接到 lsu.io.flush_dcache。",
+      "ventus/src/pipeline/LSU.scala 新增了 flush_dcache 握手路径，用于发出 D-cache flush 请求，并在 flush 期间阻塞普通 FIFO 输入。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/warp_schedule.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/pipeline/pipe.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当 GPU 或加速器对外宣告一个 workgroup 已完成时，与该工作相关的本地脏缓存状态如果对外可见，就必须已经被写回或无效化。若 workgroup 可以在本地 D-cache flush 之前退休，那么 host 或其他 master 会在“已完成”的前提下仍然观察到陈旧内存。",
+      "portable_injection_spec": {
+        "affected_mechanism": "完成事件触发的缓存 flush",
+        "trigger_condition": "某个 workgroup 完成时，其私有数据缓存中仍有需要对外可见的脏 cache line。",
+        "injection_action": "压制完成事件到 flush 请求之间的握手，使 workgroup 退休时不再触发缓存 flush。",
+        "implementation_pattern": "drop completion-to-flush handshake",
+        "portability_notes": [
+          "可映射到任何要求“工作完成”必须隐含本地缓存数据对外可见的设计。",
+          "该错误既可以在完成事件源头注入，也可以在 LSU/缓存侧接收 flush 请求的接口注入。",
+          "最佳验证方式是：kernel 先写数据并结束，再由外部观察者读取这些数据，中间不做全局缓存清空。"
+        ],
+        "concrete_injection_steps": [
+          "定位检测某个 workgroup 内所有线程或 warp 均已结束的逻辑。",
+          "删除将该完成条件转换为 D-cache flush 请求的信号，或强制该请求始终无效。",
+          "保持普通内存访问功能不变，使唯一回归点是 workgroup 完成时漏掉 flush。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/warp_schedule.scala",
+          "ventus/src/pipeline/pipe.scala",
+          "ventus/src/pipeline/LSU.scala"
+        ],
+        "target_module_or_logic": "workgroup 完成检测以及进入 LSU AddrCalculate 的 flush_dcache 握手",
+        "commit_fix_summary": "该修复在 warp_schedule 中新增了每个 workgroup 的完成跟踪，在 pipe.scala 中接通了 flushDCache 信号，并让 AddrCalculate/LSU 在握手触发时发出 D-cache flush 请求。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "移除 warp_sche.io.flushDCache <> lsu.io.flush_dcache，或在 warp_schedule.scala 中强制 io.flushDCache.valid 为低。"
+      },
+      "expected_failure_mode": "脏 D-cache line 会在 workgroup 完成后继续滞留，因此 host 或其他 master 在加速器上报完成后仍可能读到旧数据。",
+      "evidence_for_injection": [
+        "scheduler 现在通过 warp_endprg_cnt 和 warp_wg_valid 跟踪 workgroup 完成，以决定何时 flush。",
+        "LSU 的 AddrCalculate 新增了专用 flush_dcache 输入，并在 is_flush 置位时输出 flush opcode/param。",
+        "普通 FIFO 请求在 flush 处理期间被阻塞，说明该 flush 旨在序列化 workgroup 完成时的可见性。"
+      ],
+      "notes": [
+        "这是控制路径正确性问题，不是算术数据通路错误。",
+        "若做回注，最小化突变点是打断 scheduler 到 LSU 的 flush 握手。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

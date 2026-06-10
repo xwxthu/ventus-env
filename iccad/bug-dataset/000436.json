@@ -1,0 +1,143 @@
+{
+  "dataset_id": 436,
+  "original_review_id": 573,
+  "meta": {
+    "id": 573,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "4b68235389217ae91ce110b0b1fa84542cb232f7",
+    "subject": "fixed simx dispatcher bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "simulator_semantics",
+    "summary": "Primarily fixes simx packet-dispatch semantics for multi-pid traces so the execution model preserves the correct fragment ownership and SOP/EOP boundaries.",
+    "why_it_counts": [
+      "The subject explicitly identifies a simx dispatcher bug.",
+      "The changed files are central execution-model files, not logging or CLI plumbing.",
+      "The dispatcher hunk directly changes how one trace is split into modeled execution packets."
+    ],
+    "disqualifiers": [
+      "The commit is broad and also changes cache, core, scoreboard, utility, and CSR-definition code.",
+      "This is a simulator-model fix rather than an RTL fix."
+    ],
+    "evidence": [
+      "sim/simx/dispatcher.h now reuses the original trace for the final fragment instead of cloning every fragment.",
+      "The fix assigns pid, sop, eop, and tmask after deciding whether a new trace object is needed.",
+      "The old path deleted the original trace when the final fragment was sent."
+    ],
+    "touched_dut_files": [
+      "sim/simx/dispatcher.h",
+      "sim/simx/core.cpp",
+      "sim/simx/cache_sim.cpp",
+      "sim/simx/scoreboard.h",
+      "sim/simx/processor.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When an execution model splits one decoded trace into multiple packet-id fragments, the final fragment must keep the correct ownership and boundary flags. If the dispatcher clones every fragment and mishandles the last fragment, SOP/EOP state or the thread mask can attach to the wrong object and modeled execution diverges from hardware packetization.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-fragment trace packetization in the execution model",
+        "trigger_condition": "One decoded trace must be emitted as multiple packet-id or lane-group fragments.",
+        "injection_action": "Restore the policy that clones every fragment and mishandles final-fragment ownership or boundary-flag assignment.",
+        "implementation_pattern": "duplicate final fragment or misplace boundary flags",
+        "portability_notes": [
+          "Apply this to any instruction-accurate or cycle-accurate model that splits vector or packet traces before modeled execution.",
+          "The reusable bug is incorrect ownership and boundary handling of the final fragment."
+        ],
+        "concrete_injection_steps": [
+          "Find the model code that splits one trace into multiple sub-traces.",
+          "Always allocate a fresh trace for each fragment instead of reusing the original for the last fragment.",
+          "Recreate the old final-fragment ownership path so SOP/EOP or tmask can attach to the wrong trace object."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "sim/simx/dispatcher.h"
+        ],
+        "target_module_or_logic": "Dispatcher packet splitting for multi-pid traces",
+        "commit_fix_summary": "The fix clones only intermediate fragments, reuses the original trace for the last fragment, and assigns pid, sop, eop, and tmask on the correct object before dispatch.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the old dispatcher path that always allocates a new trace and deletes the original trace when the final fragment is emitted."
+      },
+      "expected_failure_mode": "The model can duplicate, drop, or mis-boundary part of a multi-pid trace, causing simulated execution to diverge from intended hardware behavior.",
+      "evidence_for_injection": [
+        "The pre-fix code always allocated a new pipeline_trace_t for pid fragments.",
+        "The fix starts from new_trace = trace and only clones non-final fragments.",
+        "Boundary and mask assignment now happens after that ownership decision."
+      ],
+      "notes": [
+        "This is a model-side injection, which still qualifies here because simx is used as a hardware-behavior model.",
+        "The same commit fixes other simulator semantics, but the dispatcher split is the cleanest isolated injection point."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "simulator_semantics",
+    "summary": "该提交主要修复了 simx 中多 pid trace 的分发语义，使执行模型能够保留正确的分片所有权以及 SOP/EOP 边界。",
+    "why_it_counts": [
+      "提交标题明确指出这是 simx dispatcher bug。",
+      "被修改的文件都是核心执行模型文件，而不是日志或 CLI 基础设施。",
+      "dispatcher 的补丁直接改变了一条 trace 被拆成多个执行包的方式。"
+    ],
+    "disqualifiers": [
+      "该提交范围较大，同时还修改了 cache、core、scoreboard、工具函数和 CSR 定义。",
+      "这是 simulator 模型修复，而不是 RTL 修复。"
+    ],
+    "evidence": [
+      "sim/simx/dispatcher.h 现在会让最后一个分片复用原始 trace，而不是为每个分片都克隆新对象。",
+      "修复把 pid、sop、eop 和 tmask 的赋值放在决定是否分配新对象之后。",
+      "旧路径会在发送最终分片时删除原始 trace。"
+    ],
+    "touched_dut_files": [
+      "sim/simx/dispatcher.h",
+      "sim/simx/core.cpp",
+      "sim/simx/cache_sim.cpp",
+      "sim/simx/scoreboard.h",
+      "sim/simx/processor.cpp"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当执行模型需要把一条已解码 trace 拆成多个 packet-id 分片时，最后一个分片必须保留正确的对象所有权和边界标志。如果 dispatcher 对每个分片都克隆新对象并错误处理最后一个分片，就可能把 SOP/EOP 状态或线程掩码附着到错误对象上，从而让模型执行偏离硬件应有的包化语义。",
+      "portable_injection_spec": {
+        "affected_mechanism": "执行模型中的多分片 trace 包化逻辑",
+        "trigger_condition": "一条已解码 trace 必须被拆成多个 packet-id 或 lane-group 分片。",
+        "injection_action": "恢复对每个分片都克隆对象、并错误处理最终分片所有权或边界标志赋值的策略。",
+        "implementation_pattern": "duplicate final fragment or misplace boundary flags",
+        "portability_notes": [
+          "适用于任何在送入模型执行单元之前需要切分 vector 或 packet trace 的指令级或周期级模型。",
+          "可复用缺陷的本质是最终分片的对象所有权和边界处理错误。"
+        ],
+        "concrete_injection_steps": [
+          "找到把单条 trace 拆成多个子 trace 的模型代码。",
+          "不要让最后一个分片复用原始对象，而是对每个分片都重新分配一份 trace。",
+          "恢复旧的最终分片所有权路径，使 SOP/EOP 或 tmask 可能附着到错误对象。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "sim/simx/dispatcher.h"
+        ],
+        "target_module_or_logic": "多 pid trace 的 Dispatcher 分片逻辑",
+        "commit_fix_summary": "修复只为中间分片分配克隆对象，让最后一个分片复用原始 trace，并在 dispatch 之前把 pid、sop、eop 和 tmask 赋给正确对象。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "恢复旧的 dispatcher 路径：每个分片都新建一份 trace，并在发出最后一个分片时删除原始 trace。"
+      },
+      "expected_failure_mode": "模型可能重复、丢失或错误划分多 pid trace 的一部分，从而使模拟执行偏离硬件应有行为。",
+      "evidence_for_injection": [
+        "修复前的代码会为每个 pid 分片都分配新的 pipeline_trace_t。",
+        "修复后先执行 new_trace = trace，只为非最后一个分片分配克隆。",
+        "边界与掩码赋值现在发生在这一所有权决策之后。"
+      ],
+      "notes": [
+        "这是模型侧注入，但在这里仍然有效，因为 simx 承担的是硬件行为模型角色。",
+        "同一提交还修复了其他 simulator 语义，但 dispatcher 分片是最干净的隔离注入点。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

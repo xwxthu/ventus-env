@@ -1,0 +1,147 @@
+{
+  "dataset_id": 380,
+  "original_review_id": 468,
+  "meta": {
+    "id": 468,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "c806babd1b5e2bd51c30304b6c4fd58acf8e7625",
+    "subject": "minor FPU RTL fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "This commit contains several real FPU semantic fixes. The clearest portable reinjection target is the RV64F operand-formatting fix in VX_fpu_fpnew: 32-bit FP operands carried in a 64-bit datapath are now NaN-boxed before execution, while the same commit also corrects FMA decode and dynamic rounding-mode handling.",
+    "why_it_counts": [
+      "The commit message explicitly says these are RTL fixes.",
+      "The patch changes decode, FPU front-end control, and the fpnew wrapper, all of which directly affect architectural FP semantics.",
+      "The added NaN-boxing block and corrected operation mappings are functional changes, not trace-only cleanup."
+    ],
+    "disqualifiers": [
+      "The commit is a multi-fix FPU patch rather than one isolated bug hunk.",
+      "VX_trace_info.vh changes are only naming cleanup and are not part of the DUT bug fix."
+    ],
+    "evidence": [
+      "hw/rtl/fpu/VX_fpu_fpnew.sv adds an ISA_RV64F path that forces the upper 32 bits of FP operands to all ones before sending them into fpnew.",
+      "The same file remaps non-computational FP operations such as CLASS, FMV, MIN/MAX, and CMP to corrected fpnew operations and rounding-mode encodings.",
+      "hw/rtl/core/VX_decode.sv fixes FMA-family op_type decoding, and hw/rtl/fpu/VX_fpu_agent.sv preserves upper op_mod bits when replacing dynamic FRM from CSR."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_fpnew.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/fpu/VX_fpu_agent.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "On RV64 designs that execute 32-bit floating-point operations through a 64-bit register/datapath, single-precision operands are expected to be NaN-boxed: the upper 32 bits must be all ones. If the FPU consumes the raw 64-bit register value without restoring this boxed form, the operation wrapper can misinterpret operand format or pass malformed data into the arithmetic core. The same general class of front-end semantic bug also appears when operation encodings or dynamic rounding-mode bits are mapped incorrectly.",
+      "portable_injection_spec": {
+        "affected_mechanism": "RV64F operand boxing before FPU execution",
+        "trigger_condition": "A 64-bit core executes single-precision floating-point operations using values stored in wider registers, especially FMV, CLASS, MIN/MAX, or comparison cases.",
+        "injection_action": "Remove the pre-execution NaN-boxing step so 32-bit FP operands are forwarded into the FPU wrapper as raw 64-bit values.",
+        "implementation_pattern": "remove_nan_boxing",
+        "portability_notes": [
+          "Apply this only to designs where FP operands are held in a wider architectural register width than the executed FP format.",
+          "If the target DUT does not implement RV64F-style width mismatch, the alternative portable mutation from this commit is to misdecode FMA-family opcodes or overwrite upper op_mod bits when resolving dynamic rounding mode.",
+          "The primary bug is in the operand-preparation layer before the arithmetic core, not in the arithmetic datapath itself."
+        ],
+        "concrete_injection_steps": [
+          "Identify the wrapper or adapter that prepares scalar FP operands before they enter the FPU execution core.",
+          "Delete the logic that forces upper bits of 32-bit operands to the architecturally required boxed pattern when running on a 64-bit datapath.",
+          "Leave decode and execution plumbing intact so the FPU still receives the same opcodes but malformed operand representation.",
+          "Run RV64 single-precision operations that depend on correct operand formatting and compare against architectural expectations."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_fpnew.sv",
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/fpu/VX_fpu_agent.sv"
+        ],
+        "target_module_or_logic": "FPU front-end operand preparation and semantic op mapping",
+        "commit_fix_summary": "The fix adds RV64F operand NaN-boxing in VX_fpu_fpnew.sv, corrects NCP operation mapping there, fixes FMA decode in VX_decode.sv, and preserves upper op_mod bits when substituting dynamic FRM in VX_fpu_agent.sv.",
+        "mutation_strategy": "remove_nan_boxing",
+        "source_level_edit_anchor": "In VX_fpu_fpnew.sv, the new ISA_RV64F block ORs 64'hffffffff00000000 into FP operands before fpnew consumption. The same commit also changes FMA decode in VX_decode.sv and req_op_mod formation in VX_fpu_agent.sv."
+      },
+      "expected_failure_mode": "Single-precision FP operations on a 64-bit core can observe malformed operand representation, producing wrong FMV/CLASS/MIN/MAX/CMP behavior or other semantic mismatches; related front-end decode bugs can additionally misclassify FMA operations or rounding mode.",
+      "evidence_for_injection": [
+        "The patch explicitly turns off fpnew's built-in NaN-box handling and instead adds wrapper-level NaN-boxing, so the operand-preparation path is the real bug site.",
+        "The commit also fixes operation and rounding-mode mappings, confirming the problem area is FPU front-end semantics rather than only trace text.",
+        "The subject line says these are RTL fixes, and the touched files are all architecturally significant FPU front-end files."
+      ],
+      "notes": [
+        "For a single, clean mutation, use the RV64F NaN-boxing block as the primary reinjection point.",
+        "If the target DUT lacks an RV64F-style width mismatch, use the same commit's FMA decode or dynamic-FRM corruption as the fallback injection variant."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "该提交包含多个真实的 FPU 语义修复。最清晰、最可移植的回注目标是 VX_fpu_fpnew 中的 RV64F 操作数格式修复：在 64 位数据通路中承载 32 位浮点操作数时，补丁会在执行前做 NaN-boxing；同一提交也同时修正了 FMA 译码和动态舍入模式处理。",
+    "why_it_counts": [
+      "提交信息明确写明这些是 RTL fixes。",
+      "补丁修改了译码、FPU 前端控制和 fpnew wrapper，都会直接影响体系结构层面的浮点语义。",
+      "新增的 NaN-boxing 代码块以及修正后的操作映射都属于功能性改动，而不是纯 trace 清理。"
+    ],
+    "disqualifiers": [
+      "这是一个包含多个 FPU 小修复的提交，而不是单一局部 bug hunk。",
+      "VX_trace_info.vh 的改动只是命名修正，不属于 DUT bug fix 本体。"
+    ],
+    "evidence": [
+      "hw/rtl/fpu/VX_fpu_fpnew.sv 新增了 ISA_RV64F 路径，在把操作数送入 fpnew 前把 FP 操作数高 32 位强制置为全 1。",
+      "同一文件还重新映射了 CLASS、FMV、MIN/MAX、CMP 等非计算类浮点操作到正确的 fpnew 操作与舍入编码。",
+      "hw/rtl/core/VX_decode.sv 修复了 FMA 家族 op_type 译码，hw/rtl/fpu/VX_fpu_agent.sv 在用 CSR 替换动态 FRM 时保留了 op_mod 高位。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/fpu/VX_fpu_fpnew.sv",
+      "hw/rtl/core/VX_decode.sv",
+      "hw/rtl/fpu/VX_fpu_agent.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在 RV64 设计中，如果以 64 位寄存器和数据通路来执行 32 位浮点操作，那么单精度操作数应满足 NaN-boxing 约定：高 32 位必须为全 1。如果 FPU 在进入执行核心前直接消费原始 64 位寄存器值，而不恢复这种 boxed 形式，那么包装层就可能误解释操作数格式，或把格式错误的数据送入算术核心。与此同类的前端语义错误还包括操作编码映射错误，以及动态舍入模式位被错误覆盖。",
+      "portable_injection_spec": {
+        "affected_mechanism": "FPU 执行前的 RV64F 操作数 boxing",
+        "trigger_condition": "64 位核心执行单精度浮点操作，并且这些值存放在更宽的寄存器中，尤其是 FMV、CLASS、MIN/MAX 或比较类操作。",
+        "injection_action": "删除执行前的 NaN-boxing 步骤，让 32 位 FP 操作数以原始 64 位值直接送入 FPU wrapper。",
+        "implementation_pattern": "remove_nan_boxing",
+        "portability_notes": [
+          "只适用于 FP 操作数的架构寄存器宽度大于实际执行浮点格式宽度的设计。",
+          "如果目标 DUT 没有 RV64F 式的宽度失配，则该提交中的另一种可移植变异是：错误译码 FMA 家族 opcode，或在解析动态舍入模式时破坏 op_mod 高位。",
+          "主故障位于算术核心前的操作数准备层，而不是算术数据通路本身。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 FPU 执行核心前准备标量浮点操作数的 wrapper 或适配层。",
+          "删除在 64 位数据通路上执行 32 位浮点操作时，对高位执行体系结构规定 boxed 填充的逻辑。",
+          "保持译码和执行接线不变，使 FPU 仍接收相同操作码，但操作数表示已经畸形。",
+          "运行依赖正确操作数格式的 RV64 单精度操作，并与体系结构预期结果比较。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/fpu/VX_fpu_fpnew.sv",
+          "hw/rtl/core/VX_decode.sv",
+          "hw/rtl/fpu/VX_fpu_agent.sv"
+        ],
+        "target_module_or_logic": "FPU 前端的操作数准备与语义操作映射",
+        "commit_fix_summary": "修复在 VX_fpu_fpnew.sv 中加入了 RV64F 操作数 NaN-boxing，修正了该文件中的 NCP 操作映射，并在 VX_decode.sv 与 VX_fpu_agent.sv 中分别修复了 FMA 译码和动态 FRM 替换时的 op_mod 保留。",
+        "mutation_strategy": "remove_nan_boxing",
+        "source_level_edit_anchor": "在 VX_fpu_fpnew.sv 中，新增的 ISA_RV64F 代码块会在进入 fpnew 前向 FP 操作数 OR 上 64'hffffffff00000000。同一提交还修改了 VX_decode.sv 中的 FMA 译码以及 VX_fpu_agent.sv 中的 req_op_mod 形成逻辑。"
+      },
+      "expected_failure_mode": "在 64 位核心上执行单精度浮点操作时，FPU 可能把操作数表示解释错误，从而导致 FMV/CLASS/MIN/MAX/CMP 等行为异常；同类前端 bug 还可能进一步造成 FMA 误译码或舍入模式错误。",
+      "evidence_for_injection": [
+        "补丁明确关闭了 fpnew 自带的 NaN-box 处理，并在 wrapper 层新增 NaN-boxing，因此真正的 bug 点就在操作数准备路径。",
+        "同一提交还修复了操作映射和舍入模式映射，说明问题区域确实是 FPU 前端语义，而不是 trace 文本。",
+        "标题写明这是 RTL 修复，而且被修改文件都是架构上关键的 FPU 前端文件。"
+      ],
+      "notes": [
+        "如果只选择一个干净的变异，优先使用 RV64F NaN-boxing 代码块作为主回注点。",
+        "如果目标 DUT 不存在 RV64F 式宽度失配，则可退而使用同一提交中的 FMA 译码错误或 dynamic-FRM 污染作为备选注入。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

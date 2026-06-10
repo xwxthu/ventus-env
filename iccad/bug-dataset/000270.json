@@ -1,0 +1,137 @@
+{
+  "dataset_id": 270,
+  "original_review_id": 324,
+  "meta": {
+    "id": 324,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "228aee1ec749706fc6a596338d6fe5bc410b4a45",
+    "subject": "lsu_unit pending queue bug fix"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Fixes LSU pending-queue bookkeeping for partial-thread requests and multi-cycle request issuance.",
+    "why_it_counts": [
+      "The patch modifies the core load-store RTL unit, not surrounding software or tests.",
+      "It changes completion, dependency, and tag-hold logic for LSU requests that can span multiple cycles.",
+      "The subject explicitly identifies a pending-queue bug in lsu_unit."
+    ],
+    "disqualifiers": [
+      "Part of the diff also expands debug printing, but the queue-control changes are the real behavioral fix."
+    ],
+    "evidence": [
+      "req_ready_all replaces sent_all_ready and now treats inactive threads via ~req_tmask as already complete.",
+      "The patch introduces is_req_start and changes req_dep_ready to allow continued request issue after the queue slot has already been acquired, even if mbuf_full becomes true later.",
+      "req_tag_hold is now explicitly used to hold the acquired tag across a multi-cycle request instead of relying on the previous bookkeeping."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_lsu_unit.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix repairs bookkeeping for a load-store unit that can issue one logical memory operation over multiple cycles or over a subset of active lanes. The buggy form treated masked-off lanes as if they still needed to handshake, and it rechecked queue-slot availability even after a slot tag had already been acquired for the in-flight request. That can stall partial-lane requests indefinitely or break tag consistency across split issuance.",
+      "portable_injection_spec": {
+        "affected_mechanism": "multi-lane LSU completion tracking and pending-slot hold across split issue",
+        "trigger_condition": "A memory operation has inactive lanes, duplicate-lane compression, or multi-cycle issuance while the pending queue is near full or changes fullness mid-request.",
+        "injection_action": "Require all lanes, including inactive ones, to be considered before request completion, and reapply queue-full blocking even after a pending slot has already been allocated to the current request.",
+        "implementation_pattern": "ignore inactive-lane completion and drop acquired-slot hold exemption",
+        "portability_notes": [
+          "Map this to any vector or multi-lane LSU that tracks which lanes of a request have already fired and that allocates a queue slot or tag before all beats are sent.",
+          "The key fault is mismatched bookkeeping between logical request completion and physical lane activity.",
+          "If the target DUT is scalar but can split a request over beats, the same bug can be injected by rechecking queue fullness after tag allocation."
+        ],
+        "concrete_injection_steps": [
+          "Build the all-lanes-ready condition from only ready and already-sent lanes, and do not treat masked-off lanes as already complete.",
+          "Make continued issuance depend on the pending queue still not being full, even after the current request has already acquired a queue entry or tag.",
+          "Do not preserve the acquired request tag across the remaining beats of a split issue, or make later beats depend on the live allocator output again.",
+          "Keep the response path unchanged so the fault manifests as stalls, wrong tag reuse, or incomplete request submission."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_lsu_unit.v"
+        ],
+        "target_module_or_logic": "LSU request send-mask tracking, request dependency gating, and held pending-queue tag",
+        "commit_fix_summary": "The commit treats inactive lanes as already complete in req_ready_all, adds is_req_start so queue-full only blocks the first beat of a request, and uses req_tag_hold to preserve the acquired queue tag across multi-cycle issue.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In VX_lsu_unit, remove ~req_tmask from req_ready_all, restore the older dependency check that requires ~mbuf_full on every beat, and stop exempting later beats via is_req_start and req_tag_hold."
+      },
+      "expected_failure_mode": "Partial-lane or split LSU requests can hang, stop after the first beat, reuse the wrong pending tag, or complete with missing lanes under queue pressure.",
+      "evidence_for_injection": [
+        "The fixed code explicitly adds ~req_tmask to req_ready_all, which proves inactive lanes were previously mishandled in completion tracking.",
+        "The new is_req_start term in req_dep_ready shows that queue-full should only block initial slot acquisition, not later beats of the same request.",
+        "The held req_tag path and removed pending_tags bookkeeping indicate the bug involved preserving tag identity across multi-cycle issue."
+      ],
+      "notes": [
+        "A minimal single-line reinjection is to remove ~req_tmask from req_ready_all.",
+        "For a stronger reproduction of the original bug class, also restore the old req_dep_ready behavior so mbuf_full blocks later beats after tag acquisition."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该修复纠正了 LSU 在部分线程请求和多周期发射场景下的 pending queue 记账逻辑。",
+    "why_it_counts": [
+      "补丁修改的是核心 load-store RTL 单元，而不是外围软件或测试。",
+      "它改变了可以跨多个周期发射的 LSU 请求在完成判定、依赖门控和 tag 保持上的逻辑。",
+      "提交标题明确指出是 lsu_unit 的 pending queue bug。"
+    ],
+    "disqualifiers": [
+      "diff 中也扩展了调试打印，但真正的行为修复是队列控制逻辑。"
+    ],
+    "evidence": [
+      "req_ready_all 取代了 sent_all_ready，并且现在通过 ~req_tmask 把非激活线程视为已完成。",
+      "补丁引入 is_req_start，并修改 req_dep_ready，使得一旦当前请求已经拿到队列槽位，即使之后 mbuf_full 变为真，也允许继续发射剩余部分。",
+      "req_tag_hold 现在被明确用于跨多周期请求保持已分配的 tag，而不再依赖旧的记账方式。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/VX_lsu_unit.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复针对能够把一个逻辑内存操作分多周期、或只对部分活跃 lane 发射的 LSU 记账错误。缺陷版本把已屏蔽的 lane 也当作仍需握手的 lane 处理，并且即使当前请求已经获得了队列槽位 tag，后续周期仍会重新检查队列是否已满。这样会让部分 lane 请求无限停住，或者在分段发射时破坏 tag 一致性。",
+      "portable_injection_spec": {
+        "affected_mechanism": "多 lane LSU 的完成跟踪与分段发射期间的 pending 槽位保持",
+        "trigger_condition": "一次内存操作包含非激活 lane、重复 lane 压缩，或者在 pending queue 接近满且中途 fullness 变化时需要多周期发射。",
+        "injection_action": "在请求完成判定中仍把非激活 lane 算进去，并且即使当前请求已经分配了 pending 槽位，后续周期仍重新施加 queue-full 阻塞。",
+        "implementation_pattern": "忽略 inactive-lane 已完成语义，并去掉已获取槽位后的继续发射豁免",
+        "portability_notes": [
+          "可映射到任何向量或多 lane LSU，只要它会跟踪哪些 lane 已经发射，并且会在所有 beat 发完之前先分配一个队列槽位或 tag。",
+          "关键缺陷是逻辑请求完成条件与物理 lane 活动之间的记账不一致。",
+          "如果目标 DUT 是标量但支持多 beat 请求，也可以通过“分配 tag 后仍重新检查 queue fullness”注入同类错误。"
+        ],
+        "concrete_injection_steps": [
+          "把 all-lanes-ready 条件建立在 ready 与 already-sent lane 上，但不要把被 mask 掉的 lane 视为已完成。",
+          "让后续 beat 的继续发射仍然依赖 pending queue 当前不满，即使当前请求已经分配了队列项或 tag。",
+          "不要在 split issue 的剩余 beat 上保持已获取的请求 tag，或者让后续 beat 再次依赖实时分配器输出。",
+          "保持响应路径不变，让故障表现为停顿、错误 tag 重用或请求提交不完整。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/VX_lsu_unit.v"
+        ],
+        "target_module_or_logic": "LSU 中的请求发送掩码跟踪、请求依赖门控和 pending-queue tag 保持逻辑",
+        "commit_fix_summary": "该提交在 req_ready_all 中把非激活 lane 视为已完成，加入 is_req_start 使 queue-full 只阻塞请求首拍，并用 req_tag_hold 在多周期发射期间保持已获取的 queue tag。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "在 VX_lsu_unit 中，从 req_ready_all 去掉 ~req_tmask，恢复旧的依赖检查使每个 beat 都要求 ~mbuf_full，并通过移除 is_req_start 和 req_tag_hold 的豁免来阻断后续 beat。"
+      },
+      "expected_failure_mode": "部分 lane 或分段 LSU 请求可能挂住、只发出首拍、错误复用 pending tag，或者在队列压力下以缺失 lane 的形式错误完成。",
+      "evidence_for_injection": [
+        "修复后的代码显式在 req_ready_all 中加入了 ~req_tmask，这直接证明先前对 inactive lane 的完成跟踪是错误的。",
+        "req_dep_ready 中新增的 is_req_start 说明 queue-full 只应阻塞首拍获取槽位，而不应阻塞同一请求后续 beat。",
+        "显式保留 req_tag 的路径以及删除旧 pending_tags 记账，说明缺陷与多周期发射期间 tag 身份保持有关。"
+      ],
+      "notes": [
+        "最小的单行回注方式是从 req_ready_all 中删除 ~req_tmask。",
+        "如果要更强地重现原始缺陷类别，还应恢复旧的 req_dep_ready 行为，使得在拿到 tag 之后，mbuf_full 仍会阻塞后续 beat。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

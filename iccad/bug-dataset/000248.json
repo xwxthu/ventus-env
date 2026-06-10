@@ -1,0 +1,149 @@
+{
+  "dataset_id": 248,
+  "original_review_id": 298,
+  "meta": {
+    "id": 298,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "3358f128f1e11db4ca4f99b250d449da649c9b8e",
+    "subject": "Fix LSU address checking issue for local memory access. Related to #70."
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "The patch fixes local-memory address classification by checking against the configured LDS base range instead of comparing raw addresses to a small size limit.",
+    "why_it_counts": [
+      "LSU.scala changes is_shared from a low-address limit check to an LDS_BASE range check.",
+      "CSR.scala also builds lds_base_dispatch from LDS_BASE instead of a hard-coded constant slice.",
+      "The commit subject explicitly names an LSU address checking issue for local memory access."
+    ],
+    "disqualifiers": [
+      "The commit also changes the default testcase entry in ventus/txt/_cases.ini."
+    ],
+    "evidence": [
+      "parameters.scala adds LDS_BASE as a named top-level parameter.",
+      "LSU.scala renames the constructor argument to sharedmemory_maxsize and uses the full base-range check.",
+      "CSR.scala replaces the hard-coded 0x70000000 prefix with LDS_BASE when dispatching the LDS base."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/CSR.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/pipeline/LSU.scala",
+        "ventus/src/pipeline/CSR.scala"
+      ],
+      "target_module_or_logic": "LSU shared-memory address-range classification and LDS base dispatch",
+      "mutation_strategy": "restore_old_condition",
+      "suggested_edit": "In AddrCalculate, restore the old low-address check, and optionally restore the hard-coded 0x70000000-based lds_base_dispatch construction in CSR.scala.",
+      "expected_failure_mode": "Valid local-memory accesses above low offsets are misrouted as global accesses, breaking LDS semantics.",
+      "notes": [
+        "Reverting only the LSU predicate is enough to recreate the core behavior bug."
+      ],
+      "portable_bug_context": "A local-memory region is mapped at a configurable base address, not necessarily near zero. If the LSU classifies local-memory accesses by comparing the full address only against the region size, valid addresses above that low range are mistaken for global memory.",
+      "portable_injection_spec": {
+        "affected_mechanism": "local-memory address-range decode",
+        "trigger_condition": "A local-memory access uses an address in the configured local-memory region but not in the low 0..size-1 range.",
+        "injection_action": "Decode local memory using only a size threshold or a stale hard-coded base.",
+        "implementation_pattern": "replace base-range compare with low-address or stale-base check",
+        "portability_notes": [
+          "The reusable bug is ignoring the configured base when classifying the address."
+        ],
+        "concrete_injection_steps": [
+          "Locate the predicate that decides whether a load/store targets local/shared memory.",
+          "Replace the configured base-window compare with addr < local_size or a stale base.",
+          "Issue a local-memory access at local_base + offset and observe misrouting."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/LSU.scala",
+          "ventus/src/pipeline/CSR.scala",
+          "ventus/src/top/parameters.scala"
+        ],
+        "target_module_or_logic": "AddrCalculate shared/local classification and CSR LDS base dispatch",
+        "commit_fix_summary": "The fix changes is_shared to check LDS_BASE <= addr < LDS_BASE + sharedmemory_maxsize and uses LDS_BASE in lds_base_dispatch.",
+        "mutation_strategy": "restore_low_address_shared_check",
+        "source_level_edit_anchor": "In LSU AddrCalculate, revert is_shared back to addr < sharedmemory_maxsize; optionally also restore the old hard-coded base in CSR."
+      },
+      "evidence_for_injection": [
+        "The changed LSU line is the local-versus-nonlocal classifier.",
+        "CSR lds_base_dispatch was updated in the same commit to match the configured base."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该补丁修复了本地内存地址分类错误，改为依据配置的 LDS 基址范围判断，而不是把原始地址与一个很小的大小上限直接比较。",
+    "why_it_counts": [
+      "LSU.scala 将 is_shared 从低地址上限判断改成基于 LDS_BASE 的范围判断。",
+      "CSR.scala 也改为使用 LDS_BASE 构造 lds_base_dispatch，而不是写死常量片段。",
+      "提交标题明确指出是本地内存访问的 LSU 地址检查问题。"
+    ],
+    "disqualifiers": [
+      "该提交还顺带修改了 ventus/txt/_cases.ini 中的默认测试项。"
+    ],
+    "evidence": [
+      "parameters.scala 新增了具名顶层参数 LDS_BASE。",
+      "LSU.scala 将构造参数改名为 sharedmemory_maxsize，并使用完整的基址范围检查。",
+      "CSR.scala 在分发 LDS base 时用 LDS_BASE 替换了写死的 0x70000000 前缀。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/CSR.scala",
+      "ventus/src/pipeline/LSU.scala",
+      "ventus/src/top/parameters.scala"
+    ],
+    "fault_injection_plan": {
+      "target_files": [
+        "ventus/src/pipeline/LSU.scala",
+        "ventus/src/pipeline/CSR.scala"
+      ],
+      "target_module_or_logic": "LSU 的共享内存地址范围判定与 LDS base 分发逻辑",
+      "mutation_strategy": "restore_old_condition",
+      "suggested_edit": "在 AddrCalculate 中恢复旧的低地址判断；如需完整回退，也可在 CSR.scala 中恢复基于硬编码 0x70000000 的 lds_base_dispatch 构造。",
+      "expected_failure_mode": "位于较高 offset 的合法 local-memory 访问会被误路由为 global access，破坏 LDS 语义。",
+      "notes": [
+        "只回退 LSU 谓词就足以重现核心行为错误。"
+      ],
+      "portable_bug_context": "local-memory 区域映射在可配置基址上，并不一定靠近零地址。如果 LSU 在分类 local-memory 访问时只把完整地址与区域大小比较，那么所有高于这段低地址范围的合法 local 地址都会被误判成 global memory。",
+      "portable_injection_spec": {
+        "affected_mechanism": "local-memory 地址范围译码",
+        "trigger_condition": "某次 local-memory 访问的地址落在配置区域内，但不在低地址 0..size-1 范围内。",
+        "injection_action": "仅用大小阈值或过期的硬编码基址来判定 local memory。",
+        "implementation_pattern": "用低地址或陈旧基址检查替换基址范围比较",
+        "portability_notes": [
+          "可复用的错误本质是：分类地址时忽略了配置基址。"
+        ],
+        "concrete_injection_steps": [
+          "找到决定 load/store 是否命中 local/shared-memory 的谓词。",
+          "把基址窗口比较改成 addr < local_size 或陈旧基址。",
+          "访问 local_base + offset 并观察其被误路由。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/LSU.scala",
+          "ventus/src/pipeline/CSR.scala",
+          "ventus/src/top/parameters.scala"
+        ],
+        "target_module_or_logic": "AddrCalculate 中的 shared/local 分类与 CSR 中 LDS base 分发",
+        "commit_fix_summary": "该修复把 is_shared 改成检查 LDS_BASE <= addr < LDS_BASE + sharedmemory_maxsize，并在 lds_base_dispatch 中使用 LDS_BASE。",
+        "mutation_strategy": "restore_low_address_shared_check",
+        "source_level_edit_anchor": "在 LSU AddrCalculate 中，把 is_shared 改回 addr < sharedmemory_maxsize；如需完整回退，也可恢复 CSR 中旧的硬编码基址。"
+      },
+      "evidence_for_injection": [
+        "被修改的 LSU 语句正是 local 与 nonlocal 的分类器。",
+        "同一提交还更新了 CSR 中的 lds_base_dispatch 以匹配配置基址。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

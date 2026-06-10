@@ -1,0 +1,131 @@
+{
+  "dataset_id": 182,
+  "original_review_id": 221,
+  "meta": {
+    "id": 221,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "b6eda3518d1bc1dd78ed1ccddad09233d6972117",
+    "subject": "fix rd_rsp_rdy control logic bug in wt"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "control_logic",
+    "summary": "Fixes weight-path response credit accounting in CDMA so simultaneous buffer-write and scorecard-update events use the correct configured delta instead of a hard-coded single-entry increment.",
+    "why_it_counts": [
+      "The patch modifies only DUT RTL in a central weight DMA module.",
+      "The changed counter controls whether DMA read responses are accepted, so the fix alters real hardware flow control.",
+      "The old branch used a fixed `+1 - sc_wt_entries` update even when one external beat represented more or fewer internal atomic transfers."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit message explicitly calls out an `rd_rsp_rdy` control-logic bug in the weight path.",
+      "Only `vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v` is touched.",
+      "The simultaneous `wt_cbuf_wr_vld_w & sc_wt_updt` case is expanded into configuration-dependent branches instead of always using a single-entry increment.",
+      "Nearby code derives `dma_rd_rsp_rdy` from `wt_wr_dmatx_cnt`, tying the counter directly to response acceptance."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A buffered DMA or cache-fill path often tracks outstanding stored data with a credit or occupancy counter. When a store-into-buffer event and a consumer/status-release event happen in the same cycle, both deltas must be applied in the same accounting unit. If the implementation hard-codes the producer delta as one entry regardless of interface-width conversion, the counter becomes wrong under configurations where one external beat maps to multiple or fractional internal atomic units.",
+      "portable_injection_spec": {
+        "affected_mechanism": "response credit accounting under simultaneous producer and consumer updates",
+        "trigger_condition": "A cycle where a response beat is written into the local buffer at the same time that status logic releases previously consumed weight entries, especially when external DMA width and internal atomic width differ.",
+        "injection_action": "Collapse the simultaneous update case to a fixed single-beat increment minus the consumer release count, ignoring the configured beat-to-atomic scaling.",
+        "implementation_pattern": "restore_fixed_credit_delta",
+        "portability_notes": [
+          "Apply this to the counter that gates response-ready or buffer-full logic, not to a purely diagnostic counter.",
+          "The fault is most visible when one input beat produces multiple internal entries or when several beats are needed for one internal atomic update.",
+          "Keep the pure producer-only and pure consumer-only cases intact so the bug remains localized to the simultaneous update path."
+        ],
+        "concrete_injection_steps": [
+          "Locate the occupancy or credit counter that is incremented by incoming data writes and decremented by downstream status release events.",
+          "Find the branch that handles both events occurring in the same cycle.",
+          "Replace its configuration-dependent delta with a fixed `+1 - released_entries` style update, regardless of the actual beat-to-entry conversion ratio."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v"
+        ],
+        "target_module_or_logic": "CDMA weight-path `wt_wr_dmatx_cnt` update logic feeding `dma_rd_rsp_rdy`",
+        "commit_fix_summary": "The fix restores generated width-dependent logic in the `wt_cbuf_wr_vld_w & sc_wt_updt` branch so the counter adds the correct number of internal entries before subtracting `sc_wt_entries`.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Replace the generated simultaneous-update branch around `wt_wr_dmatx_cnt` with the old single-line `wt_wr_dmatx_cnt <= wt_wr_dmatx_cnt + 1'b1 - sc_wt_entries;` behavior."
+      },
+      "expected_failure_mode": "Response-ready deasserts too early or stays asserted too long, causing weight-response stalls, over-acceptance, or incorrect full/empty decisions in configurations with width conversion.",
+      "evidence_for_injection": [
+        "The only logic change is in the simultaneous write-plus-update branch of `wt_wr_dmatx_cnt`.",
+        "The branch is parameterized by DMA interface width versus atomic size, showing the original bug was unit-mismatch in counter updates.",
+        "The same file uses `wt_wr_dmatx_cnt` to derive `dma_rd_rsp_rdy`, so reinjecting the old delta directly recreates a real backpressure bug."
+      ],
+      "notes": [
+        "This is a localized credit-accounting fault; unrelated scoreboarding or data formatting logic does not need to be changed."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "control_logic",
+    "summary": "该提交修复了 CDMA 权重路径中的响应 credit 计数，使缓冲区写入与状态释放同周期发生时使用正确的配置化增量，而不是写死的单项递增。",
+    "why_it_counts": [
+      "补丁只修改了权重 DMA 核心模块中的 DUT RTL。",
+      "被修改计数器决定 DMA 读响应是否可接收，因此该修复改变了真实硬件流控行为。",
+      "旧分支始终使用固定的 `+1 - sc_wt_entries`，即使一个外部 beat 实际对应多个或不足一个内部原子传输。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "提交信息明确指出这是权重路径中的 `rd_rsp_rdy` 控制逻辑缺陷。",
+      "唯一修改文件是 `vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v`。",
+      "`wt_cbuf_wr_vld_w & sc_wt_updt` 同时成立时的分支被展开成按配置选择的多个路径，而不再始终使用单项增量。",
+      "附近代码表明 `dma_rd_rsp_rdy` 由 `wt_wr_dmatx_cnt` 推导，因此该计数器直接决定响应接收。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "带缓冲的 DMA 或 cache fill 路径通常会用 credit 或占用计数器跟踪已写入本地缓冲的数据量。当“写入缓冲区”和“下游状态释放”在同一周期发生时，两个增减量必须以同一计量单位同时应用。如果实现把生产者增量固定写成 1，而忽略接口宽度转换，那么在一个外部 beat 对应多个或不足一个内部原子单元的配置下，计数就会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "生产者与消费者同周期更新时的响应 credit 计数",
+        "trigger_condition": "某个周期内，响应 beat 被写入本地缓冲区，同时状态逻辑释放先前消费的权重项；在外部 DMA 宽度与内部原子宽度不一致时最容易暴露。",
+        "injection_action": "把同周期更新分支简化为固定的单 beat 增量再减去释放数量，而忽略真实的 beat 到内部项转换比例。",
+        "implementation_pattern": "restore_fixed_credit_delta",
+        "portability_notes": [
+          "应在控制 response-ready 或 buffer-full 的真实占用计数器上实施该故障，而不是诊断计数器。",
+          "当一个输入 beat 会产生多个内部项，或多个 beat 才组成一个内部原子更新时，该故障最明显。",
+          "保持“只有生产者”和“只有消费者”两个分支不变，使故障局限于同周期更新路径。"
+        ],
+        "concrete_injection_steps": [
+          "定位由输入数据写入递增、由下游状态释放递减的占用或 credit 计数器。",
+          "找到处理这两个事件同周期发生的分支。",
+          "把该分支改成固定的 `+1 - released_entries` 式更新，而不管真实的 beat 与内部项换算关系。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_wt.v"
+        ],
+        "target_module_or_logic": "驱动 `dma_rd_rsp_rdy` 的 CDMA 权重路径 `wt_wr_dmatx_cnt` 更新逻辑",
+        "commit_fix_summary": "修复在 `wt_cbuf_wr_vld_w & sc_wt_updt` 分支中恢复了按位宽配置生成的逻辑，使计数器先增加正确的内部项数，再减去 `sc_wt_entries`。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 `wt_wr_dmatx_cnt` 附近的同周期更新分支改回旧的单行行为 `wt_wr_dmatx_cnt <= wt_wr_dmatx_cnt + 1'b1 - sc_wt_entries;`。"
+      },
+      "expected_failure_mode": "在存在位宽转换的配置下，response-ready 会过早拉低或错误保持拉高，导致权重响应停顿、过量接收，或缓冲区满空判断错误。",
+      "evidence_for_injection": [
+        "唯一逻辑修改点就是 `wt_wr_dmatx_cnt` 的同周期写入加释放分支。",
+        "该分支按 DMA 接口宽度与原子大小参数化，说明原始问题确实是计数单位不匹配。",
+        "同一文件用 `wt_wr_dmatx_cnt` 推导 `dma_rd_rsp_rdy`，因此恢复旧增量可以直接重建真实回压故障。"
+      ],
+      "notes": [
+        "这是一个局部 credit 计数故障，不需要修改无关的 scoreboarding 或数据格式化逻辑。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

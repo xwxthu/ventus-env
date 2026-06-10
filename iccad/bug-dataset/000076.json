@@ -1,0 +1,139 @@
+{
+  "dataset_id": 76,
+  "original_review_id": 97,
+  "meta": {
+    "id": 97,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "76cff97ede487a8a42476d50470c5bd4f22970cc",
+    "subject": "flush and invalidate should wait for mshr(not for flush), put buffer drain"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "The commit fixes L2 cache maintenance sequencing so flush and invalidate begin only after conflicting in-flight state has drained, and the directory walk is started from an accepted maintenance command rather than a raw request pulse.",
+    "why_it_counts": [
+      "The commit message names a specific correctness bug in flush/invalidate sequencing.",
+      "Scheduler.scala and Directory_test.scala are central L2 cache control files, and the patch changes live maintenance-control logic rather than tests alone.",
+      "The new logic explicitly waits for put-buffer drain before flush and for both MSHR drain plus put-buffer drain before invalidate."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scheduler.scala changes flush readiness to !issue_flush_invalidate && putbuffer_empty and invalidate readiness to !issue_flush_invalidate && mshr_empty && putbuffer_empty.",
+      "Scheduler.scala now blocks request.ready while maintenance is active or while a flush/invalidate request is pending, preventing ordinary traffic from slipping in during maintenance start.",
+      "Scheduler.scala drives directory.io.flush and directory.io.invalidate from request.fire on Hint commands instead of from raw valid signals.",
+      "Directory_test.scala latches maintenance state with Bool inputs and keeps the sweep active through flush_issue_reg until the directory walk completes."
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Scheduler.scala",
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A cache maintenance command must start from a quiescent point. If a flush or invalidate begins while miss handlers, dirty evictions, or buffered stores are still active, or if the directory sweep is launched from an unaccepted request pulse instead of a committed handshake, the maintenance walk can race with in-flight state updates and leave stale valid or dirty state behind.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache maintenance quiesce gating",
+        "trigger_condition": "A flush or invalidate arrives while refill/eviction state or buffered put/write data is still outstanding.",
+        "injection_action": "Allow the maintenance walk to start before the relevant miss and writeback structures drain, and/or treat a merely presented maintenance request as if it were already accepted.",
+        "implementation_pattern": "drop drain predicate and drive maintenance from raw valid instead of accepted handshake",
+        "portability_notes": [
+          "Map this bug to the controller that arbitrates maintenance commands against miss handlers, writeback queues, or store/put buffers.",
+          "For invalidate-like operations, use the target DUT's equivalent of 'no outstanding miss ownership' as the quiesce condition to remove.",
+          "If the DUT has no explicit put buffer, use any buffered store/writeback structure whose contents can still modify cache state after maintenance begins."
+        ],
+        "concrete_injection_steps": [
+          "Find the maintenance-command accept condition in the cache scheduler or directory controller.",
+          "Remove the predicate that waits for buffered writes or writebacks to drain before accepting a flush.",
+          "Also remove the predicate that waits for outstanding miss or MSHR state to empty before accepting an invalidate.",
+          "Drive the directory/tag sweep from the request's valid or pending state instead of the accepted handshake, or stop blocking new requests while maintenance is trying to start."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Scheduler.scala",
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "L2 Scheduler flush/invalidate admission control and Directory_test maintenance sweep state",
+        "commit_fix_summary": "The fix made flush wait for an empty put buffer, made invalidate wait for both empty MSHRs and an empty put buffer, blocked new requests during maintenance start, and changed directory flush/invalidate triggers to come from accepted Hint commands.",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "In Scheduler.scala around flush/invalidate ready plus request.ready, and in Directory_test.scala around flush_issue_reg and io.flush/io.invalidate handling."
+      },
+      "expected_failure_mode": "Flush or invalidate can complete while stale dirty or valid lines remain, or can race with in-flight misses and writebacks and violate maintenance ordering.",
+      "evidence_for_injection": [
+        "The fixed scheduler now distinguishes flush and invalidate readiness based on put-buffer and MSHR emptiness.",
+        "The directory no longer starts the sweep from raw valid inputs; it consumes a committed maintenance event.",
+        "Maintenance state is latched until the full set/way walk finishes, confirming that the bug was about admission and sequencing of the sweep rather than a test-only issue."
+      ],
+      "notes": [
+        "SourceD.scala only changed a comment in this commit and is not part of the injected fault.",
+        "The reusable bug is premature maintenance admission, not any Ventus-specific signal naming."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该提交修复了 L2 cache 维护操作的时序问题，使 flush 和 invalidate 只有在冲突的在途状态排空后才开始，并且目录遍历由真正被接受的维护命令触发，而不是由原始请求脉冲直接触发。",
+    "why_it_counts": [
+      "提交信息直接点明了 flush/invalidate 时序上的正确性问题。",
+      "Scheduler.scala 和 Directory_test.scala 都是 L2 cache 的核心控制文件，补丁修改的是实际维护控制逻辑，而不是只有测试。",
+      "新逻辑显式要求 flush 前 put buffer 排空，invalidate 前同时要求 MSHR 和 put buffer 排空。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scheduler.scala 把 flush 的 ready 改成了 !issue_flush_invalidate && putbuffer_empty，把 invalidate 的 ready 改成了 !issue_flush_invalidate && mshr_empty && putbuffer_empty。",
+      "Scheduler.scala 现在会在维护进行中或 flush/invalidate 请求待处理时阻塞 request.ready，避免普通流量在维护开始阶段插入。",
+      "Scheduler.scala 把 directory.io.flush 和 directory.io.invalidate 改成由 Hint 命令的 request.fire 驱动，而不是由原始 valid 直接驱动。",
+      "Directory_test.scala 用 Bool 输入锁存维护状态，并通过 flush_issue_reg 让目录遍历一直持续到整轮扫描结束。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/L2cache/Scheduler.scala",
+      "ventus/src/L2cache/Directory_test.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "cache 维护命令必须从一个静止点开始。如果 flush 或 invalidate 在 miss 处理器、脏回写或缓冲写请求仍然活跃时就开始，或者目录扫描是由尚未真正握手接受的请求脉冲触发的，那么维护遍历就可能与在途状态更新发生竞争，最终留下陈旧的 valid 或 dirty 状态。",
+      "portable_injection_spec": {
+        "affected_mechanism": "cache maintenance quiesce gating",
+        "trigger_condition": "在 refill/eviction 状态或缓冲的 put/write 数据尚未清空时到达 flush 或 invalidate 命令。",
+        "injection_action": "允许维护遍历在相关 miss 和写回结构尚未排空时提前开始，或者把仅仅出现的维护请求当成已经被接受的请求来处理。",
+        "implementation_pattern": "drop drain predicate and drive maintenance from raw valid instead of accepted handshake",
+        "portability_notes": [
+          "把该缺陷映射到目标 DUT 中负责在维护命令与 miss 处理器、写回队列或 store/put buffer 之间仲裁的控制器。",
+          "对于 invalidate 一类操作，应删除目标 DUT 中与“没有未完成 miss 所有权”对应的静止条件。",
+          "如果目标 DUT 没有显式 put buffer，就使用任何可能在维护开始后仍继续修改 cache 状态的缓冲写/回写结构来对应。"
+        ],
+        "concrete_injection_steps": [
+          "找到 cache scheduler 或目录控制器中维护命令的接受条件。",
+          "删除 flush 在被接受前等待缓冲写或回写排空的谓词。",
+          "同时删除 invalidate 在被接受前等待未完成 miss 或 MSHR 状态清空的谓词。",
+          "让目录/tag 扫描由请求的 valid 或 pending 状态而不是已接受的握手触发，或者停止在维护开始期间阻塞新请求。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/L2cache/Scheduler.scala",
+          "ventus/src/L2cache/Directory_test.scala"
+        ],
+        "target_module_or_logic": "L2 Scheduler 中 flush/invalidate 的准入控制，以及 Directory_test 中维护遍历状态机",
+        "commit_fix_summary": "该修复让 flush 等待 put buffer 为空，让 invalidate 同时等待 MSHR 和 put buffer 为空，在维护开始期间阻塞新请求，并把目录 flush/invalidate 触发改为来自已接受的 Hint 命令。",
+        "mutation_strategy": "restore_old_condition",
+        "source_level_edit_anchor": "Scheduler.scala 中 flush/invalidate ready 与 request.ready 附近，以及 Directory_test.scala 中 flush_issue_reg 和 io.flush/io.invalidate 处理附近。"
+      },
+      "expected_failure_mode": "flush 或 invalidate 可能在陈旧 dirty/valid 行仍然存在时就结束，或者与在途 miss、回写发生竞争，从而破坏维护操作的顺序保证。",
+      "evidence_for_injection": [
+        "修复后的 scheduler 明确根据 put buffer 和 MSHR 是否为空来区分 flush 与 invalidate 的 ready 条件。",
+        "目录扫描不再由原始 valid 输入启动，而是由已经提交的维护事件启动。",
+        "维护状态会被锁存并持续到完整 set/way 扫描结束，这说明真实问题在于遍历的准入与时序，而不是测试代码。"
+      ],
+      "notes": [
+        "本提交中的 SourceD.scala 只改了注释，不属于应注入的故障逻辑。",
+        "可复用的核心缺陷是“过早接受维护命令”，而不是 Ventus 特有的信号命名。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

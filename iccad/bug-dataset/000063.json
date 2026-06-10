@@ -1,0 +1,143 @@
+{
+  "dataset_id": 63,
+  "original_review_id": 82,
+  "meta": {
+    "id": 82,
+    "repo": "nvdla-hw",
+    "branch": "nv_small",
+    "commit": "011e73d12a44babfefc1aee89d5215c17ab6eba2",
+    "subject": "fix csc read jump address wrap"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "The commit fixes CSC jump-read wrap handling by explicitly generating a wrap-safe predecessor address and passing both entry addresses to CBUF for the dual-read case.",
+    "why_it_counts": [
+      "It changes active DUT logic in CSC, CBUF, and top-level wiring.",
+      "The patch fixes a concrete dual-read address bug at the circular-buffer boundary rather than adding a feature.",
+      "The diff is coherent end to end: CSC computes the wrapped address pair, and CBUF consumes that pair directly."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CSC_dl.v adds dat_req_addr_minus1_real so subtract-one at address 0 wraps to the last valid entry instead of underflowing.",
+      "CSC now flops both sc2buf_dat_rd_addr and sc2buf_dat_rd_next1_addr, using the predecessor/current pair only when a dual-read jump is needed.",
+      "NV_NVDLA_cbuf.v stops deriving addr0 locally as sc2buf_dat_rd_addr-1 and instead reads the explicit addr0/addr1 pair supplied by CSC."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+      "vmod/nvdla/csc/NV_NVDLA_csc.v",
+      "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When an image read jumps far enough that two adjacent buffer entries must be fetched in one cycle, the design needs an explicit predecessor/current address pair. The predecessor must wrap correctly when the current address is at the start of a circular buffer. A naive implementation that derives the predecessor by raw local subtraction can underflow and read the wrong pair of entries.",
+      "portable_injection_spec": {
+        "affected_mechanism": "dual-entry jump read predecessor addressing",
+        "trigger_condition": "An image or feature-map read requires two adjacent entries, and the current entry is at or near the circular-buffer base so predecessor addressing crosses the wrap boundary.",
+        "injection_action": "Revert to deriving the predecessor entry by a plain current_addr - 1 operation inside the consumer or local decode logic, without an explicit wrap-safe address pair from the producer.",
+        "implementation_pattern": "restore_naive_predecessor_address",
+        "portability_notes": [
+          "Apply this to any circular-buffer or banked-SRAM dual-read path that fetches current and previous entries together for alignment or shift purposes.",
+          "The critical mistake is not the extra port itself; it is relying on local subtract-one logic that does not carry circular-buffer wrap semantics.",
+          "Keep the jump-enable condition intact so the injected fault is isolated to address selection, not request scheduling."
+        ],
+        "concrete_injection_steps": [
+          "Find the dual-read path that requests two adjacent entries for alignment or shift correction.",
+          "Remove or ignore the explicit predecessor-address signal, if one exists.",
+          "Make the consumer or SRAM decode logic derive the first address locally as current_addr minus 1 whenever dual-read mode is active.",
+          "Leave the second address as the current entry and test a case where the current entry equals the first circular-buffer slot."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+          "vmod/nvdla/csc/NV_NVDLA_csc.v",
+          "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+        ],
+        "target_module_or_logic": "CSC-to-CBUF dual-read address selection for jump reads",
+        "commit_fix_summary": "The fix adds dat_req_addr_minus1_real and sc2buf_dat_rd_next1_addr in CSC, then changes CBUF to consume the explicit addr0/addr1 pair instead of deriving addr0 by local subtract-one.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Restore the old addr0 = sc2buf_dat_rd_addr - 1 and addr1 = sc2buf_dat_rd_addr behavior in NV_NVDLA_cbuf.v and remove the wrap-safe predecessor-address generation around dat_req_addr_minus1_real in NV_NVDLA_CSC_dl.v."
+      },
+      "expected_failure_mode": "Jump reads that cross the circular-buffer boundary fetch the wrong predecessor/current entry pair, so aligned CSC input data becomes corrupted or mis-shifted.",
+      "evidence_for_injection": [
+        "The commit explicitly introduces a wrap-safe minus-one address computation.",
+        "A new next1 address signal is threaded through CSC, the wrapper, and the top-level partition to reach CBUF.",
+        "CBUF changes from consumer-side subtract-one derivation to explicit producer-supplied addresses, which is the key behavioral fix."
+      ],
+      "notes": [
+        "This is a clean cross-DUT injection target because the bug mechanism is generic: predecessor addressing in a circular-buffer dual-read path."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "address_generation",
+    "summary": "该提交通过显式生成可回绕的前驱地址，并在双读场景下把两个 entry 地址都传给 CBUF，修复了 CSC jump-read 的地址回绕错误。",
+    "why_it_counts": [
+      "它同时修改了 CSC、CBUF 以及顶层连线中的活动 DUT 逻辑。",
+      "补丁修复的是环形缓冲边界上的具体双读地址 bug，而不是新增功能。",
+      "差异具有完整的端到端闭环：CSC 计算回绕后的地址对，CBUF 直接消费这对地址。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CSC_dl.v 新增 dat_req_addr_minus1_real，使地址 0 做减一时会回绕到最后一个合法 entry，而不是下溢。",
+      "CSC 现在会寄存 sc2buf_dat_rd_addr 和 sc2buf_dat_rd_next1_addr，仅在需要 dual-read jump 时输出前驱/当前地址对。",
+      "NV_NVDLA_cbuf.v 不再本地用 sc2buf_dat_rd_addr-1 推导 addr0，而是改为直接使用 CSC 提供的显式 addr0/addr1。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+      "vmod/nvdla/csc/NV_NVDLA_csc.v",
+      "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当图像读取跨越得足够远，需要在一个周期内同时读取两个相邻缓冲 entry 时，设计必须显式提供“前驱地址 + 当前地址”这一对地址。如果当前地址位于环形缓冲起点，前驱地址就必须正确回绕。若实现仍通过简单的本地减一来推导前驱地址，就可能下溢并读取错误的 entry 对。",
+      "portable_injection_spec": {
+        "affected_mechanism": "双 entry jump read 的前驱地址选择",
+        "trigger_condition": "图像或特征图读取需要两个相邻 entry，且当前 entry 位于或接近环形缓冲起点，前驱地址会跨越回绕边界。",
+        "injection_action": "恢复为在消费者或本地 decode 逻辑中直接用 current_addr - 1 推导前驱 entry，而不是由生产者显式提供带回绕语义的地址对。",
+        "implementation_pattern": "restore_naive_predecessor_address",
+        "portability_notes": [
+          "可映射到任何为了对齐或移位而需要同时读取“当前 entry + 前一个 entry”的环形缓冲或 banked SRAM 双读路径。",
+          "关键错误不在于有没有额外端口，而在于是否依赖了不具备环形回绕语义的本地减一逻辑。",
+          "保留 jump 使能条件不变，把注入故障限制在地址选择层面，而不是请求调度层面。"
+        ],
+        "concrete_injection_steps": [
+          "找到为对齐或移位修正而发起双 entry 读取的路径。",
+          "删除或忽略显式的前驱地址信号（如果实现里存在）。",
+          "让消费者或 SRAM decode 逻辑在 dual-read 模式下总是本地用 current_addr 减一得到第一个地址。",
+          "保持第二个地址为当前 entry，并测试当前 entry 等于环形缓冲首槽位的场景。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+          "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+          "vmod/nvdla/csc/NV_NVDLA_csc.v",
+          "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+        ],
+        "target_module_or_logic": "CSC 到 CBUF 的 jump-read 双地址选择",
+        "commit_fix_summary": "修复在 CSC 中新增 dat_req_addr_minus1_real 和 sc2buf_dat_rd_next1_addr，然后把 CBUF 改为消费显式的 addr0/addr1，而不是本地用减一推导 addr0。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 NV_NVDLA_cbuf.v 中恢复旧的 addr0 = sc2buf_dat_rd_addr - 1、addr1 = sc2buf_dat_rd_addr 行为，并在 NV_NVDLA_CSC_dl.v 中移除 dat_req_addr_minus1_real 周围的回绕前驱地址生成。"
+      },
+      "expected_failure_mode": "跨越环形缓冲边界的 jump read 会取到错误的前驱/当前 entry 对，导致对齐后的 CSC 输入数据损坏或移位错误。",
+      "evidence_for_injection": [
+        "提交显式引入了带回绕语义的减一地址计算。",
+        "新的 next1 地址信号贯穿 CSC、包装层和顶层 partition 传到 CBUF。",
+        "CBUF 从消费者侧本地减一改为使用生产者提供的显式地址，这是关键的行为修复。"
+      ],
+      "notes": [
+        "这是很好的跨 DUT 注入目标，因为其 bug 机制非常通用：环形缓冲双读路径中的前驱地址计算错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "dataset_id": 64,
+  "original_review_id": 83,
+  "meta": {
+    "id": 83,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "84b0ab4d42602461b800b6f6efd9399505858cfc",
+    "subject": "fix csc image read jump address wrap"
+  },
+  "en": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "This commit is an incomplete attempt at the CSC image jump-read wrap fix, not a standalone completed DUT bug-fix commit.",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "An immediate follow-up commit, 4eff3c2c7a41969ffce9a7d45144c0ca0a747caf, adds the missing CBUF-side address swap for the same wrap bug.",
+      "In 84b0ab4d42602461b800b6f6efd9399505858cfc, CSC computes and exports a second address, but NV_NVDLA_cbuf.v still consumes the old locally derived addr-1/addr pair.",
+      "Because the consumer-side read selection is still wrong, this commit alone is not a reliable completed fix or a clean fault-injection record."
+    ],
+    "evidence": [
+      "The diff adds dat_req_addr_minus1_real and sc2buf_dat_rd_next1_addr plumbing through CSC and the top-level hierarchy.",
+      "The same commit only adds the new CBUF input port; it does not change the internal addr0/addr1 selection logic in NV_NVDLA_cbuf.v.",
+      "Follow-up commit 4eff3c2 explicitly changes CBUF from local subtract-one addressing to the new explicit addr0/addr1 pair, indicating 84b0ab4 was incomplete."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+      "vmod/nvdla/csc/NV_NVDLA_csc.v",
+      "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "not_dut_bugfix",
+    "confidence": "high",
+    "injectable": false,
+    "primary_bug_type": null,
+    "summary": "该提交只是 CSC 图像 jump-read 回绕修复的一次不完整尝试，不能算作独立完成的 DUT bug-fix 提交。",
+    "why_it_counts": [],
+    "disqualifiers": [
+      "紧随其后的提交 4eff3c2c7a41969ffce9a7d45144c0ca0a747caf 又补上了同一 wrap bug 缺失的 CBUF 侧地址交换修复。",
+      "在 84b0ab4d42602461b800b6f6efd9399505858cfc 中，CSC 虽然已经计算并导出了第二个地址，但 NV_NVDLA_cbuf.v 仍然消费旧的本地 addr-1/addr 地址对。",
+      "由于消费者侧的读地址选择仍然错误，该提交单独来看既不是可靠的完整修复，也不是干净的故障注入样本。"
+    ],
+    "evidence": [
+      "差异新增了 dat_req_addr_minus1_real 以及 sc2buf_dat_rd_next1_addr 在 CSC 和顶层层级中的连线。",
+      "同一提交在 CBUF 中只新增了输入端口，并没有修改 NV_NVDLA_cbuf.v 内部的 addr0/addr1 选择逻辑。",
+      "后续提交 4eff3c2 又明确把 CBUF 从本地减一寻址改为使用新的显式 addr0/addr1，这说明 84b0ab4 本身并不完整。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cbuf/NV_NVDLA_cbuf.v",
+      "vmod/nvdla/csc/NV_NVDLA_CSC_dl.v",
+      "vmod/nvdla/csc/NV_NVDLA_csc.v",
+      "vmod/nvdla/top/NV_NVDLA_partition_c.v"
+    ],
+    "fault_injection_plan": null,
+    "needs_human_review": false
+  }
+}

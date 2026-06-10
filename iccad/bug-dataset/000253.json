@@ -1,0 +1,137 @@
+{
+  "dataset_id": 253,
+  "original_review_id": 303,
+  "meta": {
+    "id": 303,
+    "repo": "ventus-gpgpu",
+    "branch": "master",
+    "commit": "376a2b511021744488717e32241d0b4448a393af",
+    "subject": "fix: vector compare insns"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "Fixes vector compare instructions by correcting one compare-immediate decode control bit and by writing back comparator outputs instead of the generic ALU data output for compare operations.",
+    "why_it_counts": [
+      "The patch directly changes decode and execute logic for vector compare instructions in the main pipeline.",
+      "The execution-side change fixes the actual boolean result path for compare operations.",
+      "The bug affects architectural results of vector mask or predicate-generating instructions, not tooling or tests."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "DecodeUnit.scala changes the VMSLE_VI table entry from CSR.N,Y to CSR.N,N.",
+      "execution.scala adds a compare-function case that writes alu(x).cmp_out.asUInt for FN_SEQ, FN_SNE, FN_SGE, FN_SGEU, FN_SLT, and FN_SLTU.",
+      "Before the fix, vALUv2 defaulted wb_wvd_rd to alu(x).out even for compare-class functions."
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala",
+      "ventus/src/pipeline/execution.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Vector compare instructions are supposed to produce boolean per-lane results or a mask, not the normal arithmetic datapath value. A compare implementation therefore needs two things to agree: decode metadata must classify the instruction correctly, and the writeback mux must select the comparator result rather than the arithmetic ALU output. If either piece is wrong, compare instructions can execute with the wrong control semantics or write back numerically meaningless data instead of true or false bits.",
+      "portable_injection_spec": {
+        "affected_mechanism": "vector compare result generation and compare-immediate decode control",
+        "trigger_condition": "A vector compare opcode is issued, especially an immediate compare form that writes a mask or boolean lane result.",
+        "injection_action": "Route compare instructions back through the normal ALU data output path, and optionally restore the wrong decode control bit for the immediate compare form.",
+        "implementation_pattern": "select arithmetic result instead of comparator output",
+        "portability_notes": [
+          "Map this to any vector or SIMD compare instruction that should emit per-lane boolean results or a mask register.",
+          "The essential fault is using the non-boolean datapath result for compare instructions.",
+          "If the DUT has a separate compare-immediate control bit, restoring an incorrect value for that bit makes the injection closer to the source commit."
+        ],
+        "concrete_injection_steps": [
+          "Find the execute-stage result mux for vector compare or predicate-producing instructions.",
+          "Change the compare-op case so it writes the ordinary ALU output instead of the dedicated comparator output.",
+          "If the decoder has opcode-specific metadata for compare-immediate instructions, restore the pre-fix incorrect control bit for the affected opcode.",
+          "Leave non-compare vector ALU behavior unchanged so the failure is isolated to compare-class instructions."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala",
+          "ventus/src/pipeline/execution.scala"
+        ],
+        "target_module_or_logic": "IDecodeLUT_V entry for VMSLE_VI and vALUv2 compare-result writeback selection",
+        "commit_fix_summary": "The fix changes the VMSLE_VI decode metadata bit and adds an execution-stage override that writes cmp_out for compare ALU functions instead of leaving wb_wvd_rd on alu.out.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Remove the cmp_out-based writeback override for compare functions and restore the old VMSLE_VI decode table bit."
+      },
+      "expected_failure_mode": "Vector compare instructions produce wrong mask bits or predicate values, especially for immediate compare forms and other compare-class operations that should return boolean lane results.",
+      "evidence_for_injection": [
+        "The patched execution path explicitly enumerates compare ALU functions and redirects them to cmp_out.",
+        "Without that case, wb_wvd_rd remains connected to alu(x).out by default.",
+        "The same commit also corrects one opcode-specific decode entry for VMSLE_VI, indicating that compare control metadata was also inconsistent."
+      ],
+      "notes": [
+        "For a portable injection, the writeback-path mutation is the primary mechanism; the decode-table bit is a source-specific strengthening edit.",
+        "Dataset item 254 is a later commit with the same logical fix and should be described the same way."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "decode",
+    "summary": "该提交修复了向量比较指令：一方面修正了 compare-immediate 的译码控制位，另一方面让比较类操作回写比较器输出而不是通用 ALU 数据输出。",
+    "why_it_counts": [
+      "补丁直接修改了主管线中向量比较指令的译码与执行逻辑。",
+      "执行侧改动修复了比较操作真正的布尔结果通路。",
+      "该缺陷影响向量 mask 或谓词类指令的架构结果，而不是工具或测试。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "DecodeUnit.scala 将 VMSLE_VI 的表项从 CSR.N,Y 改为 CSR.N,N。",
+      "execution.scala 为 FN_SEQ、FN_SNE、FN_SGE、FN_SGEU、FN_SLT、FN_SLTU 新增 cmp_out.asUInt 的回写路径。",
+      "修复前 vALUv2 默认把 wb_wvd_rd 连接到 alu(x).out，即使比较类功能也是如此。"
+    ],
+    "touched_dut_files": [
+      "ventus/src/pipeline/DecodeUnit.scala",
+      "ventus/src/pipeline/execution.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "向量比较指令本应产生逐 lane 的布尔结果或 mask，而不是普通算术数据通路的值。因此比较实现需要两个部分一致：译码元数据必须把该指令正确分类，回写选择器必须选择比较器结果而不是算术 ALU 输出。只要其中任一部分错误，比较指令就可能以错误控制语义执行，或者回写数值上毫无意义的数据，而不是真/假的位结果。",
+      "portable_injection_spec": {
+        "affected_mechanism": "向量比较结果生成与 compare-immediate 译码控制",
+        "trigger_condition": "发射向量比较 opcode，尤其是会写 mask 或逐 lane 布尔结果的立即数比较形式。",
+        "injection_action": "让比较类指令重新走普通 ALU 数据输出回写路径，并可选地恢复 compare-immediate 的错误译码控制位。",
+        "implementation_pattern": "用算术结果替代比较器输出",
+        "portability_notes": [
+          "把它映射到任何应当输出逐 lane 布尔结果或 mask 寄存器的向量/SIMD 比较指令。",
+          "核心缺陷是比较指令使用了非布尔的数据通路结果。",
+          "如果 DUT 也有 compare-immediate 的独立控制位，恢复该错误控制位会更接近源提交。"
+        ],
+        "concrete_injection_steps": [
+          "找到执行级中向量比较或谓词生成指令的结果选择器。",
+          "修改比较操作的 case，使其重新回写普通 ALU 输出而不是专用比较器输出。",
+          "如果译码器对 compare-immediate 指令有单独元数据控制，也恢复受影响 opcode 的旧错误位。",
+          "保持非比较类向量 ALU 行为不变，使故障局限于 compare 类指令。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "ventus/src/pipeline/DecodeUnit.scala",
+          "ventus/src/pipeline/execution.scala"
+        ],
+        "target_module_or_logic": "VMSLE_VI 的 IDecodeLUT_V 表项与 vALUv2 的比较结果回写选择",
+        "commit_fix_summary": "修复同时改正了 VMSLE_VI 的译码元数据位，并在执行级新增 compare ALU 函数使用 cmp_out 回写的覆盖逻辑，不再默认使用 alu.out。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "删除比较函数基于 cmp_out 的回写覆盖，并恢复旧的 VMSLE_VI 译码表项位。"
+      },
+      "expected_failure_mode": "向量比较指令会产生错误的 mask 位或谓词值，尤其是立即数比较形式以及其他应返回逐 lane 布尔结果的比较操作。",
+      "evidence_for_injection": [
+        "补丁后的执行路径显式枚举比较类 ALU 函数，并把它们重定向到 cmp_out。",
+        "如果没有这个 case，wb_wvd_rd 默认仍连接到 alu(x).out。",
+        "同一提交还修正了 VMSLE_VI 的译码表项，说明 compare 控制元数据原本也不一致。"
+      ],
+      "notes": [
+        "从跨 DUT 注入角度看，回写路径的突变是主要机制；译码表项位是源仓库相关的增强性编辑。",
+        "数据集条目 254 是后续同逻辑修复，描述应保持一致。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

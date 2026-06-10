@@ -1,0 +1,137 @@
+{
+  "dataset_id": 119,
+  "original_review_id": 148,
+  "meta": {
+    "id": 148,
+    "repo": "VeriGPU",
+    "branch": "main",
+    "commit": "00e10fffc7b41f17d89fd4fde1dc6658cd7d5a76",
+    "subject": "fix initialization in proc.sv ,to solve gls bug"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "The processor reset path failed to initialize pipeline and divider state registers. The fix clears the stage-C2 instruction register and divider request/operand registers so reset release starts from a quiescent architectural state.",
+    "why_it_counts": [
+      "The patch changes reset logic inside the main DUT RTL module.",
+      "The added assignments initialize sequential state that directly drives pipeline control and divider requests after reset.",
+      "Although the symptom was reported as a GLS failure, the underlying issue is a real reset-state correctness bug."
+    ],
+    "disqualifiers": [
+      "The commit message does not document a software-visible functional testcase beyond the GLS symptom, so confidence is lower than for the other entries."
+    ],
+    "evidence": [
+      "The only modified DUT file is src/proc.sv.",
+      "The reset block now clears c2_instr, div_req, div_r_quot_sel, div_r_mod_sel, div_rs1_data, and div_rs2_data.",
+      "The same file shows those registers feeding pipeline decode/state and the divider request interface after reset deassertion.",
+      "Before the fix, those state elements were updated in the normal clocked path but were not assigned in the reset branch."
+    ],
+    "touched_dut_files": [
+      "src/proc.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "The bug is an incomplete reset initialization of sequential microarchitectural state. Registers that hold in-flight pipeline contents or long-latency functional-unit request fields must be forced to benign values on reset. If they are left uninitialized, the design can release reset with stale or unknown state that immediately affects decode, control, or external unit handshakes before real instructions have established valid contents.",
+      "portable_injection_spec": {
+        "affected_mechanism": "reset-time initialization of pipeline hold registers and functional-unit request state",
+        "trigger_condition": "Immediately after reset release, before the pipeline has overwritten all state registers with architecturally valid contents.",
+        "injection_action": "Remove reset assignments for one or more stateful registers that feed downstream control, decode, or multicycle-unit request signals.",
+        "implementation_pattern": "remove reset on sequential control/data registers",
+        "portability_notes": [
+          "Focus on registers that hold prior instruction state or request metadata for divider, multiplier, memory, or pipeline stage handoff units.",
+          "Choose reset values that should have been architecturally benign; the bug is leaving them unspecified, not assigning the wrong nonzero constant.",
+          "This bug can manifest as X-propagation in simulation and as nondeterministic startup behavior in hardware if power-on state is not guaranteed."
+        ],
+        "concrete_injection_steps": [
+          "Find the synchronous or asynchronous reset block for the core or pipeline stage.",
+          "Remove the reset initialization of pipeline-latched instruction state and long-latency request metadata registers.",
+          "Leave the rest of the datapath unchanged so the visible effect is post-reset stale-state activity rather than a broader structural reset failure."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/proc.sv"
+        ],
+        "target_module_or_logic": "proc reset branch for c2 stage and divider request registers",
+        "commit_fix_summary": "The fix adds reset assignments for c2_instr and the divider request, selector, and operand registers in the main always block.",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "In the rst branch of the main sequential always block, delete the reset assignments to c2_instr, div_req, div_r_quot_sel, div_r_mod_sel, div_rs1_data, and div_rs2_data."
+      },
+      "expected_failure_mode": "After reset, the core can propagate stale or unknown pipeline contents, issue spurious divider requests, or behave nondeterministically during early startup.",
+      "evidence_for_injection": [
+        "c2_instr is held across cycles and feeds stage-C2 decode, yet it had no reset initialization before the fix.",
+        "div_req and the associated divider operand/select registers drive the divider interface directly and were also missing reset values.",
+        "The added assignments are all in the reset branch, which shows the bug is about startup state rather than a normal-cycle computation error."
+      ],
+      "notes": [
+        "This is a valid DUT bug-fix, but the user-visible failure mode is less explicitly documented than in the Nyuzi and Gemmini commits, so medium confidence is appropriate.",
+        "For reinjection, removing only div_req-related reset assignments may yield a narrower and easier-to-observe startup fault than removing all six resets at once."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "处理器复位路径没有初始化流水线和除法器相关状态寄存器。修复在复位时清零 C2 级指令寄存器以及除法请求/操作数寄存器，使复位释放后从静止的架构状态开始执行。",
+    "why_it_counts": [
+      "补丁修改的是主 DUT RTL 模块内部的复位逻辑。",
+      "新增赋值初始化了复位后会直接驱动流水线控制和除法器请求的时序状态。",
+      "虽然问题最先以 GLS 失败的形式报告，但其根本原因是真实的复位状态正确性错误。"
+    ],
+    "disqualifiers": [
+      "提交信息没有给出除 GLS 现象之外的明确软件可见功能失败，因此置信度低于其他条目。"
+    ],
+    "evidence": [
+      "唯一被修改的 DUT 文件是 src/proc.sv。",
+      "复位分支现在会清零 c2_instr、div_req、div_r_quot_sel、div_r_mod_sel、div_rs1_data、div_rs2_data。",
+      "同一文件显示这些寄存器在复位释放后会驱动流水级译码/状态以及除法器请求接口。",
+      "修复前，这些状态在正常时钟路径中会被更新，但在复位分支里没有赋值。"
+    ],
+    "touched_dut_files": [
+      "src/proc.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该错误属于时序微架构状态的复位初始化不完整。保存流水线内容或长延迟功能单元请求字段的寄存器必须在复位时被强制到安全值。如果这些寄存器保持未初始化，设计在复位释放后就可能带着陈旧或未知状态启动，并在真实指令建立有效内容之前就影响译码、控制或外部单元握手。",
+      "portable_injection_spec": {
+        "affected_mechanism": "流水线保持寄存器和功能单元请求状态的复位初始化",
+        "trigger_condition": "复位释放后的最初若干周期内，流水线尚未用架构上有效的内容覆盖所有状态寄存器。",
+        "injection_action": "删除一个或多个会馈送下游控制、译码或多周期单元请求信号的状态寄存器的复位赋值。",
+        "implementation_pattern": "移除时序控制/数据寄存器的 reset",
+        "portability_notes": [
+          "优先选择保存前一条指令状态或 divider、multiplier、memory、pipeline handoff 请求元数据的寄存器。",
+          "应选择本应复位到架构安全值的寄存器；该错误本质是“未指定”，不是“赋成了错误的非零常数”。",
+          "该错误在仿真中可表现为 X 传播，在硬件中则可能表现为启动行为不稳定，尤其当上电状态不可保证时。"
+        ],
+        "concrete_injection_steps": [
+          "找到核心或流水级的同步/异步复位代码块。",
+          "删除其中对流水线锁存指令状态和长延迟请求元数据寄存器的复位初始化。",
+          "保持其余数据通路不变，使可见效应表现为复位后的陈旧状态活动，而不是更宽泛的结构性复位失效。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/proc.sv"
+        ],
+        "target_module_or_logic": "proc 主时序块中 c2 级与 divider 请求寄存器的复位分支",
+        "commit_fix_summary": "修复在主 always 块的 rst 分支中新增了 c2_instr 以及 divider 请求、选择器和操作数寄存器的复位赋值。",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "在主时序 always 块的 rst 分支中，删除对 c2_instr、div_req、div_r_quot_sel、div_r_mod_sel、div_rs1_data、div_rs2_data 的复位赋值。"
+      },
+      "expected_failure_mode": "复位后核心会传播陈旧或未知的流水线内容，发出伪除法请求，或在启动早期表现出非确定性行为。",
+      "evidence_for_injection": [
+        "c2_instr 会跨周期保持并驱动 C2 级译码，但修复前没有复位初始化。",
+        "div_req 以及相关的 divider 操作数/选择寄存器直接驱动除法器接口，修复前同样没有复位值。",
+        "新增赋值全部位于复位分支中，说明该 bug 关注的是启动状态，而不是正常周期的计算错误。"
+      ],
+      "notes": [
+        "这是有效的 DUT bug-fix，但其用户可见失效方式没有 Nyuzi 和 Gemmini 那些提交记录得那么明确，因此采用 medium 置信度更合适。",
+        "若要回注一个更窄、更易观察的故障，只删除 div_req 相关的复位赋值通常比同时删除全部六项更合适。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

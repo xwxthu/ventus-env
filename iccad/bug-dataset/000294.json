@@ -1,0 +1,145 @@
+{
+  "dataset_id": 294,
+  "original_review_id": 355,
+  "meta": {
+    "id": 355,
+    "repo": "vortex",
+    "branch": "upstream/tensor_unit",
+    "commit": "b4c5b232cd08ff06faa8793eb139f2fea831ddf6",
+    "subject": "added additional  pipe_reg to D/S and fixed rop deadlock"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "Fixes a real ROP forward-progress bug by throttling read-modify-write traffic before the pending-read queue fills; the commit also adds a D/S staging register to keep pass/writeback data aligned.",
+    "why_it_counts": [
+      "The commit message explicitly says it fixes a ROP deadlock.",
+      "The patch changes central ROP control logic in VX_rop_slice.sv and related D/S pipeline logic in VX_rop_ds.sv.",
+      "The new pending-read occupancy tracking and ready gating directly govern forward progress under read-modify-write traffic."
+    ],
+    "disqualifiers": [
+      "The commit is mixed: it also adds an extra D/S pipe register and some trace/utility cleanup.",
+      "The exact original deadlock waveform is not included in the commit, so the fault plan focuses on the clearly grounded queue-throttling fix."
+    ],
+    "evidence": [
+      "VX_rop_slice.sv adds pending_reads_full and blocks new ds/blend reads and rop_req_if.ready when the pending-read counter is near full.",
+      "The counter increments on read requests and decrements on corresponding writeback requests, showing the fix is about balancing read and write phases of ROP processing.",
+      "VX_rop_ds.sv inserts a new pipe register that latches stencil/depth writeback state and renames test_out to pass_out."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_slice.sv",
+      "hw/rtl/rop_unit/VX_rop_ds.sv",
+      "hw/rtl/libs/VX_pending_size.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A read-modify-write graphics or memory pipeline can deadlock if it keeps issuing the read phase even when the structure that must later absorb the corresponding write phase is nearly full. The design then fills its pending-read bookkeeping with operations that cannot retire because the write path never gets a chance to drain.",
+      "portable_injection_spec": {
+        "affected_mechanism": "pending read/write queue throttling for read-modify-write operations",
+        "trigger_condition": "Sustained traffic where an operation issues a read first and must later issue a writeback or commit using the same bounded queue resources.",
+        "injection_action": "Remove occupancy-based backpressure on the read side so new read phases continue to enter even when the pending structure is almost full.",
+        "implementation_pattern": "drop queue occupancy throttle",
+        "portability_notes": [
+          "Map this to any ROP, LSU, cache, or atomic pipeline that tracks outstanding reads before a later write/commit phase.",
+          "The key property is a bounded pending structure shared across the read and write phases of one logical operation.",
+          "The secondary D/S staging fix can be ignored if the goal is to recreate the deadlock specifically; it addresses data alignment rather than queue occupancy."
+        ],
+        "concrete_injection_steps": [
+          "Find the counter, credit tracker, or almost-full signal that limits issuing new read phases for read-modify-write traffic.",
+          "Remove that signal from the read request valid/ready gating so reads can still launch when the pending structure is full or nearly full.",
+          "Keep the writeback/retire path unchanged so the resource imbalance manifests as forward-progress loss."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_slice.sv",
+          "hw/rtl/rop_unit/VX_rop_ds.sv",
+          "hw/rtl/libs/VX_pending_size.sv"
+        ],
+        "target_module_or_logic": "ROP slice pending_reads_full gating on ds_blend_read and rop_req_if.ready; secondary D/S staging in VX_rop_ds",
+        "commit_fix_summary": "The fix adds a pending-read counter sized to ROP_MEM_QUEUE_SIZE-1 and gates new read issuance on ~pending_reads_full; the same commit also inserts a D/S pipeline stage so pass/depth/stencil writeback state is carried to the output stage.",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "In VX_rop_slice.sv, remove ~pending_reads_full from ds_blend_read and rop_req_if.ready; optionally also remove the added pipe_reg1 in VX_rop_ds.sv if reproducing the broader pre-fix state."
+      },
+      "expected_failure_mode": "Under enough concurrent ROP traffic, the pipeline can stop making forward progress because outstanding reads fill the queue and prevent the matching writeback phase from draining.",
+      "evidence_for_injection": [
+        "The new pending_reads counter increments on read issue and decrements on write issue, which is exactly the shape of a deadlock-prevention credit scheme.",
+        "Both the read launch term and the upstream ready term are explicitly gated with ~pending_reads_full in the fix.",
+        "The commit message names deadlock as a target, and the diff shows no test-only or host-side explanation for that behavior."
+      ],
+      "notes": [
+        "This entry keeps the commit as a DUT bug fix, but the portable injection plan intentionally centers on the deadlock-producing mechanism rather than every ancillary change in the refactor.",
+        "If you need to reproduce the full pre-fix state, the added D/S stage can be removed as a secondary mutation, but it is not required to recreate the deadlock mechanism."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "scheduler",
+    "summary": "该提交修复了真实的 ROP 前向进度问题：在 pending-read 队列将满之前对读改写流量进行节流；同时还新增了一个 D/S staging 寄存器以保持 pass/writeback 数据对齐。",
+    "why_it_counts": [
+      "提交信息明确说明修复了 ROP deadlock。",
+      "补丁修改了 VX_rop_slice.sv 中的核心 ROP 控制逻辑，以及 VX_rop_ds.sv 中相关的 D/S 流水逻辑。",
+      "新增的 pending-read 占用跟踪和 ready 门控会直接决定读改写流量下是否还能继续前进。"
+    ],
+    "disqualifiers": [
+      "该提交是混合提交：还加入了额外的 D/S pipe register，以及少量 trace/工具性清理。",
+      "提交中没有给出完整的原始 deadlock 波形，因此下面的注入方案聚焦于代码中证据最明确的队列节流修复。"
+    ],
+    "evidence": [
+      "VX_rop_slice.sv 新增 pending_reads_full，并在该计数接近满时阻止新的 ds/blend read 和 rop_req_if.ready。",
+      "该计数器在读请求发出时加一、在相应写回请求发出时减一，说明修复点在于平衡 ROP 处理中的读阶段与写阶段。",
+      "VX_rop_ds.sv 插入了新的流水寄存器来锁存 stencil/depth writeback 状态，并把 test_out 重命名为 pass_out。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/rop_unit/VX_rop_slice.sv",
+      "hw/rtl/rop_unit/VX_rop_ds.sv",
+      "hw/rtl/libs/VX_pending_size.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "图形或存储流水线中的读改写操作，如果在后续写回阶段所依赖的有界队列接近满时仍持续发出读阶段，就可能发生死锁。这样会把 pending-read 记账结构塞满，而这些操作又无法退休，因为写路径得不到释放资源的机会。",
+      "portable_injection_spec": {
+        "affected_mechanism": "读改写操作的 pending read/write 队列节流",
+        "trigger_condition": "持续存在“先发读、后发写回/提交”的操作流量，并且两阶段共享有限的 pending 资源。",
+        "injection_action": "移除基于占用度的读侧回压，使得即使 pending 结构已满或接近满，新的读阶段仍可继续进入。",
+        "implementation_pattern": "删除队列占用节流项",
+        "portability_notes": [
+          "可映射到任何在逻辑上属于同一操作、但读阶段与写阶段分离的 ROP、LSU、cache 或 atomic 流水线。",
+          "关键点是存在一个由读阶段占用、但必须靠后续写阶段释放的有界 pending 结构。",
+          "如果目标是复现死锁本身，可以忽略同一提交中的 D/S staging 修复；它解决的是数据对齐而不是队列占用。"
+        ],
+        "concrete_injection_steps": [
+          "定位限制读改写类读阶段继续发出的计数器、credit 跟踪器或 almost-full 信号。",
+          "把这个信号从读请求的 valid/ready 门控中移除，使读在 pending 结构满或接近满时仍可发出。",
+          "保持写回/退休路径不变，让资源失衡表现为前向进度丢失。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/rop_unit/VX_rop_slice.sv",
+          "hw/rtl/rop_unit/VX_rop_ds.sv",
+          "hw/rtl/libs/VX_pending_size.sv"
+        ],
+        "target_module_or_logic": "VX_rop_slice 中 ds_blend_read 与 rop_req_if.ready 上的 pending_reads_full 门控；以及 VX_rop_ds 中的辅助 D/S staging",
+        "commit_fix_summary": "修复增加了一个大小为 ROP_MEM_QUEUE_SIZE-1 的 pending-read 计数器，并在 ~pending_reads_full 条件下才允许继续发读；同一提交还在 VX_rop_ds 中加入了一个额外流水级，用于把 pass/depth/stencil 写回状态携带到输出级。",
+        "mutation_strategy": "drop_handshake_term",
+        "source_level_edit_anchor": "在 VX_rop_slice.sv 中，把 ds_blend_read 和 rop_req_if.ready 上的 ~pending_reads_full 去掉；如果需要复现更完整的旧状态，可额外删除 VX_rop_ds.sv 中新增的 pipe_reg1。"
+      },
+      "expected_failure_mode": "在足够多的并发 ROP 流量下，流水线可能停止前进，因为未完成读请求塞满队列并阻止对应写回阶段释放资源。",
+      "evidence_for_injection": [
+        "新增的 pending_reads 计数器在读发出时加一、写发出时减一，正是典型的防死锁 credit 方案。",
+        "修复显式地把 ~pending_reads_full 加到了读发起项和上游 ready 项上。",
+        "提交信息明确点名 deadlock，而补丁也没有任何测试或宿主软件层面的替代解释。"
+      ],
+      "notes": [
+        "该条目仍应保留为 DUT bug fix，但可移植的注入方案有意聚焦在会导致死锁的核心机制，而不是提交中的全部附带改动。",
+        "如果需要尽量复现完整的修复前状态，可以把新增的 D/S 流水级作为次级变异一起移除，但这不是复现死锁所必需的。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

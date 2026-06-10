@@ -1,0 +1,141 @@
+{
+  "dataset_id": 265,
+  "original_review_id": 318,
+  "meta": {
+    "id": 318,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "ce95c40aee45e7bc61a76eada543ac24256f2c36",
+    "subject": "fixed redundant cache fills"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "Fixes redundant-fill side effects by latching fill, writeback, core-response, and snoop-response decisions before the bank pipeline advances.",
+    "why_it_counts": [
+      "The patch changes central cache-bank control logic, not tests or host code.",
+      "The new stage-2 signals explicitly preserve fill and writeback decisions into stage 3 instead of recomputing them late.",
+      "The commit message and added assertion both point to a real redundant-fill behavior bug."
+    ],
+    "disqualifiers": [
+      "The Makefile change in the same commit is unrelated to the DUT fix."
+    ],
+    "evidence": [
+      "VX_bank.v introduces send_core_rsp_st2, send_fill_req_st2, do_writeback_st2, and send_snp_rsp_st2, then carries them through the stage-2 to stage-3 pipeline register.",
+      "Downstream queue pushes switch from recomputed valid_st3 and dirty_st3 predicates to the new latched control signals send_fill_req_st3 and do_writeback_st3.",
+      "VX_tag_access.v removes the previous dirty_out suppression for redundant fills and instead asserts if a fill arrives on an already matching tag."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "This fix addresses a pipeline-timing bug in cache miss and fill control. The buggy form determines whether a transaction should emit a fill request, writeback, core response, or snoop response using metadata that is no longer aligned with the original stage where the miss and dirty decisions were made. If those side-effect decisions are recomputed one stage too late, a redundant fill or a conflicting event can cause duplicate external requests or the wrong writeback behavior.",
+      "portable_injection_spec": {
+        "affected_mechanism": "bank-pipeline side-effect control capture for fills and writebacks",
+        "trigger_condition": "A fill, miss replay, or snoop reaches a later pipeline stage after the cache metadata or selected request source has already changed, especially around redundant fills or overlapping bank activity.",
+        "injection_action": "Stop latching the fill and writeback decisions at the stage where the tag result is known, and recompute them later from transient pipeline state.",
+        "implementation_pattern": "recompute side-effect controls from a later stage instead of carrying them forward",
+        "portability_notes": [
+          "Map this to any banked cache where tag-hit, miss, dirty, and replacement decisions are made before requests are queued externally.",
+          "The essential bug is temporal misalignment between a decision and the metadata used to realize that decision.",
+          "You do not need the same queue names; any late recomputation of fill or writeback side effects is a valid analogue."
+        ],
+        "concrete_injection_steps": [
+          "Identify the stage where miss, dirty, and snoop decisions are first known reliably.",
+          "Remove or bypass the latched control bits that carry those decisions into the later stage that pushes fill, writeback, or snoop-response queues.",
+          "Recompute the queue-push predicates from later-stage valid, dirty, or request-type signals instead of the earlier saved decision.",
+          "Keep the rest of the pipeline unchanged so the injected bug manifests as mis-timed external side effects rather than a large structural change."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_tag_access.v"
+        ],
+        "target_module_or_logic": "Stage-2 to stage-3 cache-bank control for fill, writeback, core response, and snoop response",
+        "commit_fix_summary": "The commit captures send_fill_req, do_writeback, send_core_rsp, and send_snp_rsp in stage 2, carries them to stage 3, and treats any remaining redundant fill as an assertion-worthy error.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_bank, remove the send_*_st2 and do_writeback_st2 signals from the stage-2 pipe register and restore the old stage-3 recomputation from valid_st3, miss_st3, dirty-related state, and request type."
+      },
+      "expected_failure_mode": "The cache can emit duplicate fill requests, skip or mis-time a needed writeback, or mis-handle snoop response ordering when fill-related state changes between pipeline stages.",
+      "evidence_for_injection": [
+        "The patch moves control capture earlier without otherwise redesigning the bank, which is consistent with fixing a timing-alignment bug.",
+        "The new assertion on redundant fill in VX_tag_access.v indicates that later-stage logic should no longer be tolerating that case silently.",
+        "The queue push predicates in VX_bank.v are the precise behavioral outputs affected by the fix."
+      ],
+      "notes": [
+        "If only one mutation is desired, reverting the stage-2 capture of send_fill_req and do_writeback is the most direct reinjection.",
+        "Do not include the Makefile change in the injected fault."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "cache",
+    "summary": "该修复把 fill、writeback、core response 和 snoop response 的决策在 bank 流水线早期锁存下来，避免冗余 fill 带来的副作用错误。",
+    "why_it_counts": [
+      "补丁修改的是核心 cache bank 控制逻辑，而不是测试或主机侧代码。",
+      "新增的 stage-2 信号把 fill 与 writeback 决策保存到 stage 3，而不是在更晚阶段重新计算。",
+      "提交信息和新增断言都指向真实的 redundant-fill 行为缺陷。"
+    ],
+    "disqualifiers": [
+      "同一提交中的 Makefile 改动与 DUT 修复无关。"
+    ],
+    "evidence": [
+      "VX_bank.v 引入了 send_core_rsp_st2、send_fill_req_st2、do_writeback_st2 和 send_snp_rsp_st2，并把它们跨 stage-2 到 stage-3 的流水线寄存器传递。",
+      "后续队列 push 条件从基于 valid_st3 和 dirty_st3 的晚期重算，切换为基于锁存后的 send_fill_req_st3 和 do_writeback_st3。",
+      "VX_tag_access.v 删除了先前在冗余 fill 上对 dirty_out 的抑制，改为在 fill 命中已匹配 tag 时直接断言。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/cache/VX_bank.v",
+      "hw/rtl/cache/VX_tag_access.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "该修复处理的是 cache miss 与 fill 控制中的流水线时序错误。缺陷版本在较晚的流水线阶段，使用已经与原始 miss 或 dirty 判定不再对齐的元数据，去决定是否发送 fill request、writeback、core response 或 snoop response。如果这些副作用决策晚了一个阶段才重新计算，那么在 redundant fill 或其他冲突事件下，就可能产生重复的外部请求或错误的 writeback 行为。",
+      "portable_injection_spec": {
+        "affected_mechanism": "bank 流水线中 fill 与 writeback 副作用控制的锁存时机",
+        "trigger_condition": "一个 fill、miss replay 或 snoop 到达更晚的流水线阶段时，cache 元数据或所选请求源已经变化，尤其是在 redundant fill 或重叠 bank 活动附近。",
+        "injection_action": "不要在 tag 结果已知的阶段锁存 fill 与 writeback 决策，而是在更晚阶段根据瞬时流水线状态重新计算。",
+        "implementation_pattern": "不跨阶段保存副作用控制，而是在更晚阶段重新计算",
+        "portability_notes": [
+          "可映射到任何在把请求送往外部队列之前，先确定 tag-hit、miss、dirty 和替换结果的 banked cache。",
+          "核心错误是：一个控制决策与最终执行该决策时所使用的元数据之间出现时间错位。",
+          "不需要相同的队列命名；任何对 fill 或 writeback 副作用的晚期重算都属于有效同类故障。"
+        ],
+        "concrete_injection_steps": [
+          "找到第一次能够可靠得出 miss、dirty 和 snoop 决策的流水线级。",
+          "移除或绕过把这些决策传到后续 stage 的锁存控制位。",
+          "让 fill、writeback 或 snoop-response 队列的 push 条件重新依赖更晚阶段的 valid、dirty 或请求类型信号，而不是更早阶段保存的决定。",
+          "其余流水线保持不变，让注入后的故障表现为外部副作用时机错误，而不是大规模结构改动。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/cache/VX_bank.v",
+          "hw/rtl/cache/VX_tag_access.v"
+        ],
+        "target_module_or_logic": "cache bank 从 stage 2 到 stage 3 的 fill、writeback、core response 和 snoop response 控制",
+        "commit_fix_summary": "该提交在 stage 2 锁存 send_fill_req、do_writeback、send_core_rsp 和 send_snp_rsp，并把它们传到 stage 3，同时把剩余的 redundant fill 视为应该断言的错误。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_bank 中，去掉 send_*_st2 和 do_writeback_st2 跨 stage-2 寄存器的传递，恢复成根据 valid_st3、miss_st3、dirty 相关状态和请求类型在 stage 3 重算。"
+      },
+      "expected_failure_mode": "当 fill 相关状态在流水线阶段之间变化时，cache 可能发出重复 fill request、漏发或错误时机发起 writeback，或者打乱 snoop response 顺序。",
+      "evidence_for_injection": [
+        "补丁在不重写整个 bank 的前提下，把控制锁存提前，符合“修复时序对齐错误”的特征。",
+        "VX_tag_access.v 中新增的 redundant-fill 断言说明，后级逻辑不应再静默容忍这种情况。",
+        "VX_bank.v 中的队列 push 条件正是该修复影响的行为输出。"
+      ],
+      "notes": [
+        "如果只想注入一个最小故障，优先回退 send_fill_req 与 do_writeback 的 stage-2 锁存。",
+        "不要把 Makefile 改动一起作为注入内容。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

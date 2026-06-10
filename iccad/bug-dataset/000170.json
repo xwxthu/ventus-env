@@ -1,0 +1,153 @@
+{
+  "dataset_id": 170,
+  "original_review_id": 209,
+  "meta": {
+    "id": 209,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "1d5d8db332f8b24d547e06787ee097618148d181",
+    "subject": "update bit width of cdma2sc_dat_slice and sc2cdma_dat_slice from 12bits to 14bits"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes CDMA slice-count truncation by widening slice-related counters and interfaces from 12 bits to 14 bits across producer blocks, status bookkeeping, and the CDMA-to-SC boundary.",
+    "why_it_counts": [
+      "It modifies core CDMA RTL modules and the shared status interface, not tests or infrastructure.",
+      "The changed widths affect functional slice accounting across module boundaries.",
+      "The patch updates internal grain and slice counters together with the exported slice buses, showing a real end-to-end correctness fix."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CDMA_dc.v widens req_cur_grain_w, req_cur_grain_d1/d2, rsp_slice_init/last, and dat_slices_d0 to 14 bits.",
+      "NV_NVDLA_CDMA_status.v widens dc2status/img2status/wg2status/sc2cdma/cdma2sc slice buses and the valid-slices bookkeeping path to 14 bits.",
+      "NV_NVDLA_CDMA_IMG_pack.v and NV_NVDLA_CDMA_wg.v update the producer-side slice outputs to 14 bits, and NV_NVDLA_cdma.v widens the top-level interfaces accordingly."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_img.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_status.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_wg.v",
+      "vmod/nvdla/cdma/NV_NVDLA_cdma.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A DMA subsystem often tracks two related but different quantities: how many buffer entries were produced and how many slices or lines those entries correspond to. If the slice count is carried on a narrower bus than the largest supported transfer requires, different producers can report truncated slice totals to a shared status block and to downstream consumers. The result is inconsistent bookkeeping: entries may look correct while slice-based availability, pending-ack, or consumer progress decisions wrap or undercount.",
+      "portable_injection_spec": {
+        "affected_mechanism": "cross-module slice-count bookkeeping",
+        "trigger_condition": "A transfer generates more slices than the stale narrow slice-count interface or internal slice counters can represent.",
+        "injection_action": "Narrow the slice-count buses and internal slice/grain counters so high bits are dropped before status bookkeeping and downstream synchronization.",
+        "implementation_pattern": "truncate inter-module count bus and bookkeeping registers",
+        "portability_notes": [
+          "Apply this to designs where a producer reports slice, row, or line counts separately from entry or beat counts.",
+          "The most portable target is the shared status or queue-availability path that aggregates counts from multiple producer pipelines.",
+          "Keep entry counters wide so the bug specifically manifests as slice-accounting corruption rather than total data-loss everywhere."
+        ],
+        "concrete_injection_steps": [
+          "Identify the slice-count outputs of the DMA producer blocks and the shared status block that accumulates them.",
+          "Reduce those slice buses to an older, narrower width and restore narrow zero-extension at producer outputs.",
+          "Reduce any internal grain or slice registers that feed the same status path so truncation happens before accumulation.",
+          "Leave entry-count buses unchanged so downstream logic observes an entry-versus-slice mismatch on large transfers."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_img.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_status.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_wg.v",
+          "vmod/nvdla/cdma/NV_NVDLA_cdma.v"
+        ],
+        "target_module_or_logic": "CDMA producer slice outputs, status valid-slices accounting, and cdma2sc/sc2cdma slice interfaces",
+        "commit_fix_summary": "The fix widens slice-related interfaces and internal bookkeeping from 12 bits to 14 bits across DC, IMG, WG, status, and the top-level CDMA-to-SC interface, while also widening internal grain-to-slice registers that feed those paths.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Restore the slice buses in NV_NVDLA_CDMA_status.v, NV_NVDLA_cdma.v, NV_NVDLA_CDMA_img.v, NV_NVDLA_CDMA_wg.v, and NV_NVDLA_CDMA_IMG_pack.v to 12 bits, and narrow the related grain/slice registers in NV_NVDLA_CDMA_dc.v back to their old 12-bit forms."
+      },
+      "expected_failure_mode": "Large transfers wrap or undercount slice totals, causing status valid-slices bookkeeping, pending coordination, or downstream consumer progress tracking to diverge from the actual data produced.",
+      "evidence_for_injection": [
+        "The patch consistently widens both local slice/grain registers and the cross-module slice interfaces, indicating a real functional range mismatch.",
+        "The status block accumulates and subtracts slice counts, so truncation there can change availability decisions even if entries remain correct.",
+        "Producer modules explicitly zero-extend their slice outputs after the fix, which gives a direct reverse-mutation point."
+      ],
+      "notes": [
+        "This is a good reusable bug record for systems with separate line or slice accounting alongside entry accounting.",
+        "The highest-value reverse mutation is often at the shared status interface, because it corrupts aggregation from multiple producers at once."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交通过把切片相关计数器和接口从 12 位扩展到 14 位，修复了 CDMA 在 producer 模块、状态记账以及 CDMA 到 SC 边界上的 slice 计数截断问题。",
+    "why_it_counts": [
+      "它修改的是核心 CDMA RTL 模块和共享状态接口，而不是测试或基础设施。",
+      "这些位宽变化会影响跨模块传递的真实 slice 记账结果。",
+      "补丁同时更新了内部 grain/slice 计数器和导出的 slice 总线，说明这是端到端的正确性修复。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CDMA_dc.v 把 req_cur_grain_w、req_cur_grain_d1/d2、rsp_slice_init/last 和 dat_slices_d0 等信号扩展到 14 位。",
+      "NV_NVDLA_CDMA_status.v 把 dc2status/img2status/wg2status/sc2cdma/cdma2sc 的 slice 总线及 valid-slices 记账路径统一扩展到 14 位。",
+      "NV_NVDLA_CDMA_IMG_pack.v 和 NV_NVDLA_CDMA_wg.v 更新了 producer 侧 slice 输出位宽，NV_NVDLA_cdma.v 也同步扩展了顶层接口。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_img.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_status.v",
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_wg.v",
+      "vmod/nvdla/cdma/NV_NVDLA_cdma.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "DMA 子系统通常会同时跟踪两个相关但不同的量：实际产生了多少 buffer entries，以及这些 entries 对应多少 slices 或行数。如果 slice 计数所经过的总线位宽小于最大支持传输所需范围，那么不同 producer 向共享状态块和下游消费者报告的 slice 总数就会被截断。结果会出现不一致的记账：entry 数看起来正确，但基于 slice 的可用量、pending 协调或消费者进度判断会回绕或低估。",
+      "portable_injection_spec": {
+        "affected_mechanism": "跨模块 slice 计数记账",
+        "trigger_condition": "某次传输产生的 slice 数超过旧的窄 slice 接口或内部 slice 计数器能够表示的范围。",
+        "injection_action": "缩窄 slice 计数总线以及内部 slice/grain 计数器，使高位在状态记账和下游同步之前被丢弃。",
+        "implementation_pattern": "truncate inter-module count bus and bookkeeping registers",
+        "portability_notes": [
+          "适用于 producer 会单独上报 slice、row 或 line 计数，而不是只上报 entry 或 beat 数的设计。",
+          "最可移植的目标是那个汇聚多个 producer 计数的共享状态或队列可用量路径。",
+          "应保持 entry 计数为宽位宽不变，这样故障会主要表现为 slice 记账损坏，而不是全路径数据都丢失。"
+        ],
+        "concrete_injection_steps": [
+          "定位 DMA producer 输出 slice 计数的接口，以及聚合这些计数的共享状态块。",
+          "把这些 slice 总线缩回旧的窄位宽，并在 producer 输出端恢复较窄的零扩展。",
+          "把馈入同一路径的内部 grain 或 slice 寄存器也缩窄，使截断在累加前就发生。",
+          "保持 entry 计数总线不变，使下游在大传输下观察到 entry 与 slice 记账不一致。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_IMG_pack.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_img.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_status.v",
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_wg.v",
+          "vmod/nvdla/cdma/NV_NVDLA_cdma.v"
+        ],
+        "target_module_or_logic": "CDMA producer 的 slice 输出、status valid-slices 记账，以及 cdma2sc/sc2cdma slice 接口",
+        "commit_fix_summary": "修复把 DC、IMG、WG、status 以及顶层 CDMA 到 SC 接口中的 slice 相关接口和内部记账从 12 位扩展到 14 位，同时扩展了给这些路径供数的内部 grain-to-slice 寄存器。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "把 NV_NVDLA_CDMA_status.v、NV_NVDLA_cdma.v、NV_NVDLA_CDMA_img.v、NV_NVDLA_CDMA_wg.v 和 NV_NVDLA_CDMA_IMG_pack.v 中的 slice 总线改回 12 位，并把 NV_NVDLA_CDMA_dc.v 中相关的 grain/slice 寄存器缩回旧的 12 位形式。"
+      },
+      "expected_failure_mode": "大传输场景下 slice 总数会回绕或被低估，导致 status valid-slices 记账、pending 协调或下游消费者进度跟踪与真实产生的数据不一致。",
+      "evidence_for_injection": [
+        "补丁一致性地扩展了本地 slice/grain 寄存器和跨模块 slice 接口，说明真实问题是功能性的范围不匹配。",
+        "status 模块会对 slice 计数做加减累积，因此即使 entry 计数正确，那里发生截断也会改变可用量判断。",
+        "producer 模块在修复后显式做了更宽的零扩展，这提供了直接的逆向变异锚点。"
+      ],
+      "notes": [
+        "这是一条很适合复用于“entry 记账正确但 line/slice 记账错误”的数据集记录。",
+        "通常最有价值的逆向注入点是共享状态接口，因为它会同时污染多个 producer 的聚合结果。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

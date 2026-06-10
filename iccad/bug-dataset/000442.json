@@ -1,0 +1,145 @@
+{
+  "dataset_id": 442,
+  "original_review_id": 583,
+  "meta": {
+    "id": 583,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "5d95d45ee8d085c84ab6d3fe82f19c1692883946",
+    "subject": "bug fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "This mixed bug-fix commit contains a real DUT reset fix in the operand collection pipeline: valid-carrying pipe buffers now request reset, and the shared shift-register primitive no longer mishandles full-width reset as if only the upper bits should be overwritten.",
+    "why_it_counts": [
+      "The patch changes core operand-pipeline RTL rather than tests or tooling.",
+      "It fixes reset semantics on pipeline storage that carry valid and operand state.",
+      "The change prevents stale pipeline state from surviving reset."
+    ],
+    "disqualifiers": [
+      "The commit also bundles several SimX fixes.",
+      "The commit message is generic and does not describe the reset bug by itself."
+    ],
+    "evidence": [
+      "VX_opc_unit.sv adds RESETW(1) to both VX_pipe_buffer instances that carry operand-pipeline valid information.",
+      "VX_shift_register.sv adds a dedicated RESETW == DATAW path and keeps partial-reset behavior only for true partial resets.",
+      "The old shift-register code overwrote only the upper RESETW bits on reset, which is incorrect when RESETW equals DATAW.",
+      "The operand collection pipeline uses these resettable buffers to hold in-flight control and operand state."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_opc_unit.sv",
+      "hw/rtl/libs/VX_shift_register.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Issue and operand pipelines depend on reset to clear valid and control state before new work begins. If a pipeline buffer either does not reset its valid bit or a shared shift-register primitive treats a full-width reset as only a partial field overwrite, stale state can remain live after reset and later be interpreted as a real in-flight operand or issue entry.",
+      "portable_injection_spec": {
+        "affected_mechanism": "pipeline valid/reset initialization",
+        "trigger_condition": "The design exits reset or performs a pipeline restart before every stage has been overwritten by new traffic.",
+        "injection_action": "Leave at least one valid-carrying stage partially or fully unreset so stale control bits can survive reset.",
+        "implementation_pattern": "remove reset from valid buffer or restore partial-reset-only primitive behavior",
+        "portability_notes": [
+          "Target a stage whose valid bit or opcode metadata gates later operand collection or issue decisions.",
+          "If the DUT uses a reusable pipe or shift primitive, corrupting the primitive can recreate the bug across multiple users.",
+          "For a narrower fault model, mutate only the local operand pipeline stage that carries valid state."
+        ],
+        "concrete_injection_steps": [
+          "Identify the pipeline register or shift primitive that stores valid plus operand metadata between issue stages.",
+          "Remove explicit reset coverage from the valid field, or change full-width reset logic back into a partial overwrite of only the top reset bits.",
+          "Leave data movement on normal cycles unchanged so the regression appears only after reset or restart.",
+          "Verify that immediately after reset the stage can still present a stale valid or stale control payload."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_opc_unit.sv",
+          "hw/rtl/libs/VX_shift_register.sv"
+        ],
+        "target_module_or_logic": "operand-pipeline buffers in VX_opc_unit and full-reset handling in VX_shift_register",
+        "commit_fix_summary": "The fix adds RESETW(1) to the operand pipeline buffers and splits the shared shift-register reset logic into full-reset and partial-reset cases so full-width reset clears the entire stored word.",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "In VX_opc_unit.sv, remove the added RESETW(1) from the two VX_pipe_buffer instances. In VX_shift_register.sv, revert the RESETW == DATAW branch so reset again overwrites only the upper RESETW bits instead of the full word."
+      },
+      "expected_failure_mode": "After reset, stale valid or operand metadata can survive in the operand collection path, causing spurious operand fetches, false hazards, or incorrect issue behavior before the pipeline naturally overwrites those stages.",
+      "evidence_for_injection": [
+        "The only RTL edits in the core datapath are reset-related, which makes the reset bug the primary hardware fix in this commit.",
+        "RESETW was added specifically on buffers whose valid outputs gate later stages in VX_opc_unit.",
+        "The shared primitive fix directly addresses the case where a supposed full reset still preserves lower bits."
+      ],
+      "notes": [
+        "For a contained fault injection, mutating the local operand pipeline buffers is narrower than corrupting the shared primitive.",
+        "This bug maps well to other DUTs as stale post-reset pipeline state rather than a Vortex-specific signal issue."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "reset",
+    "summary": "这个混合 bug-fix 提交中包含了真实的 DUT 复位修复：操作数收集流水线中携带 valid 的 buffer 现在会被显式复位，而共享 shift-register 原语也不再把全宽复位错误地当成只覆写高位的部分复位。",
+    "why_it_counts": [
+      "补丁修改的是核心操作数流水 RTL，而不是测试或工具。",
+      "它修正了保存 valid 与操作数状态的流水存储体的复位语义。",
+      "该改动能防止陈旧流水状态在复位后残留。"
+    ],
+    "disqualifiers": [
+      "该提交也打包了若干 SimX 修复。",
+      "提交信息很泛，没有单靠标题描述出这个复位 bug。"
+    ],
+    "evidence": [
+      "VX_opc_unit.sv 为两个承载操作数流水 valid 信息的 VX_pipe_buffer 增加了 RESETW(1)。",
+      "VX_shift_register.sv 新增了专门的 RESETW == DATAW 分支，只在真正的部分复位场景下保留 partial-reset 行为。",
+      "旧的 shift-register 代码在 reset 时只覆写高位 RESETW 比特，当 RESETW 等于 DATAW 时这是错误的。",
+      "操作数收集流水线正是通过这些可复位 buffer 保存飞行中的控制与操作数状态。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/core/VX_opc_unit.sv",
+      "hw/rtl/libs/VX_shift_register.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Issue 与操作数流水线依赖复位来清除 valid 和控制状态，之后才能安全接受新工作。如果某个流水 buffer 没有复位 valid 位，或者共享 shift-register 原语在全宽复位时仍按部分字段覆写处理，那么陈旧状态就可能在复位后继续存活，并在稍后被误当成真实的飞行中操作数或 issue 项。",
+      "portable_injection_spec": {
+        "affected_mechanism": "流水 valid 与复位初始化",
+        "trigger_condition": "设计刚退出 reset，或在所有 stage 都未被新流量覆盖之前执行了流水线重启。",
+        "injection_action": "让至少一个携带 valid 的 stage 在复位后保持部分或全部未清零，从而让陈旧控制位继续存在。",
+        "implementation_pattern": "remove reset from valid buffer or restore partial-reset-only primitive behavior",
+        "portability_notes": [
+          "优先选择其 valid 位或 opcode 元数据会影响后续操作数收集或发射决策的 stage。",
+          "如果 DUT 使用了可复用的 pipe 或 shift 原语，破坏该原语可以在多个使用点重现同类 bug。",
+          "若希望故障模型更窄，只修改本地操作数流水中承载 valid 状态的 stage。"
+        ],
+        "concrete_injection_steps": [
+          "找到在 issue stage 之间保存 valid 与操作数元数据的流水寄存器或 shift 原语。",
+          "移除 valid 字段上的显式 reset 覆盖，或把全宽 reset 逻辑改回只覆写高位 reset 字段的旧行为。",
+          "保持正常周期的数据移动逻辑不变，使回归主要在 reset 或 restart 后出现。",
+          "确认复位后该 stage 仍可能输出陈旧 valid 或陈旧控制载荷。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/core/VX_opc_unit.sv",
+          "hw/rtl/libs/VX_shift_register.sv"
+        ],
+        "target_module_or_logic": "VX_opc_unit 中的操作数流水 buffer，以及 VX_shift_register 中的 full-reset 处理",
+        "commit_fix_summary": "该修复为操作数流水 buffer 添加了 RESETW(1)，并把共享 shift-register 的 reset 逻辑拆成 full-reset 与 partial-reset 两种情况，使全宽 reset 时能够清空整个存储字。",
+        "mutation_strategy": "remove_reset",
+        "source_level_edit_anchor": "在 VX_opc_unit.sv 中删除两个 VX_pipe_buffer 上新增的 RESETW(1)；在 VX_shift_register.sv 中回退 RESETW == DATAW 分支，让 reset 再次只覆写高位 RESETW 比特而不是整个字。"
+      },
+      "expected_failure_mode": "复位后，陈旧的 valid 或操作数元数据可能在操作数收集路径中继续存在，导致伪造的操作数抓取、错误的 hazard 判断，或在流水自然覆盖这些 stage 之前出现错误 issue 行为。",
+      "evidence_for_injection": [
+        "该提交在核心数据通路中的 RTL 改动主要都是 reset 相关，因此这个 reset bug 是其主要硬件修复内容。",
+        "在 VX_opc_unit 中，RESETW 被加在了 valid 输出会驱动后续 stage 的 buffer 上。",
+        "共享原语修复直接处理了“理论上的全复位却仍保留低位”的情况。"
+      ],
+      "notes": [
+        "若想做更可控的故障注入，修改本地操作数流水 buffer 会比破坏共享原语更窄。",
+        "这个 bug 在其他 DUT 上也容易映射，体现为复位后流水状态残留，而不是 Vortex 特有信号问题。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 41,
+  "original_review_id": 49,
+  "meta": {
+    "id": 49,
+    "repo": "NyuziProcessor",
+    "branch": "master",
+    "commit": "10f5317b7271c675b99200197b7cc3b9baa6face",
+    "subject": "Issue #124 JTAG test intermittently fails with incorrect value"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fetch",
+    "summary": "Fixes a fetch-stage debug-halt race that could mark an instruction as valid while sourcing instruction bits from the wrong cycle, allowing an uninitialized injected debug instruction to replace a real fetched instruction.",
+    "why_it_counts": [
+      "The commit message describes a concrete incorrect-instruction bug during JTAG halt insertion.",
+      "The only touched file is core fetch RTL in ifetch_data_stage.",
+      "The patch realigns instruction data, valid, and fault metadata around debug instruction injection."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "The commit message says ifd_instruction_valid and ifd_instruction could change in different cycles when dbg_halt was inserted.",
+      "The instruction mux changed from raw dbg_halt to dbg_halt_latched, so data selection uses the same epoch as the pipeline state.",
+      "The sequential block now special-cases halted cycles, driving valid only from debug injection and clearing fetch-fault outputs instead of reusing normal fetch status."
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A fetch stage that can substitute debugger-supplied instructions for normal fetch results must keep the selected instruction word, its valid bit, and its fault/status signals aligned to the same pipeline epoch. If halt/debug mode flips the instruction mux immediately but validity still refers to the prior fetch result, the core can accept an injected word that was never initialized or was not meant for that cycle.",
+      "portable_injection_spec": {
+        "affected_mechanism": "debug instruction injection gating in fetch",
+        "trigger_condition": "A halt or debug-inject request arrives between the cycle that latches a normal fetched instruction as valid and the cycle that selects which instruction word reaches decode.",
+        "injection_action": "Make instruction-data selection react to raw halt state immediately while leaving valid and fault generation on the old fetch timing.",
+        "implementation_pattern": "bypass a pipeline latch on the debug-override mux",
+        "portability_notes": [
+          "Apply this to any design where a debugger or halt unit can inject instructions into the front end.",
+          "The bug requires a stage boundary where instruction bits and instruction-valid are registered separately.",
+          "If the design has no explicit fault flags, align only the data-path select and valid bit."
+        ],
+        "concrete_injection_steps": [
+          "Identify the fetch or decode boundary where normal instruction data is muxed with a debug-injected instruction.",
+          "Remove the registered or latched copy of halt/debug mode and drive that mux directly from the instantaneous halt signal.",
+          "Keep or restore the original valid-bit path so it can still assert for a previously fetched instruction during halt entry.",
+          "Do not clear fetch fault or exception flags on the first halted cycle, so metadata stays mismatched with the newly selected debug word."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_data_stage.sv"
+        ],
+        "target_module_or_logic": "ifetch_data_stage debug-halt instruction selection and valid/fault generation",
+        "commit_fix_summary": "The fix adds dbg_halt_latched, uses it in the ifd_instruction mux, and splits halted-cycle valid/fault handling from normal fetch-result handling.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Revert the mux to use raw dbg_halt instead of dbg_halt_latched and merge the halted-cycle valid/fault assignments back into the normal fetch-valid logic."
+      },
+      "expected_failure_mode": "Intermittent wrong instruction delivery at debug-halt entry: a real fetched instruction can be marked valid while the data word comes from an uninitialized or stale debug-injection path.",
+      "evidence_for_injection": [
+        "The bug is explicitly described as a race between ifd_instruction_valid and ifd_instruction.",
+        "The fix inserts a one-cycle latch for halt state before instruction selection.",
+        "The fix also zeros alignment, supervisor, TLB-miss, page-fault, and executable-fault outputs during halted cycles, showing metadata alignment was part of the bug."
+      ],
+      "notes": [
+        "This is a control-timing bug, not a JTAG-test-only issue.",
+        "Reproduction is easiest when debug halt can assert asynchronously relative to fetch result arrival."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "fetch",
+    "summary": "该提交修复了取指级的 debug-halt 竞争：指令可能被标记为有效，但其指令位来自错误周期，从而让未初始化的调试注入指令替换真实取回的指令。",
+    "why_it_counts": [
+      "提交信息明确描述了在插入 JTAG halt 时会出现错误指令值的具体硬件缺陷。",
+      "唯一修改的文件是 ifetch_data_stage 中的核心取指 RTL。",
+      "补丁把调试注入场景下的指令数据、valid 和 fault 元数据重新对齐。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "提交信息指出，在插入 dbg_halt 时，ifd_instruction_valid 和 ifd_instruction 可能在不同周期变化。",
+      "指令选择从原始 dbg_halt 改为 dbg_halt_latched，说明数据选择改为与流水线状态使用同一时序纪元。",
+      "时序块现在对 halted 周期单独处理：valid 只来自调试注入，且清零各类取指 fault，而不是继续复用正常取指状态。"
+    ],
+    "touched_dut_files": [
+      "hardware/core/ifetch_data_stage.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "如果前端支持用调试器提供的指令替换正常取指结果，那么被选中的指令字、它的 valid 位以及 fault/status 信号必须来自同一个流水线时序纪元。若 halt/debug 模式立刻切换了指令 mux，但 valid 仍对应上一个取指结果，核心就可能接受一个未初始化或不属于该周期的调试注入指令。",
+      "portable_injection_spec": {
+        "affected_mechanism": "取指阶段的调试指令注入门控",
+        "trigger_condition": "halt 或 debug 注入请求到达时，恰好位于“正常取指结果被锁存为有效”和“选择送往译码的指令字”这两个时刻之间。",
+        "injection_action": "让指令数据选择立即响应原始 halt 信号，但让 valid 和 fault 仍沿用旧的取指时序。",
+        "implementation_pattern": "绕过调试覆盖 mux 前的流水线锁存",
+        "portability_notes": [
+          "适用于任何支持调试注入或 halt 指令替换的前端设计。",
+          "该缺陷依赖于指令位和指令 valid 在不同寄存级上被保存。",
+          "如果设计没有显式 fault 标志，至少也要让数据选择和 valid 位失配。"
+        ],
+        "concrete_injection_steps": [
+          "找到取指或译码边界处在“正常指令”和“调试注入指令”之间切换的 mux。",
+          "删除或绕过 halt/debug 模式的寄存版本，让 mux 直接由瞬时 halt 信号控制。",
+          "保留或恢复旧的 valid 逻辑，使其在进入 halt 的周期仍可能为先前正常取回的指令置位。",
+          "不要在第一个 halted 周期清零取指 fault/异常输出，从而让元数据与新选中的调试指令失配。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hardware/core/ifetch_data_stage.sv"
+        ],
+        "target_module_or_logic": "ifetch_data_stage 中 debug-halt 的指令选择以及 valid/fault 生成逻辑",
+        "commit_fix_summary": "修复通过新增 dbg_halt_latched、在 ifd_instruction mux 中使用它，并把 halted 周期的 valid/fault 处理从正常取指路径中拆分出来实现。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "把 mux 从 dbg_halt_latched 改回原始 dbg_halt，并把 halted 周期的 valid/fault 赋值重新并回正常取指 valid 逻辑。"
+      },
+      "expected_failure_mode": "在进入 debug halt 的瞬间会间歇性输出错误指令：真实取回的指令可能被标记为有效，但数据字却来自未初始化或陈旧的调试注入路径。",
+      "evidence_for_injection": [
+        "提交信息明确把该缺陷描述为 ifd_instruction_valid 与 ifd_instruction 之间的竞争。",
+        "修复在指令选择前加入了一拍 halt 状态锁存。",
+        "修复还会在 halted 周期清零 alignment、supervisor、TLB miss、page fault 和 executable fault，说明元数据对齐本身就是问题的一部分。"
+      ],
+      "notes": [
+        "这是控制时序错误，不是单纯的 JTAG 测试问题。",
+        "当 debug halt 能相对取指结果异步到达时，最容易复现。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 133,
+  "original_review_id": 164,
+  "meta": {
+    "id": 164,
+    "repo": "gemmini",
+    "branch": "bank_conflict",
+    "commit": "059febf61dc28e15e5d5664787a3d2c20af29a3e",
+    "subject": "mvin/mvout bug fixed with 1sr/1cont"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "Scratchpad write issue logic was fixed so a write is marked issued only when a real valid write request is accepted.",
+    "why_it_counts": [
+      "Patch changes scratchpad DMA write-issue RTL",
+      "The old logic could dequeue work based on writer readiness alone even without valid write data",
+      "The commit message describes a concrete mvin/mvout bug in a hardware configuration"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scratchpad.scala changes `issued_write` from `writers(i).module.io.req.ready` alone to `ready && write_issue_q.io.deq.valid && is_valid_write`",
+      "That signal directly drives `write_issue_q.io.deq.ready`",
+      "The touched file is central DUT scratchpad and DMA write-path RTL"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "In a queued scratchpad or DMA write path, the producer must only retire a queued write when some consumer both accepts the request and the request is actually valid. If dequeue or issued bookkeeping is driven by consumer ready alone, the queue can drop writes during bubbles, invalid-data cycles, or zero-data corner cases, leaving the write path desynchronized from the queue state.",
+      "portable_injection_spec": {
+        "affected_mechanism": "write-issue handshake qualification",
+        "trigger_condition": "A writer port reports ready while the current queue entry is invalid, blocked, or has no valid write payload yet.",
+        "injection_action": "Count a write as issued based on downstream ready alone instead of requiring a real valid write handshake.",
+        "implementation_pattern": "drop valid and data-qualifier from dequeue handshake",
+        "portability_notes": [
+          "Apply this to any multi-port write dispatcher or scratchpad write arbiter with a queue feeding writer ports.",
+          "The bug target is the logic that converts per-writer ready signals into queue deq.ready or issued bookkeeping.",
+          "The same mechanism can show up even if the implementation uses valid/ready, grant/accept, or token-based handshakes."
+        ],
+        "concrete_injection_steps": [
+          "Locate the reduction that decides whether the current queued write has been issued.",
+          "Remove the guards that require queue-valid and payload-valid conditions.",
+          "Let downstream ready alone assert the issued or dequeue signal.",
+          "Keep the rest of the dispatch logic unchanged so the queue can advance without a real write transfer."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "Scratchpad write_issue_q dequeue logic in the writer loop",
+        "commit_fix_summary": "The fix qualifies issued_write with write_issue_q.io.deq.valid and is_valid_write before letting write_issue_q dequeue.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "Revert issued_write to depend only on writers(i).module.io.req.ready in the write_issue_q writer loop."
+      },
+      "expected_failure_mode": "Queued writes can be consumed without any real memory write taking place, causing dropped mvin or mvout data and eventual write-path desynchronization.",
+      "evidence_for_injection": [
+        "writers(i).module.io.req.valid already depends on write_issue_q.io.deq.valid and is_valid_write, so ready alone is insufficient to prove a transfer happened.",
+        "write_issue_q.io.deq.ready is assigned from issued_write, so weakening issued_write directly reinjects the bug.",
+        "The bug is isolated to one handshake reduction and is therefore straightforward to mutate."
+      ],
+      "notes": [
+        "The original commit message mentions the 1sr and 1cont configuration, which is a likely stress case rather than a requirement for the mechanism.",
+        "Keeping the all-zero write special case intact preserves fidelity to the original fix."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "lsu",
+    "summary": "该提交修复了 scratchpad 写发射逻辑，使其只有在真实有效的写请求被接受时才将写操作标记为已发射。",
+    "why_it_counts": [
+      "补丁修改了 scratchpad 的 DMA 写发射 RTL",
+      "旧逻辑可能仅凭 writer 就绪就出队，即使没有有效写数据",
+      "提交信息描述了特定硬件配置下的 mvin/mvout 缺陷"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "Scratchpad.scala 将 `issued_write` 从仅依赖 `writers(i).module.io.req.ready` 改为 `ready && write_issue_q.io.deq.valid && is_valid_write`",
+      "该信号直接驱动 `write_issue_q.io.deq.ready`",
+      "修改文件是核心 DUT scratchpad 与 DMA 写路径 RTL"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Scratchpad.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "在带队列的 scratchpad 或 DMA 写路径中，只有当某个消费者既接受了请求、该请求本身又确实有效时，生产者才能退休当前写条目。如果出队或“已发射”记账只看消费者 ready，队列就可能在气泡周期、无效数据周期或零数据边界情况下丢掉写请求，导致写路径状态与队列状态失步。",
+      "portable_injection_spec": {
+        "affected_mechanism": "写发射握手限定",
+        "trigger_condition": "某个 writer 端口给出 ready，但当前队列条目无效、被阻塞，或写载荷尚未有效。",
+        "injection_action": "仅根据下游 ready 就把写请求计为已发射，而不要求真实有效的写握手。",
+        "implementation_pattern": "删除出队握手中的 valid 和数据有效限定",
+        "portability_notes": [
+          "可应用于任何由队列向多个 writer 端口分发请求的写调度器或 scratchpad 写仲裁器。",
+          "故障目标是把各 writer 的 ready 信号归约成队列 deq.ready 或 issued 标志的那段逻辑。",
+          "即使实现使用的不是 valid/ready，而是 grant/accept 或 token 机制，缺陷机理仍相同。"
+        ],
+        "concrete_injection_steps": [
+          "定位决定当前队列写请求是否已经发出的归约逻辑。",
+          "删除要求队列有效以及载荷有效的保护条件。",
+          "让下游 ready 单独就能拉高 issued 或 dequeue 信号。",
+          "保持其余分发逻辑不变，使队列能在没有真实写传输的情况下前进。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Scratchpad.scala"
+        ],
+        "target_module_or_logic": "writer 循环中的 Scratchpad write_issue_q 出队逻辑",
+        "commit_fix_summary": "修复在允许 write_issue_q 出队之前，用 write_issue_q.io.deq.valid 和 is_valid_write 对 issued_write 做了限定。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 write_issue_q 的 writer 循环中，把 issued_write 恢复为只依赖 writers(i).module.io.req.ready。"
+      },
+      "expected_failure_mode": "队列中的写条目可能在没有任何真实内存写发生时就被消费，导致 mvin 或 mvout 数据丢失，并最终引发写路径失步。",
+      "evidence_for_injection": [
+        "writers(i).module.io.req.valid 本身已经依赖 write_issue_q.io.deq.valid 和 is_valid_write，因此仅凭 ready 不能证明传输已经发生。",
+        "write_issue_q.io.deq.ready 直接取自 issued_write，因此削弱 issued_write 就能直接重现该缺陷。",
+        "该缺陷集中在单个握手归约逻辑中，因此非常容易做故障回注。"
+      ],
+      "notes": [
+        "原提交信息提到的 1sr 和 1cont 配置更像是高压测试场景，而不是该机理成立的必要条件。",
+        "保留全零写这一特殊情形有助于更忠实地重现原始缺陷。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

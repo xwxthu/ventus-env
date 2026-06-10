@@ -1,0 +1,143 @@
+{
+  "dataset_id": 448,
+  "original_review_id": 594,
+  "meta": {
+    "id": 594,
+    "repo": "vortex",
+    "branch": "master",
+    "commit": "9d3eaca9ea8c0b50af5befe496e02e7362819bb0",
+    "subject": "FPGA bug fixes and int4 support fixes"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "This mixed commit contains a real tensor-core DUT fix for the FPGA DSP backend: fp16 and bf16 operands are explicitly converted to fp32 before multiplication, and the advertised FEDP latency is updated to match the extra conversion and rounding stages.",
+    "why_it_counts": [
+      "The functional changes are in central tensor-core RTL, not only tests or software.",
+      "The patch corrects operand-format handling on the DSP datapath before multiply and updates latency bookkeeping accordingly.",
+      "Without this fix, low-precision tensor operations on the FPGA backend can compute with the wrong numerical interpretation and timing."
+    ],
+    "disqualifiers": [
+      "The commit also includes int4 software and regression-support changes outside the DUT RTL."
+    ],
+    "evidence": [
+      "The parent VX_tcu_fedp_dsp.sv fed raw 16-bit halves directly into xil_hfmul, while the fix adds fp16_to_fp32 and bf16_to_fp32 modules and selects between them based on fmt_s.",
+      "VX_tcu_fedp_dsp.sv updates the latency assertion from FMUL plus ACC plus FRND to FCVT plus FMUL plus ACC plus FRND and delays c_val by the longer path.",
+      "VX_tcu_fp.sv raises the DSP-side latency constants from FMUL 6 and FRND 1 to FMUL 8 and FRND 2 to keep wrapper bookkeeping aligned.",
+      "The commit subject explicitly says FPGA bug fixes."
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_fedp_dsp.sv",
+      "hw/rtl/tcu/VX_tcu_fp.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A tensor or MAC backend that uses FPGA DSP floating-point IP must present operands in the format expected by that multiplier pipeline. If packed fp16 or bf16 lanes are injected directly as raw 16-bit fields instead of being expanded or normalized into the DSP's fp32 domain first, the multiply-accumulate datapath computes the wrong numeric values. Adding that conversion stage also increases pipeline depth, so control-side latency tracking must be updated in step with the format fix.",
+      "portable_injection_spec": {
+        "affected_mechanism": "low-precision operand normalization before DSP multiply",
+        "trigger_condition": "The DSP backend executes fp16 or bf16 tensor operations through a multiplier path that expects normalized fp32 inputs or a longer converted pipeline.",
+        "injection_action": "Bypass or remove the operand-format conversion stage before multiplication, and if the design tracks latency separately, keep the older shorter latency constants.",
+        "implementation_pattern": "drop format-conversion stage before DSP multiply",
+        "portability_notes": [
+          "This applies to FPGA or accelerator backends that emulate fp16 or bf16 by converting into a wider internal floating-point format.",
+          "If the DUT has no explicit conversion module, the equivalent mutation is to feed packed low-precision bits directly into the multiplier input path.",
+          "To preserve the original bug shape, pair the missing conversion with stale completion-latency bookkeeping when such bookkeeping exists."
+        ],
+        "concrete_injection_steps": [
+          "Identify the stage that converts fp16 or bf16 tensor operands into the internal multiply format used by the DSP backend.",
+          "Remove that conversion or force the datapath to select raw packed low-precision fields instead of normalized widened operands.",
+          "If the tensor wrapper computes done latency from pipeline stages, reduce those constants to the pre-conversion values.",
+          "Run fp16 or bf16 tensor MAC workloads and observe wrong accumulations or result-timing mismatches."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_fedp_dsp.sv",
+          "hw/rtl/tcu/VX_tcu_fp.sv"
+        ],
+        "target_module_or_logic": "DSP FEDP operand-conversion stage and wrapper latency constants in the tensor-core FP path",
+        "commit_fix_summary": "The fix inserts fp16_to_fp32 and bf16_to_fp32 conversion before DSP multiplication, selects the correct converted operands by fmt_s, and updates the DSP-side latency accounting in both VX_tcu_fedp_dsp.sv and VX_tcu_fp.sv.",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "In VX_tcu_fedp_dsp.sv, remove the fp16_to_fp32 and bf16_to_fp32 selection stage so the multiplier again consumes raw unpacked 16-bit halves. In VX_tcu_fp.sv, restore the older shorter DSP latency constants so wrapper bookkeeping matches the buggy shorter pipeline."
+      },
+      "expected_failure_mode": "FPGA tensor-core fp16 or bf16 operations produce numerically incorrect multiply-accumulate results and may also show completion timing skew if the control path still assumes the shorter pre-conversion latency.",
+      "evidence_for_injection": [
+        "The parent DSP backend had no explicit fp16 or bf16 to fp32 conversion stage before multiplication.",
+        "The fix updates both datapath format handling and its matching latency bookkeeping, so the bug is not just cosmetic refactoring.",
+        "The mutation can be reintroduced with a narrow reverse edit to the DSP input stage plus optional latency constants."
+      ],
+      "notes": [
+        "For a single focused mutation, removing the conversion stage in VX_tcu_fedp_dsp.sv captures the main correctness defect.",
+        "This maps cleanly onto other DUTs as an internal-format normalization bug in mixed-precision tensor hardware."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "fpu",
+    "summary": "这个混合提交中包含了一个真实的 FPGA DSP 后端 tensor-core DUT 修复：fp16 和 bf16 操作数会在乘法前显式转换为 fp32，同时对外宣告的 FEDP 延迟也被更新，以匹配新增的转换级和舍入级。",
+    "why_it_counts": [
+      "功能改动发生在核心 tensor-core RTL 中，而不只是测试或软件。",
+      "补丁修正了 DSP 数据通路在乘法前的操作数格式处理，并同步更新了延迟记账。",
+      "没有这个修复时，FPGA 后端上的低精度张量运算会以错误的数值解释和错误时序执行。"
+    ],
+    "disqualifiers": [
+      "该提交也包含 DUT RTL 之外的 int4 软件和回归支持改动。"
+    ],
+    "evidence": [
+      "父版本的 VX_tcu_fedp_dsp.sv 直接把 16 位半精度切片送入 xil_hfmul，而修复版新增 fp16_to_fp32 和 bf16_to_fp32 模块，并根据 fmt_s 在两者之间选择。",
+      "VX_tcu_fedp_dsp.sv 把延迟断言从 FMUL 加 ACC 加 FRND 更新为 FCVT 加 FMUL 加 ACC 加 FRND，并据此延长了 c_val 的对齐延迟。",
+      "VX_tcu_fp.sv 把 DSP 侧延迟常量从 FMUL 6 与 FRND 1 提高到 FMUL 8 与 FRND 2，以保持包装层记账一致。",
+      "提交标题明确写了 FPGA bug fixes。"
+    ],
+    "touched_dut_files": [
+      "hw/rtl/tcu/VX_tcu_fedp_dsp.sv",
+      "hw/rtl/tcu/VX_tcu_fp.sv"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "使用 FPGA DSP 浮点 IP 的张量或 MAC 后端，必须以该乘法流水所期望的格式去提供输入操作数。如果把打包的 fp16 或 bf16 lane 直接当作原始 16 位字段送入乘法器，而不是先扩展或规范化到 DSP 所用的 fp32 域中，乘加数据通路就会计算出错误的数值。由于加入这个转换级也会增加流水深度，所以控制侧的延迟记账也必须随之同步更新。",
+      "portable_injection_spec": {
+        "affected_mechanism": "DSP 乘法前的低精度操作数规范化",
+        "trigger_condition": "DSP 后端执行 fp16 或 bf16 张量运算，且乘法路径期望的是规范化后的 fp32 输入或更长的转换流水。",
+        "injection_action": "绕过或删除乘法前的操作数格式转换级；如果设计还单独跟踪延迟，则保留旧的更短延迟常量。",
+        "implementation_pattern": "drop format-conversion stage before DSP multiply",
+        "portability_notes": [
+          "这适用于通过转换到更宽内部浮点格式来实现 fp16 或 bf16 的 FPGA 或加速器后端。",
+          "如果 DUT 没有显式的转换模块，那么等价变异就是把打包的低精度位直接送入乘法器输入路径。",
+          "若设计存在单独的完成延迟记账，为了保留原始 bug 形态，最好把缺失转换与陈旧的延迟常量配对注入。"
+        ],
+        "concrete_injection_steps": [
+          "找到把 fp16 或 bf16 张量操作数转换为 DSP 后端内部乘法格式的那一级。",
+          "删除该转换，或强制数据通路选择原始打包低精度字段，而不是规范化扩展后的操作数。",
+          "如果张量包装层根据流水级数计算 done latency，则把这些常量降回转换前的旧值。",
+          "运行 fp16 或 bf16 张量 MAC 工作负载，并观察错误的累加结果或结果时序失配。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "hw/rtl/tcu/VX_tcu_fedp_dsp.sv",
+          "hw/rtl/tcu/VX_tcu_fp.sv"
+        ],
+        "target_module_or_logic": "tensor-core FP 路径中 DSP FEDP 的操作数转换级及包装层延迟常量",
+        "commit_fix_summary": "该修复在 DSP 乘法前插入 fp16_to_fp32 与 bf16_to_fp32 转换，并按 fmt_s 选择正确的转换结果，同时在 VX_tcu_fedp_dsp.sv 和 VX_tcu_fp.sv 中更新 DSP 侧延迟记账。",
+        "mutation_strategy": "reverse_patch",
+        "source_level_edit_anchor": "在 VX_tcu_fedp_dsp.sv 中删除 fp16_to_fp32 和 bf16_to_fp32 的选择级，让乘法器重新消费原始拆包的 16 位切片；在 VX_tcu_fp.sv 中恢复较短的旧 DSP 延迟常量，使包装层记账重新匹配这个有缺陷的短流水。"
+      },
+      "expected_failure_mode": "FPGA tensor-core 的 fp16 或 bf16 运算会产生数值错误的乘加结果；如果控制路径仍假设较短的旧延迟，还可能出现完成时序偏斜。",
+      "evidence_for_injection": [
+        "父版本的 DSP 后端在乘法前没有显式的 fp16 或 bf16 到 fp32 转换级。",
+        "修复同时更新了数据通路的格式处理和与之匹配的延迟记账，因此这不是纯粹的重构。",
+        "通过对 DSP 输入级加上可选的延迟常量反向修改，就能以很窄的方式重新引入该问题。"
+      ],
+      "notes": [
+        "如果只做一个聚焦变异，删除 VX_tcu_fedp_dsp.sv 中的转换级即可捕获主要正确性缺陷。",
+        "这个问题在其他 DUT 上也很好映射，本质上是混合精度张量硬件中的内部格式规范化错误。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "dataset_id": 55,
+  "original_review_id": 73,
+  "meta": {
+    "id": 73,
+    "repo": "gemmini",
+    "branch": "gemmini-mx",
+    "commit": "9c7a22d34dbc95459f675582bdbfb6300ada7eb3",
+    "subject": "fix the data layout mismatch for quantized data"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "data_layout",
+    "summary": "Fixes the packing order for quantized FP6 and FP4 output data so the two half-rows are interleaved in the intended lane order.",
+    "why_it_counts": [
+      "The patch changes the final packed output word in the MxRequantizer datapath.",
+      "It directly reorders quantized lane placement, which is a DUT functional behavior issue.",
+      "The commit message explicitly names a data layout mismatch."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "MxRequantizer.scala changes fp6_interleaved from a row1-first descending pattern to a row0-first ascending pair pattern.",
+      "The same interleave correction is applied to fp4_interleaved.",
+      "The modified lines sit immediately before fp6_combined and fp4_combined are emitted as packed output data."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/MxRequantizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "Low-bit quantized outputs are often assembled from two partial rows or two cycles of data. The packer must interleave those halves in the exact lane order expected by memory and later consumers. If the two halves are merged in the wrong row order or pair order, every packed word is structurally scrambled even though the individual quantized elements are numerically correct.",
+      "portable_injection_spec": {
+        "affected_mechanism": "two-half quantized row interleaving",
+        "trigger_condition": "The quantizer emits a packed output by combining two temporally separated halves of FP4 or FP6 data.",
+        "injection_action": "Restore the wrong interleave pattern so the second half is packed ahead of the first half, or adjacent pairs are emitted in the wrong sequence.",
+        "implementation_pattern": "swap packed-lane interleave order",
+        "portability_notes": [
+          "Apply this where a low-bit packer combines two half-rows, two channels, or two cycles into one output word.",
+          "The bug is about lane ordering, not quantization math or lookup-table contents.",
+          "Use the destination DUT's notion of lane order, row-major order, or nibble packing when mapping the mutation."
+        ],
+        "concrete_injection_steps": [
+          "Find the final packer that concatenates the first buffered half with the newly produced half of quantized data.",
+          "Swap the row order or pair ordering used when building the packed word.",
+          "Leave the quantization arithmetic unchanged so the resulting failure is a pure layout mismatch."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/MxRequantizer.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer FP6 and FP4 interleaving before fp6_combined and fp4_combined",
+        "commit_fix_summary": "The fix rewrites the fp6_interleaved and fp4_interleaved sequences so row0 and row1 elements are packed in the corrected pair order before concatenation.",
+        "mutation_strategy": "swap packed-lane interleave order",
+        "source_level_edit_anchor": "In the fp6_interleaved and fp4_interleaved builders, revert to the older row1-first ordering rather than the corrected row0,row1 paired order."
+      },
+      "expected_failure_mode": "Packed quantized output words contain the right values in the wrong lane positions, causing downstream memory layout mismatches and incorrect reconstruction of tensor data.",
+      "evidence_for_injection": [
+        "The only active logic changes are the interleave sequences for FP6 and FP4.",
+        "Those sequences feed the final combined packed output wires directly.",
+        "The commit message describes the symptom as a data layout mismatch rather than a numeric quantization error."
+      ],
+      "notes": [
+        "This is a strong cross-DUT injection because many quantizers use an explicit half-row merge stage.",
+        "Good validation checks compare packed lane order, not just aggregate value ranges."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "data_layout",
+    "summary": "该提交修复了量化 FP6 和 FP4 输出数据的打包顺序，使两个半行按照预期的 lane 次序交织。",
+    "why_it_counts": [
+      "补丁修改的是 MxRequantizer 数据通路中的最终打包输出字。",
+      "它直接改变量化 lane 的放置顺序，这是 DUT 的功能性行为问题。",
+      "提交信息明确指出存在 data layout mismatch。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "MxRequantizer.scala 把 fp6_interleaved 从 row1 优先的降序模式改为 row0 优先的成对升序模式。",
+      "同样的交织顺序修正也应用到了 fp4_interleaved。",
+      "被修改的代码正位于 fp6_combined 和 fp4_combined 被拼成最终打包输出之前。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/MxRequantizer.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "低比特量化输出通常由两个部分行或两个周期的数据拼接而成。打包器必须按照内存和下游消费者所期望的精确 lane 顺序对这两半进行交织。如果合并时使用了错误的行顺序或成对顺序，那么即便每个量化元素的数值本身是正确的，整个打包字的结构也会被打乱。",
+      "portable_injection_spec": {
+        "affected_mechanism": "双半行量化数据的交织打包",
+        "trigger_condition": "量化器需要把两个时间上分离的 FP4 或 FP6 半行组合成一个打包输出字。",
+        "injection_action": "恢复错误的交织模式，使第二半行排在第一半行之前，或让相邻成对元素以错误顺序输出。",
+        "implementation_pattern": "swap packed-lane interleave order",
+        "portability_notes": [
+          "适用于任何把两个半行、两个通道或两个周期合并成一个低比特输出字的打包器。",
+          "该缺陷的核心是 lane 排列顺序，而不是量化数学或查找表内容。",
+          "映射到目标 DUT 时，应使用其对应的 lane 顺序、行主序或 nibble 打包定义。"
+        ],
+        "concrete_injection_steps": [
+          "找到把第一半缓冲数据与新产生的第二半量化数据拼成最终输出字的打包器。",
+          "交换构造打包字时使用的行顺序或成对顺序。",
+          "保持量化算术不变，使故障纯粹表现为布局错配。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/MxRequantizer.scala"
+        ],
+        "target_module_or_logic": "MxRequantizer 中 fp6_combined 和 fp4_combined 之前的 FP6/FP4 交织逻辑",
+        "commit_fix_summary": "修复重写了 fp6_interleaved 和 fp4_interleaved 的序列，使 row0 和 row1 元素在最终拼接前按正确的成对顺序打包。",
+        "mutation_strategy": "swap packed-lane interleave order",
+        "source_level_edit_anchor": "在 fp6_interleaved 和 fp4_interleaved 的构造中，恢复旧的 row1 优先顺序，而不是修复后的 row0,row1 成对顺序。"
+      },
+      "expected_failure_mode": "打包后的量化输出字会包含正确数值但位于错误 lane 位置，导致下游内存布局错配以及张量数据重建错误。",
+      "evidence_for_injection": [
+        "唯一的实际逻辑修改就是 FP6 和 FP4 的交织序列。",
+        "这些序列直接驱动最终组合后的打包输出线网。",
+        "提交信息将问题描述为 data layout mismatch，而不是数值量化错误。"
+      ],
+      "notes": [
+        "这是很强的跨 DUT 注入模式，因为许多量化器都显式存在半行合并阶段。",
+        "验证时应重点检查打包 lane 顺序，而不只是数值范围。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

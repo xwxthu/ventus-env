@@ -1,0 +1,141 @@
+{
+  "dataset_id": 53,
+  "original_review_id": 71,
+  "meta": {
+    "id": 71,
+    "repo": "gemmini",
+    "branch": "gemmini-mx",
+    "commit": "f6a6dfae35936960cd2cb72e58f1c306318d2896",
+    "subject": "(wip fix): load activation, a_stride still wrong"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "Fixes width propagation for projected activation data so loop-generated load/store metadata and exported type information match the packed activation format used by the DUT.",
+    "why_it_counts": [
+      "The functional edits change command-generation and configuration width logic in core Gemmini hardware code.",
+      "The patch switches loop command construction to projected activation width and adjusts related width metadata.",
+      "These width terms feed DMA sizing and command fields for activation movement, which is a DUT behavior issue."
+    ],
+    "disqualifiers": [
+      "The commit is marked WIP and says a_stride is still wrong elsewhere.",
+      "ExecuteController.scala only gains a commented line and does not contribute active logic to the fix."
+    ],
+    "evidence": [
+      "Controller.scala changes LoopConv and LoopMatmul constructor arguments from inputType.getWidth to inputTypeProjected.getWidth.",
+      "GemminiConfigs.scala changes elem_t_bits to use inputTypeProjected.getWidth.",
+      "GemminiConfigs.scala also changes mvin_cols_bits and mvout_cols_bits away from projected weight width to the non-projected element width used by the command metadata."
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Controller.scala",
+      "src/main/scala/gemmini/GemminiConfigs.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "When a design supports compressed or projected activation formats, the control path must use the packed element width consistently when generating DMA commands, loop bounds, and exported metadata. If the controller mixes projected-width and unprojected-width assumptions, it can compute the wrong byte counts or column fields, causing activation loads and stores to be mis-sized even when the datapath itself is otherwise correct.",
+      "portable_injection_spec": {
+        "affected_mechanism": "packed-activation width propagation into loop and DMA metadata",
+        "trigger_condition": "The DUT moves activations in a packed/projected format whose storage width differs from the logical source element width.",
+        "injection_action": "Restore an inconsistent width source in the control path so command generation and metadata use the wrong element width for projected activations.",
+        "implementation_pattern": "restore stale width metadata",
+        "portability_notes": [
+          "This applies to controllers that support multiple activation encodings or quantized/projection modes.",
+          "The bug is about control-path width bookkeeping, not the arithmetic on the activation values themselves.",
+          "Use the destination DUT's equivalent of DMA column count, bytes-per-row, or type-width metadata as the injection site."
+        ],
+        "concrete_injection_steps": [
+          "Identify where loop or DMA commands derive byte counts or column counts from activation element width.",
+          "Replace the packed/projected width with the legacy unprojected width in one or more of those control calculations.",
+          "Keep the datapath and format-conversion logic unchanged so the observable failure comes from mis-sized transfers or bounds."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Controller.scala",
+          "src/main/scala/gemmini/GemminiConfigs.scala"
+        ],
+        "target_module_or_logic": "LoopConv and LoopMatmul width plumbing plus Gemmini configuration width metadata",
+        "commit_fix_summary": "The fix passes inputTypeProjected.getWidth into LoopConv and LoopMatmul and updates exported elem_t_bits and related column-width metadata so the control path matches projected activation storage.",
+        "mutation_strategy": "restore stale width metadata",
+        "source_level_edit_anchor": "In the loop-command constructors and width-derived config fields, revert projected-width usage back to the older unprojected or otherwise inconsistent width source."
+      },
+      "expected_failure_mode": "Projected activation loads or stores use the wrong transfer size or column metadata, leading to mis-packed data movement, misaligned accesses, or incorrect loop command generation.",
+      "evidence_for_injection": [
+        "The active logic changes are all width-selection changes in control/config code.",
+        "The only ExecuteController edit is a comment, so the real fix is concentrated in width propagation.",
+        "The subject mentions activation load issues, and the patch changes the parameters that determine activation transfer sizing."
+      ],
+      "notes": [
+        "Confidence is medium because the commit is explicitly WIP and acknowledges another unresolved stride issue.",
+        "The best reinjection target is the control-path width source, not the commented a_stride line."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "medium",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交修复了投影激活数据的位宽传递问题，使循环生成的加载/存储元数据以及导出的类型信息与 DUT 实际使用的打包激活格式一致。",
+    "why_it_counts": [
+      "功能性修改发生在 Gemmini 核心硬件代码中的命令生成和配置位宽逻辑里。",
+      "补丁把循环命令构造切换为使用 projected activation width，并同步调整了相关位宽元数据。",
+      "这些位宽项会进入 DMA 大小和命令字段，直接影响激活数据搬运这一 DUT 行为。"
+    ],
+    "disqualifiers": [
+      "该提交被标记为 WIP，并说明 a_stride 在别处仍然有问题。",
+      "ExecuteController.scala 只新增了一行注释，并没有贡献实际修复逻辑。"
+    ],
+    "evidence": [
+      "Controller.scala 将 LoopConv 和 LoopMatmul 的构造参数从 inputType.getWidth 改为 inputTypeProjected.getWidth。",
+      "GemminiConfigs.scala 将 elem_t_bits 改为使用 inputTypeProjected.getWidth。",
+      "GemminiConfigs.scala 还把 mvin_cols_bits 和 mvout_cols_bits 从 projected weight width 调整为命令元数据所使用的非 projected 元素宽度。"
+    ],
+    "touched_dut_files": [
+      "src/main/scala/gemmini/Controller.scala",
+      "src/main/scala/gemmini/GemminiConfigs.scala"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "当设计支持压缩或投影激活格式时，控制路径必须在 DMA 命令、循环边界和导出元数据中一致地使用打包后的元素位宽。如果控制器混用了 projected width 和未投影 width 的假设，就会计算出错误的字节数或列数字段，使激活加载/存储的尺寸错误，即使数据通路本身是正确的也会出错。",
+      "portable_injection_spec": {
+        "affected_mechanism": "打包激活位宽向循环和 DMA 元数据的传递",
+        "trigger_condition": "DUT 以打包或投影格式搬运激活数据，并且该存储位宽与逻辑源元素位宽不同。",
+        "injection_action": "在控制路径中恢复不一致的位宽来源，使 projected activation 的命令生成和元数据再次使用错误的元素位宽。",
+        "implementation_pattern": "restore stale width metadata",
+        "portability_notes": [
+          "适用于支持多种激活编码或量化/投影模式的控制器。",
+          "该缺陷的核心是控制路径的位宽记账错误，而不是激活数值本身的算术问题。",
+          "应把注入点映射到目标 DUT 中 DMA 列数、每行字节数或类型位宽元数据的等价位置。"
+        ],
+        "concrete_injection_steps": [
+          "找到循环或 DMA 命令中由激活元素位宽推导字节数或列数的逻辑。",
+          "在这些控制计算中的一个或多个位置，把 packed/projected width 改回旧的未投影 width。",
+          "保持数据通路和格式转换逻辑不变，使可观察故障来自传输尺寸或边界的错误。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "src/main/scala/gemmini/Controller.scala",
+          "src/main/scala/gemmini/GemminiConfigs.scala"
+        ],
+        "target_module_or_logic": "LoopConv 和 LoopMatmul 的位宽传递，以及 Gemmini 配置中的位宽元数据",
+        "commit_fix_summary": "修复把 inputTypeProjected.getWidth 传入 LoopConv 和 LoopMatmul，并更新导出的 elem_t_bits 以及相关列宽元数据，使控制路径与 projected activation 的存储格式一致。",
+        "mutation_strategy": "restore stale width metadata",
+        "source_level_edit_anchor": "在循环命令构造参数和由位宽推导出的配置字段中，把 projected width 的使用恢复为旧的未投影或其他不一致的位宽来源。"
+      },
+      "expected_failure_mode": "projected activation 的加载或存储会使用错误的传输尺寸或列元数据，导致数据搬运打包错误、访问错位或循环命令生成错误。",
+      "evidence_for_injection": [
+        "所有实际的功能修改都是控制/配置代码中的位宽选择变更。",
+        "ExecuteController 的唯一改动是一条注释，因此真正修复集中在位宽传递上。",
+        "提交标题提到 activation load 问题，而补丁正是修改了决定激活传输大小的参数。"
+      ],
+      "notes": [
+        "由于该提交明确是 WIP 且承认还有 stride 问题未解决，所以置信度为 medium。",
+        "最合适的重新注入目标是控制路径的位宽来源，而不是注释掉的 a_stride 行。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "dataset_id": 164,
+  "original_review_id": 203,
+  "meta": {
+    "id": 203,
+    "repo": "nvdla-hw",
+    "branch": "master",
+    "commit": "33e0aa7e4035b95c1bbb3a071f9955fdb1b5d88f",
+    "subject": "fix cdma no write bug, medium cube size"
+  },
+  "en": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "This commit fixes a CDMA bookkeeping width bug by widening a delayed data-entry counter stage, preventing medium-sized transfers from truncating their write-related entry counts.",
+    "why_it_counts": [
+      "It touches only the CDMA RTL implementation.",
+      "The modified signal is a pipelined entry-count value used in functional update logic, not a comment or test hook.",
+      "The commit message explicitly describes a no-write failure on medium cube sizes."
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CDMA_dc.v changes dat_entries_d3 from reg [11:0] to reg [14:0].",
+      "The generated reset template for that delayed stage is updated from a 12-bit constant to width-independent zero.",
+      "The file is the CDMA data-control block that later exports dc2status_dat_entries."
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "A DMA front end often pipelines entry-count or beat-count information for several cycles before using it to trigger writes, status updates, or completion conditions. If one delayed stage is narrower than the upstream count, transfers that exceed that stale width wrap or truncate at the delayed stage. The downstream control then believes fewer entries were produced than actually arrived, which can suppress writes or make completion fire early.",
+      "portable_injection_spec": {
+        "affected_mechanism": "pipelined transfer-entry bookkeeping",
+        "trigger_condition": "A transfer size is large enough to exceed the representable range of a delayed entry-count stage while still being small enough that upstream counters remain correct.",
+        "injection_action": "Narrow a delayed entry-count register stage so high bits are dropped before the write or status path consumes the count.",
+        "implementation_pattern": "truncate pipelined counter width",
+        "portability_notes": [
+          "Choose a delayed count stage that still feeds functional write-enable or status-update logic, not a pure performance counter.",
+          "The most portable target is a pipeline register that trails the main entry-count calculation by several cycles.",
+          "Leave the upstream counter wide so the bug manifests as delayed-stage truncation, matching the real patch."
+        ],
+        "concrete_injection_steps": [
+          "Find the delayed transfer-entry count that is forwarded into write or status update logic.",
+          "Reduce that register's width below the maximum number of entries that a medium-sized transfer can produce.",
+          "Restore the narrower reset or zero-extension behavior so only the delayed stage truncates.",
+          "Do not change the consuming logic; let it operate on the truncated value."
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA delayed data-entry counter stage dat_entries_d3",
+        "commit_fix_summary": "The fix widens dat_entries_d3 from 12 bits to 15 bits and updates its reset template, preserving the full delayed entry count for later CDMA write/status logic.",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "Change dat_entries_d3 in NV_NVDLA_CDMA_dc.v back to 12 bits and restore the narrower zero/reset pattern for that stage."
+      },
+      "expected_failure_mode": "Medium-sized transfers undercount produced entries after the pipeline delay, which can suppress writes, under-report available data, or end the transfer too early.",
+      "evidence_for_injection": [
+        "The signal name and file context show the value is a real data-entry count, not a monitor-only field.",
+        "The commit message directly ties the width change to a no-write functional bug.",
+        "Only one delayed stage width is changed, which makes reverse injection precise and localized."
+      ],
+      "notes": [
+        "The real bug is the truncation point at the delayed stage, not the upstream count generation.",
+        "This is a strong candidate for a portable width-truncation mutation."
+      ]
+    },
+    "needs_human_review": false
+  },
+  "zh": {
+    "classification": "dut_bugfix",
+    "confidence": "high",
+    "injectable": true,
+    "primary_bug_type": "bitwidth",
+    "summary": "该提交通过扩展延迟的数据 entry 计数级位宽，修复了 CDMA 在中等大小传输下会截断写相关 entry 计数的问题。",
+    "why_it_counts": [
+      "它只修改了 CDMA 的 RTL 实现。",
+      "被修改的信号是功能性更新逻辑会消费的流水级 entry 计数，而不是注释或测试钩子。",
+      "提交信息明确说明这是 medium cube size 下的 no-write 故障。"
+    ],
+    "disqualifiers": [],
+    "evidence": [
+      "NV_NVDLA_CDMA_dc.v 把 dat_entries_d3 从 reg [11:0] 改成了 reg [14:0]。",
+      "该延迟级的自动生成复位模板也从 12 位常量改成了与位宽无关的零值。",
+      "该文件属于之后会导出 dc2status_dat_entries 的 CDMA 数据控制模块。"
+    ],
+    "touched_dut_files": [
+      "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+    ],
+    "fault_injection_plan": {
+      "portable_bug_context": "DMA 前端通常会把 entry 数或 beat 数在流水线中延迟若干拍，再用于触发写入、状态更新或完成判断。如果其中某一级的位宽比上游计数窄，那么一旦传输规模超过旧位宽范围，该延迟级就会回绕或截断。下游控制逻辑因此误以为实际产生的数据更少，从而抑制写入或过早结束传输。",
+      "portable_injection_spec": {
+        "affected_mechanism": "流水级传输 entry 记账",
+        "trigger_condition": "某次传输的大小足以超过延迟 entry 计数级的表示范围，但上游主计数仍然正确。",
+        "injection_action": "缩窄一个延迟 entry 计数寄存器级，使高位在进入写路径或状态路径前被丢弃。",
+        "implementation_pattern": "truncate pipelined counter width",
+        "portability_notes": [
+          "应选择仍然会馈入实际写使能或状态更新逻辑的延迟计数级，而不是纯性能计数器。",
+          "最可移植的目标是落后于主 entry 计算若干拍的流水寄存器。",
+          "保留上游宽计数不变，使故障表现为延迟级截断，这与真实补丁一致。"
+        ],
+        "concrete_injection_steps": [
+          "定位进入写路径或状态更新逻辑之前的延迟传输 entry 计数。",
+          "把该寄存器位宽缩小到低于 medium-sized transfer 可能产生的最大 entry 数。",
+          "恢复较窄的复位或零扩展行为，使只有该延迟级发生截断。",
+          "不要改动消费该值的下游逻辑，让其直接在截断值上运行。"
+        ]
+      },
+      "repository_grounding": {
+        "target_files": [
+          "vmod/nvdla/cdma/NV_NVDLA_CDMA_dc.v"
+        ],
+        "target_module_or_logic": "CDMA 延迟数据 entry 计数级 dat_entries_d3",
+        "commit_fix_summary": "修复把 dat_entries_d3 从 12 位扩展到 15 位，并更新了复位模板，从而在后续 CDMA 写入/状态逻辑中保留完整的延迟 entry 计数。",
+        "mutation_strategy": "truncate_width",
+        "source_level_edit_anchor": "把 NV_NVDLA_CDMA_dc.v 中的 dat_entries_d3 改回 12 位，并恢复该级较窄的清零/复位行为。"
+      },
+      "expected_failure_mode": "中等大小传输在流水延迟后会低估已产生的 entries，导致写入缺失、可用数据低报，或传输过早结束。",
+      "evidence_for_injection": [
+        "信号名和文件上下文表明它是真正的数据 entry 计数，而不是监控字段。",
+        "提交信息直接把位宽修改与 no-write 功能故障关联起来。",
+        "补丁只改变了单个延迟级位宽，因此逆向注入非常局部且明确。"
+      ],
+      "notes": [
+        "真实故障点是延迟级的截断，而不是上游 entry 计算。",
+        "这是很典型、也很可移植的位宽截断类注入。"
+      ]
+    },
+    "needs_human_review": false
+  }
+}
