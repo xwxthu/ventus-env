@@ -79,6 +79,28 @@ done
 # Get build type from env, otherwise use default value 'Release'
 BUILD_TYPE=${BUILD_TYPE:-Release}
 
+# Detect nvidia driver availability; sbtsim requires CUDA/nvidia driver to build
+NVIDIA_DRIVER_AVAILABLE=false
+check_nvidia_driver() {
+  # Check for nvidia-smi, /dev/nvidia0, or libcuda.so as indicators of a working nvidia driver
+  if nvidia-smi &> /dev/null 2>&1; then
+    NVIDIA_DRIVER_AVAILABLE=true
+  elif [ -e /dev/nvidia0 ]; then
+    NVIDIA_DRIVER_AVAILABLE=true
+  elif ldconfig -p 2>/dev/null | grep -q "libcuda\.so"; then
+    NVIDIA_DRIVER_AVAILABLE=true
+  fi
+  if [ "${NVIDIA_DRIVER_AVAILABLE}" = "false" ]; then
+    echo "WARNING:*************************************************************"
+    echo
+    echo "NVIDIA driver not found. Skipping sbtsim (SBT PTX translator) build."
+    echo "If you need sbtsim, please install the NVIDIA driver and try again."
+    echo
+    echo "WARNING:*************************************************************"
+  fi
+}
+check_nvidia_driver
+
 # Need to get the systemc folder from enviroment variables
 SYSTEMC_DIR=${SYSTEMC_DIR:-${DIR}/systemc}
 SYSTEMC_INSTALL_DIR=${SYSTEMC_INSTALL_DIR:-${VENTUS_INSTALL_PREFIX}/systemc}
@@ -172,6 +194,11 @@ build_llvm() {
 
 # Build ventus driver
 build_driver() {
+  local driver_enable_ptx="ON"
+  if [ "${NVIDIA_DRIVER_AVAILABLE}" = "false" ]; then
+    driver_enable_ptx="OFF"
+    echo "WARNING: Building driver without PTX support (sbtsim skipped -- NVIDIA driver not available)."
+  fi
   mkdir -p ${DRIVER_BUILD_DIR}
   cd ${DRIVER_DIR}
   cmake -G Ninja -B ${DRIVER_BUILD_DIR} -S ${DRIVER_DIR} \
@@ -183,7 +210,7 @@ build_driver() {
     -DDRIVER_ENABLE_RTLSIM=ON \
     -DDRIVER_ENABLE_CYCLESIM=ON \
     -DDRIVER_ENABLE_GVM=ON \
-    -DDRIVER_ENABLE_PTX=ON
+    -DDRIVER_ENABLE_PTX=${driver_enable_ptx}
     # -DCMAKE_C_COMPILER=clang \
     # -DCMAKE_CXX_COMPILER=clang++ \
   ninja -C ${DRIVER_BUILD_DIR}
@@ -241,6 +268,14 @@ build_gvm() {
   make -f gvm.mk install RELEASE=1 PREFIX=${VENTUS_INSTALL_PREFIX} GVM_REF_DIR=${VENTUS_INSTALL_PREFIX}/lib
 }
 
+build_gpgpu_rtlsim_gvm() {
+  make -C ${GPGPU_DIR} --output-sync=target -j${BUILD_PARALLEL} rtlsim-gvm-install \
+    RELEASE=1 \
+    PREFIX=${VENTUS_INSTALL_PREFIX} \
+    GVM_REF_DIR=${VENTUS_INSTALL_PREFIX}/lib \
+    GVM_TRACE=1
+}
+
 # Build pocl from THU
 build_pocl() {
   mkdir -p ${POCL_BUILD_DIR}
@@ -292,7 +327,7 @@ build_libclc() {
   ninja install
   # TODO: There are bugs in linking all libclc object files now
   echo "************* Building riscv32 libclc object file ************"
-  bash ${LLVM_DIR}/libclc/build_riscv32clc.sh ${LLVM_DIR}/libclc ${LIBCLC_BUILD_DIR} ${VENTUS_INSTALL_PREFIX} || true
+  bash ${LLVM_DIR}/libclc/build_riscv32clc.sh ${LLVM_DIR}/libclc ${LIBCLC_BUILD_DIR} ${VENTUS_INSTALL_PREFIX}
 
   DstDir=${VENTUS_INSTALL_PREFIX}/share/pocl
   if [ ! -d "${DstDir}" ]; then
@@ -444,6 +479,23 @@ check_if_pocl_built() {
   fi
 }
 
+is_rtlsim_program() {
+  [ "$1" = "rtlsim" ] || [ "$1" = "rtl" ] || [ "$1" = "gpgpu" ]
+}
+
+rtlsim_requested=false
+gvm_requested=false
+rtlsim_gvm_built=false
+
+for program in "${PROGRAMS_TOBUILD[@]}"
+do
+  if is_rtlsim_program "${program}"; then
+    rtlsim_requested=true
+  elif [ "${program}" = "gvm" ]; then
+    gvm_requested=true
+  fi
+done
+
 # Process build options
 for program in "${PROGRAMS_TOBUILD[@]}"
 do
@@ -460,21 +512,41 @@ do
   elif [ "${program}" == "spike" ]; then
     build_spike
   elif [ "${program}" == "rtlsim" ] || [ "${program}" == "rtl" ] || [ "${program}" == "gpgpu" ]; then
-    build_gpgpu_rtlsim
+    if [ "${rtlsim_requested}" = "true" ] && [ "${gvm_requested}" = "true" ]; then
+      if [ "${rtlsim_gvm_built}" = "false" ]; then
+        build_gpgpu_rtlsim_gvm
+        rtlsim_gvm_built=true
+      fi
+    else
+      build_gpgpu_rtlsim
+    fi
   elif [ "${program}" == "cyclesim" ] || [ "${program}" == "simulator" ]; then
     check_if_systemc_built
     build_gpgpu_cyclesim
   elif [ "${program}" == "sbt" ] || [ "${program}" == "sbtsim" ] || [ "${program}" == "ptx" ] || [ "${program}" == "ptxsim" ]; then
-    build_sbtsim
+    if [ "${NVIDIA_DRIVER_AVAILABLE}" = "true" ]; then
+      build_sbtsim
+    else
+      echo "WARNING: Skipping sbtsim build -- NVIDIA driver not available."
+    fi
   elif [ "${program}" == "gvm" ]; then
-    build_gvm
+    if [ "${rtlsim_requested}" = "true" ] && [ "${gvm_requested}" = "true" ]; then
+      if [ "${rtlsim_gvm_built}" = "false" ]; then
+        build_gpgpu_rtlsim_gvm
+        rtlsim_gvm_built=true
+      fi
+    else
+      build_gvm
+    fi
   elif [ "${program}" == "driver" ]; then
     check_if_spike_built
     check_if_cyclesim_built
     check_if_rtlsim_built
     check_if_gvm_built
     check_if_gvmref_built
-    check_if_sbtsim_built
+    if [ "${NVIDIA_DRIVER_AVAILABLE}" = "true" ]; then
+      check_if_sbtsim_built
+    fi
     build_driver
   elif [ "${program}" == "pocl" ]; then
     check_if_ventus_llvm_built

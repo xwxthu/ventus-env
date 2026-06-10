@@ -1,51 +1,247 @@
 name: 'Build Ventus'
 description: 'Setup and build Ventus environment'
+inputs:
+  mode:
+    description: "build publishes the install artifact; restore restores it and rebuilds local POCL examples"
+    required: false
+    default: "build"
 runs:
   using: "composite"
   steps:
+    - name: Prepare build logs
+      shell: bash
+      run: |
+        mkdir -p regression-test-logs/setup-and-build
+
+    - name: Validate mode
+      shell: bash
+      env:
+        ACTION_MODE: ${{ inputs.mode }}
+      run: |
+        case "$ACTION_MODE" in
+          build|restore)
+            ;;
+          *)
+            echo "Invalid build-ventus action mode: $ACTION_MODE"
+            echo "Expected one of: build, restore"
+            exit 1
+            ;;
+        esac
+
     - name: Add tools to PATH
       shell: bash
       run: |
-        echo "/opt/verilator/5.034/bin" >> $GITHUB_PATH
-        echo "/opt/firtool-1.62.0/bin" >> $GITHUB_PATH
+        set +e
+        (
+          set -e
+          echo "/opt/verilator/5.034/bin" >> "$GITHUB_PATH"
+          echo "/opt/firtool-1.62.0/bin" >> "$GITHUB_PATH"
+        ) 2>&1 | tee regression-test-logs/setup-and-build/add-tools-to-path.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/add-tools-to-path.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
 
     - name: Initialize dependencies
       shell: bash
       run: |
-        # Fix git "dubious ownership" error because of container/host user mismatch
-        git config --global --add safe.directory '*'
-        make init
+        set +e
+        (
+          set -e
+          # Fix git "dubious ownership" error because of container/host user mismatch
+          git config --global --add safe.directory '*'
+          make init
+        ) 2>&1 | tee regression-test-logs/setup-and-build/initialize-dependencies.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/initialize-dependencies.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
 
     - name: Restore Build Artifacts
       id: restore-build
+      if: inputs.mode == 'build'
       shell: bash
       run: |
-        if [ -d "/artifacts/${{ github.sha }}" ]; then
-          echo "Found existing artifacts for ${{ github.sha }}"
-          cp -r /artifacts/${{ github.sha }}/* .
-          env CCACHE_DIR=/ccache bash build-ventus.sh --build pocl
-          echo "cache-hit=true" >> $GITHUB_OUTPUT
-        else
-          echo "No artifacts found"
-          echo "cache-hit=false" >> $GITHUB_OUTPUT
+        set +e
+        (
+          set -e -o pipefail
+          artifact_dir="/artifacts/${{ github.sha }}"
+          artifact_marker="${artifact_dir}/.ventus-ci-artifact-complete"
+          artifact_archive="${artifact_dir}/install.tar.zst"
+
+          if [ -f "$artifact_marker" ]; then
+            echo "Found existing artifacts for ${{ github.sha }}"
+            if [ ! -f "$artifact_archive" ]; then
+              echo "Artifact marker exists but archive is missing: $artifact_archive"
+              exit 1
+            fi
+            if [ -e install ]; then
+              echo "Refusing to restore over existing install path."
+              exit 1
+            fi
+
+            zstd -dc "$artifact_archive" | tar -xf -
+
+            if [ ! -d install ]; then
+              echo "Restored artifact did not contain install/."
+              exit 1
+            fi
+
+            # POCL examples are build-tree artifacts and are not part of install/.
+            env CCACHE_DIR=/ccache bash build-ventus.sh --build pocl
+            echo "cache-hit=true" >> "$GITHUB_OUTPUT"
+          elif [ -d "$artifact_dir" ]; then
+            echo "Found incomplete artifact directory without marker: ${artifact_dir}"
+            echo "Expected marker: ${artifact_marker}"
+            echo "Refusing to restore incomplete build artifacts."
+            exit 1
+          else
+            echo "No artifacts found"
+            echo "cache-hit=false" >> "$GITHUB_OUTPUT"
+          fi
+        ) 2>&1 | tee regression-test-logs/setup-and-build/restore-build-artifacts.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/restore-build-artifacts.log (tee exit $tee_status)"
         fi
+        set -e
+        exit "$status"
 
     - name: Build Ventus
-      if: steps.restore-build.outputs.cache-hit != 'true'
+      if: inputs.mode == 'build' && steps.restore-build.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        env CCACHE_DIR=/ccache bash build-ventus.sh
+        set +e
+        env CCACHE_DIR=/ccache bash build-ventus.sh 2>&1 | tee regression-test-logs/setup-and-build/build-ventus.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/build-ventus.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
 
     - name: Save Build Artifacts
-      if: steps.restore-build.outputs.cache-hit != 'true' && success()
+      if: inputs.mode == 'build' && steps.restore-build.outputs.cache-hit != 'true' && success()
       shell: bash
       run: |
-        mkdir -p /artifacts/${{ github.sha }}
-        if [ -d "install" ]; then cp -r install /artifacts/${{ github.sha }}/; fi
-        touch /artifacts/${{ github.sha }}
+        set +e
+        (
+          set -e -o pipefail
+          artifact_dir="/artifacts/${{ github.sha }}"
+          artifact_marker="${artifact_dir}/.ventus-ci-artifact-complete"
+          artifact_archive="${artifact_dir}/install.tar.zst"
+          temp_artifact_dir="$(mktemp -d "/artifacts/.tmp-${{ github.sha }}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.XXXXXX")"
+          trap 'rm -rf "$temp_artifact_dir"' EXIT
+
+          if [ ! -d "install" ]; then
+            echo "Build completed but install directory is missing."
+            exit 1
+          fi
+
+          if command -v zstd >/dev/null 2>&1; then
+            tar -cf - install | zstd -T0 -10 --long=27 > "$temp_artifact_dir/install.tar.zst"
+          else
+            echo "zstd is required to publish the install artifact."
+            exit 1
+          fi
+          {
+            echo "sha=${{ github.sha }}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "archive=install.tar.zst"
+            echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "${temp_artifact_dir}/.ventus-ci-artifact-complete"
+
+          if [ -e "$artifact_dir" ]; then
+            if [ -f "$artifact_marker" ]; then
+              echo "Artifact was already published by another run: ${artifact_dir}"
+              exit 0
+            fi
+            echo "Refusing to overwrite incomplete artifact directory without marker: ${artifact_dir}"
+            exit 1
+          fi
+
+          mv -T "$temp_artifact_dir" "$artifact_dir"
+          du -h "$artifact_archive"
+          trap - EXIT
+        ) 2>&1 | tee regression-test-logs/setup-and-build/save-build-artifacts.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/save-build-artifacts.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
+
+    - name: Restore Published Install
+      if: inputs.mode == 'restore'
+      shell: bash
+      run: |
+        set +e
+        (
+          set -e -o pipefail
+          artifact_dir="/artifacts/${{ github.sha }}"
+          artifact_marker="${artifact_dir}/.ventus-ci-artifact-complete"
+          artifact_archive="${artifact_dir}/install.tar.zst"
+
+          if [ ! -f "$artifact_marker" ]; then
+            echo "Build artifact marker is missing: $artifact_marker"
+            exit 1
+          fi
+          if [ ! -f "$artifact_archive" ]; then
+            echo "Build artifact archive is missing: $artifact_archive"
+            exit 1
+          fi
+          if [ -e install ]; then
+            echo "Refusing to restore over existing install path."
+            exit 1
+          fi
+
+          zstd -dc "$artifact_archive" | tar -xf -
+
+          if [ ! -d install ]; then
+            echo "Restored artifact did not contain install/."
+            exit 1
+          fi
+
+          # POCL examples are build-tree artifacts and are not part of install/.
+          env CCACHE_DIR=/ccache bash build-ventus.sh --build pocl
+        ) 2>&1 | tee regression-test-logs/setup-and-build/restore-published-install.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/restore-published-install.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
 
     - name: Cleanup Old Artifacts
       if: always()
       shell: bash
       run: |
-        find /artifacts -maxdepth 1 -mindepth 1 -type d -mtime +7 -exec rm -rf {} +
+        set +e
+        current_artifact_dir="/artifacts/${{ github.sha }}"
+        find /artifacts -maxdepth 1 -mindepth 1 -type d -mtime +7 ! -path "$current_artifact_dir" -exec rm -rf {} + 2>&1 | tee regression-test-logs/setup-and-build/cleanup-old-artifacts.log
+        pipe_status=("${PIPESTATUS[@]}")
+        status=${pipe_status[0]}
+        tee_status=${pipe_status[1]}
+        if [ "$tee_status" -ne 0 ]; then
+          echo "Warning: failed to write build log regression-test-logs/setup-and-build/cleanup-old-artifacts.log (tee exit $tee_status)"
+        fi
+        set -e
+        exit "$status"
